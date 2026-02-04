@@ -1,0 +1,7 @@
+{
+  "name": "Precision Eye Tracker",
+  "description": "A web-based eye tracking system using MediaPipe Face Mesh with 9-point calibration, ridge regression mapping, and gaze smoothing.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
