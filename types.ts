@@ -84,6 +84,11 @@ export enum OutlierMethod {
   STD_DEV = 'STD_DEV' // Keep within Mean +/- Sigma
 }
 
+export enum CalibrationMethod {
+  TIMER = 'TIMER', // Original auto-timer
+  CLICK_HOLD = 'CLICK_HOLD' // New click and hold method
+}
+
 export interface AppConfig {
   regressionMethod: RegressionMethod;
   smoothingMethod: SmoothingMethod;
@@ -102,7 +107,9 @@ export interface AppConfig {
   saccadeThreshold: number; // Distance in pixels to consider a saccade (jump)
 
   // Calibration Params
-  calibrationSpeed: 'FAST' | 'NORMAL' | 'SLOW';
+  calibrationMethod: CalibrationMethod;
+  calibrationSpeed: 'FAST' | 'NORMAL' | 'SLOW'; // Only used for TIMER method
+  clickDuration: number; // Seconds (for CLICK_HOLD method)
   
   // Data Hygiene (Outlier) Params
   outlierMethod: OutlierMethod;
@@ -129,7 +136,10 @@ export const DEFAULT_CONFIG: AppConfig = {
   
   saccadeThreshold: 50, // If jump > 50px, reduce smoothing temporarily
 
+  // Calibration Defaults
+  calibrationMethod: CalibrationMethod.TIMER,
   calibrationSpeed: 'NORMAL',
+  clickDuration: 1.5, // 1.5 seconds hold
 
   // Outlier Defaults
   outlierMethod: OutlierMethod.TRIM_TAILS,

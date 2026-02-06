@@ -7,6 +7,7 @@ import {
   TrainingSample,
   EyeLandmarkIndices,
   AppConfig,
+  CalibrationMethod,
   DEFAULT_CONFIG
 } from './types';
 import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
@@ -16,6 +17,7 @@ import GazeCursor from './components/GazeCursor';
 import HeatmapLayer, { HeatmapRef } from './components/HeatmapLayer';
 import SettingsModal from './components/SettingsModal';
 import HeadPositionGuide from './components/HeadPositionGuide';
+import DiagnosticsPanel from './components/DiagnosticsPanel';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -101,6 +103,8 @@ function App() {
 
   const [trainingData, setTrainingData] = useState<TrainingSample[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [calibrationProgress, setCalibrationProgress] = useState(0); // 0-1 for click hold progress
+
   const [accuracyScore, setAccuracyScore] = useState<number | null>(null);
   
   const [gazePos, setGazePos] = useState({ x: 0, y: 0 });
@@ -124,6 +128,10 @@ function App() {
   const validationErrorsRef = useRef<number[]>([]); 
   const timerRef = useRef<number[]>([]);
   const trackingHistoryRef = useRef<GazeRecord[]>([]);
+
+  // Refs for click hold logic
+  const holdStartTimeRef = useRef<number>(0);
+  const clickAnimationRef = useRef<number>(0);
 
   // Ref to hold the current validity for async access in loops
   const isHeadValidRef = useRef<boolean>(true);
@@ -277,14 +285,7 @@ function App() {
       tempCanvas.height = pixelH;
       const ctx = tempCanvas.getContext('2d');
       if (ctx) {
-          // Note: The video element is usually mirrored via CSS (scale-x-[-1]), 
-          // but the raw video data is NOT mirrored. 
-          // We must mirror the drawing if we want the output to match the screen view,
-          // OR keep it raw. Usually raw is better for data, but mirrored is better for UI.
-          // Let's keep it raw (true to camera) for now to avoid complexity.
-          
           ctx.drawImage(video, pixelX, pixelY, pixelW, pixelH, 0, 0, pixelW, pixelH);
-          
           const url = tempCanvas.toDataURL('image/jpeg', 0.8);
           const timeStr = new Date().toLocaleTimeString();
           setCapturedImages(prev => [...prev, { url, timestamp: timeStr }]);
@@ -410,13 +411,82 @@ function App() {
     requestRef.current = requestAnimationFrame(processVideo);
   }, []); 
 
-  // --- CALIBRATION LOGIC ENGINE ---
+  // --- CALIBRATION INTERACTION LOGIC (CLICK & HOLD) ---
+  const handlePointMouseDown = () => {
+    if (config.calibrationMethod !== CalibrationMethod.CLICK_HOLD) return;
+    
+    collectionBufferRef.current = [];
+    isCollectingRef.current = true;
+    holdStartTimeRef.current = performance.now();
+    
+    const updateProgress = () => {
+        const elapsed = (performance.now() - holdStartTimeRef.current) / 1000; // seconds
+        const progress = Math.min(1, elapsed / config.clickDuration);
+        setCalibrationProgress(progress);
+        
+        if (progress < 1) {
+            clickAnimationRef.current = requestAnimationFrame(updateProgress);
+        } else {
+            // Completed!
+            handlePointMouseUp(true);
+        }
+    };
+    
+    clickAnimationRef.current = requestAnimationFrame(updateProgress);
+  };
+
+  const handlePointMouseUp = (success: boolean = false) => {
+    if (config.calibrationMethod !== CalibrationMethod.CLICK_HOLD) return;
+    
+    isCollectingRef.current = false;
+    cancelAnimationFrame(clickAnimationRef.current);
+    
+    // Check if we held long enough
+    if (success === true || calibrationProgress >= 1) {
+        processClickHoldData();
+    } else {
+        // Failed / Released early
+        console.warn("Released too early");
+        collectionBufferRef.current = []; // Discard bad data
+    }
+    
+    setCalibrationProgress(0);
+  };
+
+  const processClickHoldData = () => {
+    const rawBuffer = collectionBufferRef.current;
+    
+    // TEMPORAL TRIMMING: Remove first 20% and last 20% of frames
+    // This removes jitter from the click action and the release anticipation
+    if (rawBuffer.length > 5) {
+        const cutAmount = Math.floor(rawBuffer.length * 0.2);
+        // Ensure we have data left after cutting 40%
+        if (rawBuffer.length - (cutAmount * 2) > 2) {
+             const trimmedBuffer = rawBuffer.slice(cutAmount, rawBuffer.length - cutAmount);
+             // Now process this trimmed buffer using standard logic
+             processCalibBuffer(trimmedBuffer);
+             return;
+        }
+    }
+    
+    // Fallback if data is too short
+    console.warn("Buffer too short after trimming");
+    setRetryCount(c => c + 1);
+  };
+
+
+  // --- CALIBRATION LOGIC ENGINE (TIMER BASED) ---
   useEffect(() => {
     if (status !== 'CALIBRATION') {
       timerRef.current.forEach(clearTimeout);
       timerRef.current = [];
       isCollectingRef.current = false;
       return;
+    }
+
+    // Skip timer logic if we are in Click & Hold mode
+    if (config.calibrationMethod === CalibrationMethod.CLICK_HOLD) {
+        return;
     }
 
     const point = calibPoints[currentCalibIndex];
@@ -442,20 +512,35 @@ function App() {
       setIsCapturing(false);
 
       const buffer = collectionBufferRef.current;
-      
-      // Clean data
+      // Use standard cleaning for timer method
       const cleanBuffer = DataCleaner.clean(buffer, configRef.current.outlierMethod, configRef.current.outlierThreshold);
+      processCalibBuffer(cleanBuffer);
 
-      if (cleanBuffer.length > 5) { 
-        const numFeatures = cleanBuffer[0].length;
+    }, prepTime + captureTime);
+
+    timerRef.current.push(tStart, tEnd);
+
+    return () => {
+      timerRef.current.forEach(clearTimeout);
+      timerRef.current = [];
+    };
+
+  }, [currentCalibIndex, status, calibPoints, calibPhase, config.calibrationSpeed, config.calibrationMethod, retryCount]);
+
+  // Common function to process buffer and advance state
+  const processCalibBuffer = (buffer: number[][]) => {
+     const point = calibPoints[currentCalibIndex];
+     
+     if (buffer.length > 2) { 
+        const numFeatures = buffer[0].length;
         const avgVector = new Array(numFeatures).fill(0);
-        for (const vec of cleanBuffer) {
+        for (const vec of buffer) {
           for (let i = 0; i < numFeatures; i++) {
             avgVector[i] += vec[i];
           }
         }
         for (let i = 0; i < numFeatures; i++) {
-          avgVector[i] /= cleanBuffer.length;
+          avgVector[i] /= buffer.length;
         }
 
         const screenX = (point.x / 100) * window.innerWidth;
@@ -480,19 +565,10 @@ function App() {
         }
 
       } else {
-          console.warn(`Point ${currentCalibIndex} skipped/retrying: Insufficient clean data`);
+          console.warn(`Point ${currentCalibIndex} skipped/retrying: Insufficient data`);
           setRetryCount(c => c + 1); 
       }
-    }, prepTime + captureTime);
-
-    timerRef.current.push(tStart, tEnd);
-
-    return () => {
-      timerRef.current.forEach(clearTimeout);
-      timerRef.current = [];
-    };
-
-  }, [currentCalibIndex, status, calibPoints, calibPhase, config.calibrationSpeed, retryCount]);
+  };
 
   const finishCurrentPhase = () => {
     if (calibPhase === CalibrationPhase.INITIAL_MAPPING || calibPhase === CalibrationPhase.FINE_TUNING) {
@@ -749,6 +825,10 @@ function App() {
           currentPointIndex={currentCalibIndex}
           isCapturing={isCapturing}
           phase={calibPhase} 
+          method={config.calibrationMethod}
+          progress={calibrationProgress}
+          onPointMouseDown={handlePointMouseDown}
+          onPointMouseUp={() => handlePointMouseUp(false)}
         />
       )}
 
@@ -812,41 +892,17 @@ function App() {
         </>
       )}
 
-      {/* Diagnostics Panel */}
+      {/* Diagnostics Panel (Now Draggable) */}
       {status !== 'HEAD_POSITIONING' && (
-        <div className="fixed bottom-4 left-4 bg-black bg-opacity-80 p-3 rounded border border-gray-800 z-[200]">
-            <h4 className="text-gray-500 text-[10px] uppercase tracking-wider mb-2">Diagnostics</h4>
-            
-            <div className="flex items-center space-x-2 mb-2">
-                <button 
-                    onClick={() => setShowCamera(!showCamera)}
-                    className={`w-3 h-3 rounded-full ${showCamera ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]' : 'bg-gray-600'}`}
-                />
-                <span className="text-[10px] text-gray-400">Show Debug View</span>
-            </div>
-            
-            {/* Show detailed head status in diagnostics */}
-            {headValidation && (
-                <div className={`text-xs font-bold mb-1 ${headValidation.valid ? 'text-green-500' : 'text-red-500'}`}>
-                    Head: {headValidation.message}
-                </div>
-            )}
-
-            {rawFeatures && rawFeatures.headPose && (
-            <div className="text-[9px] text-gray-400 font-mono space-y-1 mb-2">
-                <div>Pitch: {(rawFeatures.headPose.pitch * 180 / Math.PI).toFixed(1)}°</div>
-                <div>Yaw:   {(rawFeatures.headPose.yaw * 180 / Math.PI).toFixed(1)}°</div>
-                <div>Roll:  {(rawFeatures.headPose.roll * 180 / Math.PI).toFixed(1)}°</div>
-            </div>
-            )}
-            
-            <div className="text-[9px] text-gray-500">
-                Imgs Captured: {capturedImages.length}
-            </div>
-
-            {isBlinking && <div className="text-red-500 font-bold text-xs mb-1">BLINK DETECTED</div>}
-            <div className="text-[10px] text-gray-600">Status: {status}</div>
-        </div>
+         <DiagnosticsPanel 
+            showCamera={showCamera}
+            setShowCamera={setShowCamera}
+            headValidation={headValidation}
+            rawFeatures={rawFeatures}
+            capturedImagesCount={capturedImages.length}
+            isBlinking={isBlinking}
+            status={status}
+         />
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { AppConfig, RegressionMethod, SmoothingMethod, OutlierMethod, DEFAULT_CONFIG } from '../types';
+import { AppConfig, RegressionMethod, SmoothingMethod, OutlierMethod, CalibrationMethod, DEFAULT_CONFIG } from '../types';
 
 interface SettingsModalProps {
   config: AppConfig;
@@ -49,11 +49,54 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, onClose }
             {activeTab === 'GENERAL' && (
               <>
                  <div className="bg-gray-800 p-3 rounded-lg space-y-4 border border-gray-700">
-                     <div className="flex justify-between items-center"><span className="text-xs font-bold text-green-300">Setup Distance</span></div>
+                     <div className="flex justify-between items-center"><span className="text-xs font-bold text-green-300">Calibration Method</span></div>
+                     
+                     <div className="flex space-x-2">
+                         <button 
+                            onClick={() => handleChange('calibrationMethod', CalibrationMethod.TIMER)}
+                            className={`flex-1 py-2 text-xs font-bold rounded border ${localConfig.calibrationMethod === CalibrationMethod.TIMER ? 'bg-blue-600 border-blue-600 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
+                         >
+                             Auto Timer
+                         </button>
+                         <button 
+                            onClick={() => handleChange('calibrationMethod', CalibrationMethod.CLICK_HOLD)}
+                            className={`flex-1 py-2 text-xs font-bold rounded border ${localConfig.calibrationMethod === CalibrationMethod.CLICK_HOLD ? 'bg-blue-600 border-blue-600 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
+                         >
+                             Click & Hold
+                         </button>
+                     </div>
+
+                     {localConfig.calibrationMethod === CalibrationMethod.CLICK_HOLD && (
+                         <div className="pt-2 border-t border-gray-700">
+                            <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Click Duration (Seconds)</span><span className="font-mono">{localConfig.clickDuration}s</span></div>
+                            <input type="range" min="0.5" max="3.0" step="0.1" value={localConfig.clickDuration} onChange={(e) => handleChange('clickDuration', parseFloat(e.target.value))} className="w-full accent-green-500 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"/>
+                            <p className="text-[9px] text-gray-500 mt-1">Hold the mouse on the dot for this long. First/last 20% of frames are discarded.</p>
+                         </div>
+                     )}
+
+                     {localConfig.calibrationMethod === CalibrationMethod.TIMER && (
+                        <div>
+                            <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Calibration Speed</label>
+                            <div className="flex space-x-2">
+                                {['FAST', 'NORMAL', 'SLOW'].map((speed) => (
+                                    <button
+                                        key={speed}
+                                        onClick={() => handleChange('calibrationSpeed', speed)}
+                                        className={`flex-1 py-2 text-xs font-bold rounded border ${localConfig.calibrationSpeed === speed ? 'bg-blue-600 border-blue-600 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
+                                    >
+                                        {speed}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                     )}
+                 </div>
+
+                 <div className="bg-gray-800 p-3 rounded-lg space-y-4 border border-gray-700">
+                     <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-300">Setup Distance</span></div>
                      <div>
                         <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Distance to Screen (cm)</span><span className="font-mono">{localConfig.faceDistance} cm</span></div>
-                        <input type="range" min="40" max="90" step="5" value={localConfig.faceDistance} onChange={(e) => handleChange('faceDistance', parseInt(e.target.value))} className="w-full accent-green-500 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"/>
-                        <p className="text-[9px] text-gray-500 mt-1">Typical desktop distance is 60cm-70cm. Laptop is 50cm-60cm.</p>
+                        <input type="range" min="40" max="90" step="5" value={localConfig.faceDistance} onChange={(e) => handleChange('faceDistance', parseInt(e.target.value))} className="w-full accent-gray-500 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"/>
                      </div>
                  </div>
 
@@ -68,24 +111,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, onClose }
                     <option value={RegressionMethod.HYBRID}>Hybrid (Ridge + kNN)</option>
                     <option value={RegressionMethod.RIDGE}>Ridge Regression (Global Only)</option>
                     </select>
-                    <p className="text-[10px] text-gray-500 mt-1">
-                    TPS handles non-linear screen distortion best. Hybrid is a good fallback.
-                    </p>
-                </div>
-
-                <div>
-                    <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Calibration Speed</label>
-                    <div className="flex space-x-2">
-                        {['FAST', 'NORMAL', 'SLOW'].map((speed) => (
-                            <button
-                                key={speed}
-                                onClick={() => handleChange('calibrationSpeed', speed)}
-                                className={`flex-1 py-2 text-xs font-bold rounded border ${localConfig.calibrationSpeed === speed ? 'bg-blue-600 border-blue-600 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
-                            >
-                                {speed}
-                            </button>
-                        ))}
-                    </div>
                 </div>
               </>
             )}
