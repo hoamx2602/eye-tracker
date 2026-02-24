@@ -22,44 +22,78 @@ import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-visio
 
 // --- CONFIGURATION ---
 const EDGE_PAD = 4;
-const P_MIN = EDGE_PAD;
-const P_MAX = 100 - EDGE_PAD;
-const P_MID_1 = 33; 
-const P_MID_2 = 67; 
 
-// --- DEFINING THE 3 STEPS ---
-const STEP_1_POINTS: CalibrationPoint[] = [
-  { id: 1, x: 50, y: 50, completed: false }, 
-  { id: 2, x: 50, y: P_MIN, completed: false }, 
-  { id: 3, x: 50, y: P_MAX, completed: false }, 
-  { id: 4, x: P_MIN, y: 50, completed: false }, 
-  { id: 5, x: P_MAX, y: 50, completed: false }, 
-];
+// --- DYNAMIC CALIBRATION POINTS GENERATOR ---
+const generateCalibrationPoints = (count: number): CalibrationPoint[] => {
+  const points: CalibrationPoint[] = [];
+  
+  // Always include corners and center (5 points) if count >= 5
+  // But for a general approach, we can generate a grid that best fits 'count'
+  // or use a specific distribution.
+  
+  // Strategy:
+  // 1. Calculate grid dimensions (rows x cols) that approximate sqrt(count)
+  // 2. Distribute points evenly
+  
+  // However, standard eye tracking grids are usually 3x3 (9), 4x4 (16), 5x4 (20), etc.
+  
+  let rows = Math.round(Math.sqrt(count));
+  let cols = Math.ceil(count / rows);
+  
+  // Adjust to ensure we have enough points
+  while (rows * cols < count) {
+      cols++;
+  }
+  
+  // Generate grid points
+  const xStep = (100 - 2 * EDGE_PAD) / (cols - 1 || 1);
+  const yStep = (100 - 2 * EDGE_PAD) / (rows - 1 || 1);
+  
+  let generatedCount = 0;
+  
+  for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+          if (generatedCount >= count) break;
+          
+          const x = EDGE_PAD + (c * xStep);
+          const y = EDGE_PAD + (r * yStep);
+          
+          points.push({
+              id: generatedCount + 1,
+              x: x,
+              y: y,
+              completed: false
+          });
+          generatedCount++;
+      }
+  }
+  
+  // If we have fewer points than requested (due to grid logic), add random ones? 
+  // No, the loop ensures we stop at count. 
+  // But if rows*cols > count, we might miss the bottom-right if we just break.
+  // Better to center the grid or pick specific points.
+  
+  // Let's refine:
+  // If count is one of the standard presets, use specific logic?
+  // Actually, the grid logic above fills row by row. 
+  // For 5 points, it might do 2x3 grid and take first 5.
+  // 2x3 grid:
+  // (0,0) (0,1) (0,2)
+  // (1,0) (1,1)
+  // This is okay, but maybe not symmetric.
+  
+  // Alternative: Uniform distribution.
+  // But for eye tracking, grid is preferred.
+  
+  return points;
+};
 
-const STEP_2_POINTS: CalibrationPoint[] = [
-  { id: 6, x: P_MIN, y: P_MIN, completed: false },
-  { id: 7, x: P_MID_1, y: P_MIN, completed: false },
-  { id: 8, x: P_MID_2, y: P_MIN, completed: false },
-  { id: 9, x: P_MAX, y: P_MIN, completed: false },
-  { id: 10, x: P_MIN, y: P_MID_1, completed: false },
-  { id: 11, x: P_MID_1, y: P_MID_1, completed: false },
-  { id: 12, x: P_MID_2, y: P_MID_1, completed: false },
-  { id: 13, x: P_MAX, y: P_MID_1, completed: false },
-  { id: 14, x: P_MIN, y: P_MID_2, completed: false },
-  { id: 15, x: P_MID_1, y: P_MID_2, completed: false },
-  { id: 16, x: P_MID_2, y: P_MID_2, completed: false },
-  { id: 17, x: P_MAX, y: P_MID_2, completed: false },
-  { id: 18, x: P_MIN, y: P_MAX, completed: false },
-  { id: 19, x: P_MID_1, y: P_MAX, completed: false },
-  { id: 20, x: P_MID_2, y: P_MAX, completed: false },
-  { id: 21, x: P_MAX, y: P_MAX, completed: false },
-];
-
-const STEP_3_POINTS: CalibrationPoint[] = [
-  { id: 22, x: 25, y: 25, completed: false },
-  { id: 23, x: 75, y: 75, completed: false },
-  { id: 24, x: 25, y: 75, completed: false },
-  { id: 25, x: 75, y: 25, completed: false }, 
+const VALIDATION_POINTS: CalibrationPoint[] = [
+  { id: 1001, x: 25, y: 25, completed: false },
+  { id: 1002, x: 75, y: 75, completed: false },
+  { id: 1003, x: 25, y: 75, completed: false },
+  { id: 1004, x: 75, y: 25, completed: false }, 
+  { id: 1005, x: 50, y: 50, completed: false }, 
 ];
 
 interface GazeRecord {
@@ -96,7 +130,7 @@ function App() {
 
   useEffect(() => { statusRef.current = status; }, [status]);
   
-  const [calibPoints, setCalibPoints] = useState<CalibrationPoint[]>(STEP_1_POINTS);
+  const [calibPoints, setCalibPoints] = useState<CalibrationPoint[]>([]);
   const [currentCalibIndex, setCurrentCalibIndex] = useState(0);
   // Dummy state to force re-run of calibration effect for retries. Defined here to be available for useEffect.
   const [retryCount, setRetryCount] = useState(0);
@@ -571,7 +605,7 @@ function App() {
   };
 
   const finishCurrentPhase = () => {
-    if (calibPhase === CalibrationPhase.INITIAL_MAPPING || calibPhase === CalibrationPhase.FINE_TUNING) {
+    if (calibPhase === CalibrationPhase.INITIAL_MAPPING) {
         const data = trainingSamplesRef.current;
         if (data.length < 5) {
             alert("Insufficient data points. Please restart calibration.");
@@ -590,16 +624,11 @@ function App() {
             return;
         }
 
-        if (calibPhase === CalibrationPhase.INITIAL_MAPPING) {
-            setCalibPhase(CalibrationPhase.FINE_TUNING);
-            setCalibPoints(STEP_2_POINTS);
-            setCurrentCalibIndex(0);
-        } else {
-            setCalibPhase(CalibrationPhase.VALIDATION);
-            setCalibPoints(STEP_3_POINTS);
-            setCurrentCalibIndex(0);
-            validationErrorsRef.current = []; 
-        }
+        // Skip FINE_TUNING, go straight to VALIDATION
+        setCalibPhase(CalibrationPhase.VALIDATION);
+        setCalibPoints(VALIDATION_POINTS);
+        setCurrentCalibIndex(0);
+        validationErrorsRef.current = []; 
     } 
     else if (calibPhase === CalibrationPhase.VALIDATION) {
         const errors = validationErrorsRef.current;
@@ -672,7 +701,11 @@ function App() {
     setRecordedVideoUrl(null); // Reset video
     
     setCalibPhase(CalibrationPhase.INITIAL_MAPPING);
-    setCalibPoints(STEP_1_POINTS);
+    
+    // Generate points based on config
+    const points = generateCalibrationPoints(configRef.current.calibrationPointsCount);
+    setCalibPoints(points);
+    
     setStatus('CALIBRATION');
   };
 

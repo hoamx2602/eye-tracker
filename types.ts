@@ -109,6 +109,7 @@ export interface AppConfig {
   // Calibration Params
   calibrationMethod: CalibrationMethod;
   calibrationSpeed: 'FAST' | 'NORMAL' | 'SLOW'; // Only used for TIMER method
+  calibrationPointsCount: number; // Number of calibration points
   clickDuration: number; // Seconds (for CLICK_HOLD method)
   
   // Data Hygiene (Outlier) Params
@@ -139,6 +140,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   // Calibration Defaults
   calibrationMethod: CalibrationMethod.TIMER,
   calibrationSpeed: 'NORMAL',
+  calibrationPointsCount: 9, // Default to 9 points
   clickDuration: 1.5, // 1.5 seconds hold
 
   // Outlier Defaults

@@ -127,5 +127,5 @@ The system is fully configurable via the Settings Modal:
 ## 7. Performance & Privacy
 
 *   **GPU Acceleration**: MediaPipe uses WebGL/GPU delegates for landmark detection.
-*   **Local Processing**: All calculations (Vision, Regression, Smoothing) happen **90% in the browser**. No video data is ever sent to a server.
+*   **Local Processing**: All calculations (Vision, Regression, Smoothing) happen **100% in the browser**. No video data is ever sent to a server.
 *   **Memory Management**: Custom matrix classes avoid the overhead of heavy math libraries (like math.js), using optimized typed arrays.

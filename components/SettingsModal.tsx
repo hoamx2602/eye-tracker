@@ -90,6 +90,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, onClose }
                             </div>
                         </div>
                      )}
+
+                     <div className="bg-gray-800 p-3 rounded-lg space-y-4 border border-gray-700">
+                         <div className="flex justify-between items-center"><span className="text-xs font-bold text-purple-300">Calibration Points</span></div>
+                         <div>
+                            <div className="flex justify-between text-xs mb-2"><span className="text-gray-400">Number of Points</span><span className="font-mono">{localConfig.calibrationPointsCount}</span></div>
+                            
+                            {/* Preset Options */}
+                            <div className="flex space-x-2 mb-3">
+                                {[9, 16, 20, 52].map((count) => (
+                                    <button
+                                        key={count}
+                                        onClick={() => handleChange('calibrationPointsCount', count)}
+                                        className={`flex-1 py-1.5 text-xs font-bold rounded border ${localConfig.calibrationPointsCount === count ? 'bg-purple-600 border-purple-600 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'}`}
+                                    >
+                                        {count}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Custom Slider */}
+                            <div className="flex items-center space-x-2">
+                                <span className="text-[10px] text-gray-500 w-8">Custom</span>
+                                <input 
+                                    type="range" 
+                                    min="5" 
+                                    max="134" 
+                                    step="1" 
+                                    value={localConfig.calibrationPointsCount} 
+                                    onChange={(e) => handleChange('calibrationPointsCount', parseInt(e.target.value))} 
+                                    className="flex-1 accent-purple-500 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                                />
+                            </div>
+                            <p className="text-[9px] text-gray-500 mt-1">More points = Higher accuracy but longer setup. (Max 134)</p>
+                         </div>
+                     </div>
                  </div>
 
                  <div className="bg-gray-800 p-3 rounded-lg space-y-4 border border-gray-700">
