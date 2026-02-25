@@ -8,11 +8,13 @@ import {
   EyeLandmarkIndices,
   AppConfig,
   CalibrationMethod,
+  EXERCISE_KINDS,
   DEFAULT_CONFIG
 } from './types';
 import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
 import { HybridRegressor, GazeSmoother, DataCleaner } from './services/mathUtils';
 import CalibrationLayer from './components/CalibrationLayer';
+import EyeMovementLayer from './components/EyeMovementLayer';
 import GazeCursor from './components/GazeCursor';
 import HeatmapLayer, { HeatmapRef } from './components/HeatmapLayer';
 import SettingsModal from './components/SettingsModal';
@@ -107,9 +109,21 @@ interface CapturedImage {
   timestamp: string;
 }
 
+function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
 function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const debugCanvasRef = useRef<HTMLCanvasElement>(null); 
+  const debugCanvasRef = useRef<HTMLCanvasElement>(null);
+  const headPosCanvasRef = useRef<HTMLCanvasElement>(null);
+  const currentFaceLandmarksRef = useRef<NormalizedLandmark[] | null>(null);
 
   // --- STATE ---
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
@@ -138,6 +152,12 @@ function App() {
   const [trainingData, setTrainingData] = useState<TrainingSample[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
   const [calibrationProgress, setCalibrationProgress] = useState(0); // 0-1 for click hold progress
+
+  // Exercise state
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  const exerciseTargetRef = useRef<{ x: number; y: number } | null>(null);
+  const exerciseDataRef = useRef<{ screenX: number; screenY: number; features: number[] }[]>([]);
+  const exerciseActiveRef = useRef(false);
 
   const [accuracyScore, setAccuracyScore] = useState<number | null>(null);
   
@@ -352,9 +372,9 @@ function App() {
 
           if (results && results.faceLandmarks.length > 0) {
               const landmarks = results.faceLandmarks[0];
+              currentFaceLandmarksRef.current = landmarks;
 
               // --- CONTINUOUS HEAD VALIDATION ---
-              // We run this ALWAYS when a face is found
               const validation = eyeTrackingService.validateHeadPosition(landmarks);
               setHeadValidation(validation);
               isHeadValidRef.current = validation.valid;
@@ -371,7 +391,6 @@ function App() {
               // --- SPECIFIC LOGIC PER STATUS ---
               
               if (statusRef.current === 'HEAD_POSITIONING') {
-                  // Initial Step Countdown Logic
                   if (validation.valid) {
                       if (!headPosStartTimeRef.current) {
                           headPosStartTimeRef.current = now;
@@ -391,22 +410,25 @@ function App() {
                   }
               }
 
-              // Draw Face Mesh
-              const shouldShowMesh = statusRef.current === 'HEAD_POSITIONING' || !validation.valid;
-              const shouldShowDebug = showCameraRef.current;
+              // Draw Face Mesh on debugCanvas (skip during HEAD_POSITIONING — handled by headPosCanvas)
+              if (statusRef.current !== 'HEAD_POSITIONING') {
+                  const shouldShowMesh = !validation.valid;
+                  const shouldShowDebug = showCameraRef.current;
 
-              if (shouldShowMesh || shouldShowDebug) {
-                  ctx.lineWidth = 0.5;
-                  ctx.fillStyle = validation.valid ? "#4ade80" : "#ef4444"; 
-                  
-                  for (let i = 0; i < landmarks.length; i++) {
-                      const lm = landmarks[i];
-                      ctx.beginPath();
-                      ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 0.8, 0, 2 * Math.PI);
-                      ctx.fill();
+                  if (shouldShowMesh || shouldShowDebug) {
+                      ctx.lineWidth = 0.5;
+                      ctx.fillStyle = validation.valid ? "#4ade80" : "#ef4444"; 
+                      
+                      for (let i = 0; i < landmarks.length; i++) {
+                          const lm = landmarks[i];
+                          ctx.beginPath();
+                          ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 0.8, 0, 2 * Math.PI);
+                          ctx.fill();
+                      }
                   }
               }
           } else {
+             currentFaceLandmarksRef.current = null;
              isHeadValidRef.current = false;
              setHeadValidation({ valid: false, message: "No Face Detected" });
           }
@@ -427,10 +449,23 @@ function App() {
                   setRawFeatures(features);
                   const currentStatus = statusRef.current;
                   
-                  // 1. Data Collection
+                  // 1. Data Collection (grid points)
                   if (currentStatus === 'CALIBRATION' && isCollectingRef.current) {
                     const inputVector = eyeTrackingService.prepareFeatureVector(features);
                     collectionBufferRef.current.push(inputVector);
+                  }
+
+                  // 1b. Data Collection (eye movement exercises)
+                  if (currentStatus === 'CALIBRATION' && exerciseActiveRef.current) {
+                    const target = exerciseTargetRef.current;
+                    if (target) {
+                      const inputVector = eyeTrackingService.prepareFeatureVector(features);
+                      exerciseDataRef.current.push({
+                        screenX: target.x,
+                        screenY: target.y,
+                        features: inputVector,
+                      });
+                    }
                   }
                   
                   // 2. Real-time Prediction
@@ -444,6 +479,114 @@ function App() {
     }
     requestRef.current = requestAnimationFrame(processVideo);
   }, []); 
+
+  // --- HEAD POSITIONING CANVAS: draws video + face mesh + target box in a contained view ---
+  useEffect(() => {
+    if (status !== 'HEAD_POSITIONING') return;
+    const canvas = headPosCanvasRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video) return;
+
+    let rafId: number;
+
+    const draw = () => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx || video.readyState < 2 || video.videoWidth === 0) {
+        rafId = requestAnimationFrame(draw);
+        return;
+      }
+
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+
+      const W = canvas.width;
+      const H = canvas.height;
+
+      // Draw mirrored video frame
+      ctx.save();
+      ctx.translate(W, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0, W, H);
+      ctx.restore();
+
+      const valid = isHeadValidRef.current;
+      const color = valid ? '#22c55e' : '#ef4444';
+
+      // Target box (matches frontend HeadPoseStep proportions)
+      const bw = 0.26, bh = 0.48;
+      const bx = (1 - bw) / 2 * W;
+      const by = (1 - bh) / 2 * H;
+      const boxW = bw * W;
+      const boxH = bh * H;
+
+      // Rounded target box
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = valid ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)';
+      roundedRect(ctx, bx, by, boxW, boxH, 16);
+      ctx.stroke();
+
+      // Corner brackets
+      const cLen = 25;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = color;
+      ctx.lineCap = 'round';
+      // TL
+      ctx.beginPath();
+      ctx.moveTo(bx, by + cLen); ctx.lineTo(bx, by); ctx.lineTo(bx + cLen, by);
+      ctx.stroke();
+      // TR
+      ctx.beginPath();
+      ctx.moveTo(bx + boxW - cLen, by); ctx.lineTo(bx + boxW, by); ctx.lineTo(bx + boxW, by + cLen);
+      ctx.stroke();
+      // BL
+      ctx.beginPath();
+      ctx.moveTo(bx, by + boxH - cLen); ctx.lineTo(bx, by + boxH); ctx.lineTo(bx + cLen, by + boxH);
+      ctx.stroke();
+      // BR
+      ctx.beginPath();
+      ctx.moveTo(bx + boxW - cLen, by + boxH); ctx.lineTo(bx + boxW, by + boxH); ctx.lineTo(bx + boxW, by + boxH - cLen);
+      ctx.stroke();
+
+      // Crosshairs
+      ctx.globalAlpha = 0.12;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, by); ctx.lineTo(W / 2, by + boxH);
+      ctx.moveTo(bx, H / 2); ctx.lineTo(bx + boxW, H / 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // Center dot
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Draw face mesh dots (mirrored)
+      const lm = currentFaceLandmarksRef.current;
+      if (lm && lm.length > 0) {
+        ctx.fillStyle = valid ? 'rgba(56, 189, 248, 0.45)' : 'rgba(251, 146, 60, 0.45)';
+        for (let i = 0; i < lm.length; i += 2) {
+          const p = lm[i];
+          const x = (1 - p.x) * W;
+          const y = p.y * H;
+          ctx.beginPath();
+          ctx.arc(x, y, 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      rafId = requestAnimationFrame(draw);
+    };
+
+    rafId = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(rafId);
+  }, [status]);
 
   // --- CALIBRATION INTERACTION LOGIC (CLICK & HOLD) ---
   const handlePointMouseDown = () => {
@@ -604,31 +747,146 @@ function App() {
       }
   };
 
+  const processExerciseData = () => {
+    const data = exerciseDataRef.current;
+    exerciseDataRef.current = [];
+    exerciseActiveRef.current = false;
+
+    if (data.length < 10) {
+      console.warn(`[Exercise] Insufficient data (${data.length} frames), skipping`);
+      advanceExercise();
+      return;
+    }
+
+    // Trim first/last 10% (transition noise from countdown/completion)
+    const startIdx = Math.floor(data.length * 0.1);
+    const endIdx = Math.floor(data.length * 0.9);
+    const trimmed = data.slice(startIdx, endIdx);
+
+    if (trimmed.length === 0) {
+      advanceExercise();
+      return;
+    }
+
+    // Downsample to ~30 training samples per exercise
+    const targetCount = 30;
+    const step = Math.max(1, Math.floor(trimmed.length / targetCount));
+    let added = 0;
+
+    for (let i = 0; i < trimmed.length; i += step) {
+      const windowEnd = Math.min(i + step, trimmed.length);
+      const window = trimmed.slice(i, windowEnd);
+      if (window.length === 0) continue;
+
+      const numFeatures = window[0].features.length;
+      const avgFeatures = new Array(numFeatures).fill(0);
+      let avgX = 0, avgY = 0;
+
+      for (const sample of window) {
+        avgX += sample.screenX;
+        avgY += sample.screenY;
+        for (let j = 0; j < numFeatures; j++) {
+          avgFeatures[j] += sample.features[j];
+        }
+      }
+
+      avgX /= window.length;
+      avgY /= window.length;
+      for (let j = 0; j < numFeatures; j++) {
+        avgFeatures[j] /= window.length;
+      }
+
+      trainingSamplesRef.current.push({
+        screenX: avgX,
+        screenY: avgY,
+        features: avgFeatures,
+      });
+      added++;
+    }
+
+    const kindName = EXERCISE_KINDS[currentExerciseIndex] || 'unknown';
+    console.log(`[Exercise:${kindName}] Added ${added} samples from ${data.length} raw frames`);
+    setTrainingData([...trainingSamplesRef.current]);
+    advanceExercise();
+  };
+
+  const advanceExercise = () => {
+    const nextIndex = currentExerciseIndex + 1;
+    if (nextIndex < EXERCISE_KINDS.length) {
+      setCurrentExerciseIndex(nextIndex);
+      exerciseDataRef.current = [];
+      exerciseActiveRef.current = true;
+    } else {
+      // All exercises done — train regressor with all data and proceed to validation
+      trainAndValidate();
+    }
+  };
+
+  const trainAndValidate = () => {
+    const data = trainingSamplesRef.current;
+    if (data.length < 5) {
+      alert("Insufficient data points. Please restart calibration.");
+      reset();
+      return;
+    }
+
+    const X = data.map(d => d.features);
+    const Y = data.map(d => [d.screenX, d.screenY]);
+
+    const success = hybridRegressorRef.current.train(X, Y);
+    if (!success) {
+      alert("Calibration failed (Math error). Please try again.");
+      reset();
+      return;
+    }
+
+    console.log(`[Calibration] Trained regressor with ${data.length} total samples (grid + exercises)`);
+
+    setCalibPhase(CalibrationPhase.VALIDATION);
+    setCalibPoints(VALIDATION_POINTS);
+    setCurrentCalibIndex(0);
+    validationErrorsRef.current = [];
+  };
+
+  const handleExerciseComplete = useCallback(() => {
+    processExerciseData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentExerciseIndex]);
+
   const finishCurrentPhase = () => {
     if (calibPhase === CalibrationPhase.INITIAL_MAPPING) {
-        const data = trainingSamplesRef.current;
-        if (data.length < 5) {
-            alert("Insufficient data points. Please restart calibration.");
-            reset();
-            return;
+        if (configRef.current.enableExercises) {
+            // Don't train yet — collect more data from exercises first
+            console.log(`[Calibration] Grid mapping done with ${trainingSamplesRef.current.length} samples, starting exercises...`);
+            setCalibPhase(CalibrationPhase.EXERCISES);
+            setCurrentExerciseIndex(0);
+            exerciseDataRef.current = [];
+            exerciseActiveRef.current = true;
+        } else {
+            // Original behavior: train immediately and go to validation
+            const data = trainingSamplesRef.current;
+            if (data.length < 5) {
+                alert("Insufficient data points. Please restart calibration.");
+                reset();
+                return;
+            }
+
+            const X = data.map(d => d.features);
+            const Y = data.map(d => [d.screenX, d.screenY]);
+            
+            const success = hybridRegressorRef.current.train(X, Y);
+
+            if (!success) {
+                alert("Calibration failed (Math error). Please try again.");
+                reset();
+                return;
+            }
+
+            setCalibPhase(CalibrationPhase.VALIDATION);
+            setCalibPoints(VALIDATION_POINTS);
+            setCurrentCalibIndex(0);
+            validationErrorsRef.current = []; 
         }
-
-        const X = data.map(d => d.features);
-        const Y = data.map(d => [d.screenX, d.screenY]);
-        
-        const success = hybridRegressorRef.current.train(X, Y);
-
-        if (!success) {
-            alert("Calibration failed (Math error). Please try again.");
-            reset();
-            return;
-        }
-
-        // Skip FINE_TUNING, go straight to VALIDATION
-        setCalibPhase(CalibrationPhase.VALIDATION);
-        setCalibPoints(VALIDATION_POINTS);
-        setCurrentCalibIndex(0);
-        validationErrorsRef.current = []; 
     } 
     else if (calibPhase === CalibrationPhase.VALIDATION) {
         const errors = validationErrorsRef.current;
@@ -700,6 +958,12 @@ function App() {
     setCapturedImages([]); // Reset images
     setRecordedVideoUrl(null); // Reset video
     
+    // Reset exercise state
+    setCurrentExerciseIndex(0);
+    exerciseDataRef.current = [];
+    exerciseActiveRef.current = false;
+    exerciseTargetRef.current = null;
+    
     setCalibPhase(CalibrationPhase.INITIAL_MAPPING);
     
     // Generate points based on config
@@ -737,6 +1001,11 @@ function App() {
     trackingHistoryRef.current = [];
     hybridRegressorRef.current = new HybridRegressor();
     setShowHeatmap(false);
+    // Reset exercise state
+    setCurrentExerciseIndex(0);
+    exerciseDataRef.current = [];
+    exerciseActiveRef.current = false;
+    exerciseTargetRef.current = null;
     if (document.fullscreenElement) document.exitFullscreen();
   };
 
@@ -752,7 +1021,7 @@ function App() {
       <video 
         ref={videoRef} 
         className={`fixed top-0 left-0 w-full h-full object-contain transition-opacity duration-300 scale-x-[-1] 
-          ${status === 'HEAD_POSITIONING' ? 'opacity-50' : (showCamera ? 'opacity-30' : 'opacity-0 pointer-events-none')}
+          ${showCamera && status !== 'HEAD_POSITIONING' ? 'opacity-30' : 'opacity-0 pointer-events-none'}
         `} 
         playsInline 
         muted 
@@ -760,7 +1029,7 @@ function App() {
       <canvas
         ref={debugCanvasRef}
         className={`fixed top-0 left-0 w-full h-full object-contain transition-opacity duration-300 pointer-events-none scale-x-[-1] 
-           ${status === 'HEAD_POSITIONING' || showCamera || (headValidation && !headValidation.valid && status !== 'IDLE') ? 'opacity-100' : 'opacity-0'}
+           ${(showCamera || (headValidation && !headValidation.valid && status !== 'IDLE' && status !== 'HEAD_POSITIONING')) ? 'opacity-100' : 'opacity-0'}
         `}
       />
 
@@ -839,20 +1108,43 @@ function App() {
         </div>
       )}
       
-      {/* 
-        Head Guide shows:
-        1. In HEAD_POSITIONING mode (Setup)
-        2. In CALIBRATION mode IF head is INVALID (Interruption)
-        3. In TRACKING mode IF head is INVALID (Interruption)
-      */}
-      {(status === 'HEAD_POSITIONING' || ((status === 'CALIBRATION' || status === 'TRACKING') && headValidation && !headValidation.valid)) && (
+      {/* HEAD_POSITIONING: Contained camera view (like frontend HeadPoseStep) */}
+      {status === 'HEAD_POSITIONING' && (
+        <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col items-center justify-center gap-6 p-8">
+          <div className="text-center">
+            <h2 className="text-xl font-bold text-white uppercase tracking-widest">Head Positioning</h2>
+            <p className="text-sm text-gray-500 mt-1">Center your face inside the box</p>
+          </div>
+
+          <div className="relative w-full max-w-3xl aspect-video rounded-2xl overflow-hidden border-2 border-gray-700 bg-black shadow-2xl">
+            <canvas ref={headPosCanvasRef} className="w-full h-full" />
+            
+            {positionHoldTime != null && positionHoldTime > 0 && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                <div className="text-8xl font-black text-white drop-shadow-lg animate-pulse">
+                  {Math.ceil(positionHoldTime / 1000)}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="text-center bg-gray-900 bg-opacity-90 px-6 py-3 rounded-xl border border-gray-800">
+            <p className={`text-xl font-bold transition-colors duration-300 ${headValidation?.valid ? 'text-green-400' : 'text-red-400'}`}>
+              {headValidation?.message || 'Detecting face...'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Head invalid warning during CALIBRATION / TRACKING */}
+      {((status === 'CALIBRATION' || status === 'TRACKING') && headValidation && !headValidation.valid) && (
          <HeadPositionGuide 
             validation={headValidation} 
-            countdown={status === 'HEAD_POSITIONING' ? positionHoldTime : null} 
+            countdown={null} 
          />
       )}
 
-      {status === 'CALIBRATION' && (
+      {status === 'CALIBRATION' && calibPhase !== CalibrationPhase.EXERCISES && (
         <CalibrationLayer
           points={calibPoints}
           currentPointIndex={currentCalibIndex}
@@ -862,6 +1154,15 @@ function App() {
           progress={calibrationProgress}
           onPointMouseDown={handlePointMouseDown}
           onPointMouseUp={() => handlePointMouseUp(false)}
+        />
+      )}
+
+      {status === 'CALIBRATION' && calibPhase === CalibrationPhase.EXERCISES && (
+        <EyeMovementLayer
+          key={`exercise-${currentExerciseIndex}`}
+          kind={EXERCISE_KINDS[currentExerciseIndex]}
+          targetRef={exerciseTargetRef}
+          onComplete={handleExerciseComplete}
         />
       )}
 

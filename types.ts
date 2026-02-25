@@ -36,6 +36,7 @@ export type AppState = 'IDLE' | 'LOADING_MODEL' | 'HEAD_POSITIONING' | 'CALIBRAT
 
 export enum CalibrationPhase {
   INITIAL_MAPPING = 'INITIAL_MAPPING',
+  EXERCISES = 'EXERCISES',
   FINE_TUNING = 'FINE_TUNING',
   VALIDATION = 'VALIDATION'
 }
@@ -89,6 +90,24 @@ export enum CalibrationMethod {
   CLICK_HOLD = 'CLICK_HOLD' // New click and hold method
 }
 
+// --- EYE MOVEMENT EXERCISE TYPES ---
+export type EyeMovementKind =
+  | 'wiggling'
+  | 'horizontal'
+  | 'vertical'
+  | 'forward_backward'
+  | 'diagonal'
+  | 'h_pattern';
+
+export const EXERCISE_KINDS: EyeMovementKind[] = [
+  'wiggling',
+  'horizontal',
+  'vertical',
+  'forward_backward',
+  'diagonal',
+  'h_pattern',
+];
+
 export interface AppConfig {
   regressionMethod: RegressionMethod;
   smoothingMethod: SmoothingMethod;
@@ -118,6 +137,9 @@ export interface AppConfig {
   
   // Head Positioning
   faceDistance: number; // Target distance in CM (e.g. 50, 60, 70)
+
+  // Eye Movement Exercises (additional calibration patterns for better accuracy)
+  enableExercises: boolean;
 
   // --- RECORDING & CAPTURE ---
   enableVideoRecording: boolean;
@@ -149,6 +171,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   
   // Distance
   faceDistance: 60, // Standard desktop distance (60cm)
+
+  // Exercises
+  enableExercises: true,
 
   // Recording Defaults
   enableVideoRecording: true,

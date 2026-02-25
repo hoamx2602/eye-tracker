@@ -25,6 +25,7 @@ const CalibrationLayer: React.FC<CalibrationLayerProps> = ({
 }) => {
   // Format phase string for display (e.g., "INITIAL_MAPPING" -> "Mapping")
   const phaseLabel = phase === CalibrationPhase.INITIAL_MAPPING ? "Initial Mapping" : 
+                     phase === CalibrationPhase.EXERCISES ? "Eye Exercises" :
                      phase === CalibrationPhase.FINE_TUNING ? "Fine Tuning" : 
                      "Validation";
   

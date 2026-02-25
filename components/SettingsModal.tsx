@@ -127,6 +127,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, onClose }
                      </div>
                  </div>
 
+                 {/* Eye Movement Exercises Toggle */}
+                 <div className="flex items-center justify-between bg-gray-800 p-3 rounded-lg border border-gray-700">
+                    <div>
+                        <div className="text-sm font-bold text-white">Eye Movement Exercises</div>
+                        <div className="text-[10px] text-gray-400">Run 6 extra movement patterns after grid calibration for higher accuracy</div>
+                    </div>
+                    <button 
+                        onClick={() => handleChange('enableExercises', !localConfig.enableExercises)}
+                        className={`w-12 h-6 rounded-full transition-colors relative flex-shrink-0 ${localConfig.enableExercises ? 'bg-cyan-500' : 'bg-gray-600'}`}
+                    >
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${localConfig.enableExercises ? 'left-7' : 'left-1'}`}></div>
+                    </button>
+                 </div>
+
                  <div className="bg-gray-800 p-3 rounded-lg space-y-4 border border-gray-700">
                      <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-300">Setup Distance</span></div>
                      <div>
