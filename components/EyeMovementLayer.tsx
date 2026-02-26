@@ -29,10 +29,11 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
     }
   }, [kind]);
 
-  const path = useMemo(() => {
+    const path = useMemo(() => {
     const pad = 12;
     const min = pad;
     const max = 100 - pad;
+    const center = 50;
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
     const easeInOut = (t: number) => 0.5 - Math.cos(Math.PI * t) / 2;
 
@@ -48,26 +49,29 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
 
       if (kind === 'horizontal') {
         const x = lerp(min, max, 0.5 - Math.cos(2 * Math.PI * e) / 2);
-        return { x, y: 50, scale: 1 };
+        return { x, y: center, scale: 1 };
       }
 
       if (kind === 'vertical') {
         const y = lerp(min, max, 0.5 - Math.cos(2 * Math.PI * e) / 2);
-        return { x: 50, y, scale: 1 };
+        return { x: center, y, scale: 1 };
       }
 
       if (kind === 'forward_backward') {
         const pulse = 0.5 - Math.cos(2 * Math.PI * e) / 2;
         const scale = 0.7 + pulse * 1.1;
-        return { x: 50, y: 50, scale };
+        return { x: center, y: center, scale };
       }
 
+      // Wiggling: Lissajous-like figure spanning full calibration range (same as other exercises).
+      // Previously a=10, b=7 (~20%×14% area) was too small for high-precision eye-tracking.
       if (kind === 'wiggling') {
-        const a = 10;
-        const b = 7;
-        const ang = 2 * Math.PI * e * 2; // 2 loops
-        const x = 50 + a * Math.sin(ang);
-        const y = 50 + b * Math.sin(2 * ang);
+        const amplitude = max - center; // 38% each way → full range [pad, 100-pad]
+        const a = amplitude;
+        const b = amplitude;
+        const ang = 2 * Math.PI * e * 2; // 2 full loops
+        const x = center + a * Math.sin(ang);
+        const y = center + b * Math.sin(2 * ang);
         return { x, y, scale: 1 };
       }
 
@@ -90,7 +94,7 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         const leftX = min;
         const rightX = max;
         const topY = min;
-        const midY = 50;
+        const midY = center;
         const botY = max;
         const { idx, localT } = segment(e, 3);
         const lt = easeInOut(localT);
