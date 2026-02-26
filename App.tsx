@@ -13,6 +13,7 @@ import {
 } from './types';
 import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
 import { HybridRegressor, GazeSmoother, DataCleaner } from './services/mathUtils';
+import { sessionsApi } from './services/api';
 import CalibrationLayer from './components/CalibrationLayer';
 import EyeMovementLayer from './components/EyeMovementLayer';
 import GazeCursor from './components/GazeCursor';
@@ -931,6 +932,14 @@ function App() {
         setLoadingMsg(statusMsg);
         setStatus('LOADING_MODEL'); 
         
+        // Persist session to API (config + validation result)
+        sessionsApi.create({
+          config: configRef.current as unknown as Record<string, unknown>,
+          validationErrors: errors,
+          meanErrorPx: avgError,
+          status: 'completed',
+        }).catch((err) => console.warn('[Session save]', err));
+
         setTimeout(() => {
             // --- START TRACKING & RECORDING ---
             setStatus('TRACKING');

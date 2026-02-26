@@ -1,0 +1,27 @@
+// Prisma schema — PostgreSQL (Neon/Supabase recommended for Vercel serverless)
+// Run: npx prisma migrate dev (local) or npx prisma migrate deploy (CI/production)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Snapshot of app config at session start (JSON)
+  config Json?
+
+  // After calibration: validation errors per point (pixels), mean error
+  validationErrors Float[] @default([])
+  meanErrorPx      Float?
+
+  // Optional: status for future use (e.g. "calibration_completed", "tracking_started")
+  status String? @default("completed")
+}
