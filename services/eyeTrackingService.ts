@@ -36,9 +36,11 @@ export class EyeTrackingService {
 
   /**
    * Checks if the head is positioned correctly for high-quality tracking.
+   * Uses faceDistanceCm from app config to enforce allowed distance (closer = larger face in frame).
    * @param landmarks MediaPipe landmarks
+   * @param faceDistanceCm Target distance in cm (40–90). Used to compute allowed face size in frame.
    */
-  validateHeadPosition(landmarks: NormalizedLandmark[]): HeadValidationResult {
+  validateHeadPosition(landmarks: NormalizedLandmark[], faceDistanceCm: number = 60): HeadValidationResult {
     if (!landmarks) return { valid: false, message: "No Face Detected" };
 
     const nose = landmarks[EyeLandmarkIndices.NOSE_TIP];
@@ -49,8 +51,6 @@ export class EyeTrackingService {
     const centerX = 0.5;
     const centerY = 0.5;
     
-    // STRICTER TOLERANCE: Force the user to be very close to the center.
-    // Previous values (0.15/0.2) were too loose, allowing the face to be halfway out of the box.
     const toleranceX = 0.06; // +/- 6% from center (Total 12% zone)
     const toleranceY = 0.08; // +/- 8% from center (Total 16% zone)
 
@@ -61,16 +61,15 @@ export class EyeTrackingService {
       return { valid: false, message: nose.y < centerY ? "Move Down" : "Move Up" };
     }
 
-    // 2. Size/Distance Check (Face Width)
+    // 2. Size/Distance Check: use config faceDistance (cm) to derive allowed face width in frame.
+    // Closer (smaller cm) → face should be larger. Farther (larger cm) → face smaller.
     const faceWidth = Math.sqrt(Math.pow(rightEdge.x - leftEdge.x, 2) + Math.pow(rightEdge.y - leftEdge.y, 2));
-    
-    // RELAXED LOGIC:
-    // Instead of enforcing a specific CM distance, we ensure the face resolution is good enough for TPS.
-    // Too small (< 15% width): Webcam can't see eyes clearly.
-    // Too big (> 60% width): Face might clip out of frame when looking at corners.
-    
-    if (faceWidth < 0.15) return { valid: false, message: "Move Closer" };
-    if (faceWidth > 0.60) return { valid: false, message: "Move Back" };
+    const D = Math.max(40, Math.min(90, faceDistanceCm));
+    const minFaceWidth = 0.15 + (90 - D) * 0.002; // e.g. 40cm→0.25, 60cm→0.21, 90cm→0.15
+    const maxFaceWidth = 0.58 - (D - 40) * 0.004; // e.g. 40cm→0.58, 60cm→0.48, 90cm→0.38
+
+    if (faceWidth < minFaceWidth) return { valid: false, message: "Move Closer" };
+    if (faceWidth > maxFaceWidth) return { valid: false, message: "Move Back" };
 
     // 3. Tilt Check (Head Rotation)
     const tilt = Math.abs(leftEdge.y - rightEdge.y);

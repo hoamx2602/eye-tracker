@@ -404,7 +404,7 @@ function App() {
               currentFaceLandmarksRef.current = landmarks;
 
               // --- CONTINUOUS HEAD VALIDATION ---
-              const validation = eyeTrackingService.validateHeadPosition(landmarks);
+              const validation = eyeTrackingService.validateHeadPosition(landmarks, configRef.current.faceDistance);
               setHeadValidation(validation);
               isHeadValidRef.current = validation.valid;
 
