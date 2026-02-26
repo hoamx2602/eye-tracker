@@ -143,7 +143,10 @@ function App() {
   const configRef = useRef<AppConfig>(DEFAULT_CONFIG); 
 
   useEffect(() => { statusRef.current = status; }, [status]);
-  
+  useEffect(() => {
+    if (status !== 'CALIBRATION' && status !== 'TRACKING') setLightLevel(null);
+  }, [status]);
+
   const [calibPoints, setCalibPoints] = useState<CalibrationPoint[]>([]);
   const [currentCalibIndex, setCurrentCalibIndex] = useState(0);
   // Dummy state to force re-run of calibration effect for retries. Defined here to be available for useEffect.
@@ -194,11 +197,14 @@ function App() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const [isRecording, setIsRecording] = useState(false);
+  const [lightLevel, setLightLevel] = useState<{ value: number; status: 'too_dark' | 'low' | 'ok' | 'good' } | null>(null);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
   
   // --- FACE CAPTURE STATE ---
   const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
   const lastCaptureTimeRef = useRef<number>(0);
+  const lastBrightnessCheckTimeRef = useRef<number>(0);
+  const brightnessCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // --- LOAD CONFIG ---
   useEffect(() => {
@@ -244,10 +250,12 @@ function App() {
   const startCamera = async () => {
     if (!videoRef.current) return;
     try {
-      // Use default camera constraints for native resolution
+      // Prefer 720p for performance; avoid 4K on weak devices. Face landmarker works well at 720p.
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
-          facingMode: 'user' 
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
         } 
       });
       videoRef.current.srcObject = stream;
@@ -361,6 +369,27 @@ function App() {
       const video = videoRef.current;
       
       if (ctx && canvas && video) {
+          // --- PERIODIC BRIGHTNESS CHECK (measure light for accuracy feedback) ---
+          if (video.readyState >= 2 && video.videoWidth > 0 && (now - lastBrightnessCheckTimeRef.current) > 2000) {
+            lastBrightnessCheckTimeRef.current = now;
+            if (!brightnessCanvasRef.current) brightnessCanvasRef.current = document.createElement('canvas');
+            const bc = brightnessCanvasRef.current;
+            bc.width = 100;
+            bc.height = 100;
+            const bctx = bc.getContext('2d');
+            if (bctx) {
+              bctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, 100, 100);
+              const img = bctx.getImageData(0, 0, 100, 100).data;
+              let sum = 0;
+              for (let i = 0; i < img.length; i += 4)
+                sum += 0.299 * img[i] + 0.587 * img[i + 1] + 0.114 * img[i + 2];
+              const value = Math.round(sum / (100 * 100)); // 0–255
+              const status: 'too_dark' | 'low' | 'ok' | 'good' =
+                value < 45 ? 'too_dark' : value < 70 ? 'low' : value < 110 ? 'ok' : 'good';
+              setLightLevel({ value, status });
+            }
+          }
+
           // Sync size
           if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
               canvas.width = video.videoWidth;
@@ -1144,6 +1173,38 @@ function App() {
          />
       )}
 
+      {/* Light level: measure and notify user for accuracy */}
+      {(status === 'CALIBRATION' || status === 'TRACKING') && lightLevel && (
+        <>
+          {/* Persistent indicator: numeric value + status */}
+          <div
+            className={`fixed top-4 right-4 z-[180] px-3 py-2 rounded-lg border shadow-lg text-sm font-medium flex items-center gap-2 ${
+              lightLevel.status === 'too_dark'
+                ? 'bg-red-900/90 border-red-600 text-red-200'
+                : lightLevel.status === 'low'
+                ? 'bg-amber-900/90 border-amber-600 text-amber-200'
+                : lightLevel.status === 'ok'
+                ? 'bg-gray-800/90 border-gray-600 text-gray-200'
+                : 'bg-green-900/40 border-green-600 text-green-200'
+            }`}
+          >
+            <span aria-hidden>{lightLevel.status === 'good' ? '☀️' : lightLevel.status === 'ok' ? '💡' : '🔦'}</span>
+            <span>
+              Light: <strong>{lightLevel.value}</strong>
+              <span className="opacity-90 ml-1">
+                ({lightLevel.status === 'too_dark' ? 'Too dark' : lightLevel.status === 'low' ? 'Low' : lightLevel.status === 'ok' ? 'OK' : 'Good'})
+              </span>
+            </span>
+          </div>
+          {/* Prominent warning only when too dark */}
+          {lightLevel.status === 'too_dark' && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[181] px-4 py-2 rounded-lg bg-red-900/95 border border-red-500 text-red-100 text-sm font-medium shadow-lg flex items-center gap-2 max-w-md text-center">
+              <span aria-hidden>💡</span>
+              <span>Lighting is too low for accurate tracking. Add front light or move to a brighter area.</span>
+            </div>
+          )}
+        </>
+      )}
       {status === 'CALIBRATION' && calibPhase !== CalibrationPhase.EXERCISES && (
         <CalibrationLayer
           points={calibPoints}
