@@ -28,6 +28,10 @@ import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-visio
 // --- CONFIGURATION ---
 const EDGE_PAD = 4;
 
+/** When true (NEXT_PUBLIC_CALIBRATION_TEST_MODE=1): after first calibration phase (grid) only, save session and go to Tracking. For testing save/storage. */
+const CALIBRATION_TEST_MODE =
+  typeof process !== 'undefined' && process.env.NEXT_PUBLIC_CALIBRATION_TEST_MODE === '1';
+
 // --- DYNAMIC CALIBRATION POINTS GENERATOR ---
 const generateCalibrationPoints = (count: number): CalibrationPoint[] => {
   const points: CalibrationPoint[] = [];
@@ -963,119 +967,114 @@ function App() {
 
   const finishCurrentPhase = () => {
     if (calibPhase === CalibrationPhase.INITIAL_MAPPING) {
+        const data = trainingSamplesRef.current;
+        if (data.length < 5) {
+            alert("Insufficient data points. Please restart calibration.");
+            reset();
+            return;
+        }
+
+        const X = data.map(d => d.features);
+        const Y = data.map(d => [d.screenX, d.screenY]);
+        const success = hybridRegressorRef.current.train(X, Y);
+        if (!success) {
+            alert("Calibration failed (Math error). Please try again.");
+            reset();
+            return;
+        }
+
+        // Test mode: skip EXERCISES + VALIDATION, save session and go to Tracking after first phase
+        if (CALIBRATION_TEST_MODE) {
+            completeCalibrationAndStartTracking([]);
+            return;
+        }
+
         if (configRef.current.enableExercises) {
-            // Don't train yet — collect more data from exercises first
-            console.log(`[Calibration] Grid mapping done with ${trainingSamplesRef.current.length} samples, starting exercises...`);
+            console.log(`[Calibration] Grid mapping done with ${data.length} samples, starting exercises...`);
             setCalibPhase(CalibrationPhase.EXERCISES);
             setCurrentExerciseIndex(0);
             exerciseDataRef.current = [];
             exerciseActiveRef.current = true;
         } else {
-            // Original behavior: train immediately and go to validation
-            const data = trainingSamplesRef.current;
-            if (data.length < 5) {
-                alert("Insufficient data points. Please restart calibration.");
-                reset();
-                return;
-            }
-
-            const X = data.map(d => d.features);
-            const Y = data.map(d => [d.screenX, d.screenY]);
-            
-            const success = hybridRegressorRef.current.train(X, Y);
-
-            if (!success) {
-                alert("Calibration failed (Math error). Please try again.");
-                reset();
-                return;
-            }
-
             setCalibPhase(CalibrationPhase.VALIDATION);
             setCalibPoints(VALIDATION_POINTS);
             setCurrentCalibIndex(0);
-            validationErrorsRef.current = []; 
+            validationErrorsRef.current = [];
         }
-    } 
-    else if (calibPhase === CalibrationPhase.VALIDATION) {
-        const errors = validationErrorsRef.current;
-        const avgError = errors.length > 0 ? errors.reduce((a, b) => a + b, 0) / errors.length : 999;
-        
-        setAccuracyScore(avgError);
-        const isAccuracyGood = avgError < 300; 
-        
-        const statusMsg = isAccuracyGood 
-          ? `Calibration Success! Mean Error: ${Math.round(avgError)}px` 
-          : `Calibration Complete (Accuracy: ${Math.round(avgError)}px)`;
-
-        setLoadingMsg(statusMsg);
-        setStatus('LOADING_MODEL'); 
-        
-        (async () => {
-          setSessionSaveStatus('saving');
-          setSessionSaveError(null);
-          try {
-            const videoBlob = await stopVideoRecordingAndGetBlob();
-            let videoUrl: string | undefined;
-            const calibrationImageUrls: string[] = [];
-
-            const blobToBase64 = (b: Blob): Promise<string> =>
-              new Promise((res, rej) => {
-                const r = new FileReader();
-                r.onload = () => res((r.result as string).split(',')[1] || '');
-                r.onerror = rej;
-                r.readAsDataURL(b);
-              });
-
-            if (videoBlob && videoBlob.size > 0) {
-              const data = await blobToBase64(videoBlob);
-              videoUrl = await uploadApi.upload(data, `calibration-${Date.now()}.webm`, 'video/webm');
-            }
-
-            for (let i = 0; i < calibrationImagesRef.current.length; i++) {
-              const data = await blobToBase64(calibrationImagesRef.current[i]);
-              const u = await uploadApi.upload(data, `calibration-frame-${Date.now()}-${i}.jpg`, 'image/jpeg');
-              calibrationImageUrls.push(u);
-            }
-
-            const calibrationGazeSamples = trainingSamplesRef.current.map((s) => ({
-              screenX: s.screenX,
-              screenY: s.screenY,
-              features: s.features,
-              timestamp: s.timestamp,
-            }));
-
-            await sessionsApi.create({
-              config: configRef.current as unknown as Record<string, unknown>,
-              validationErrors: errors,
-              meanErrorPx: avgError,
-              status: 'completed',
-              videoUrl,
-              calibrationImageUrls: calibrationImageUrls.length > 0 ? calibrationImageUrls : undefined,
-              calibrationGazeSamples,
-            });
-            setSessionSaveStatus('saved');
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            setSessionSaveStatus('error');
-            setSessionSaveError(msg);
-            console.warn('[Session save]', e);
-            alert(`Không lưu được session: ${msg}\n\n• Chạy "npm run dev" (Next.js) — API /api chạy cùng origin, không cần set biến môi trường.\n• Nếu dùng host khác: set NEXT_PUBLIC_API_URL trong .env.local.\n• Kiểm tra DB + S3 đã cấu hình đúng (.env.local).`);
-          }
-        })();
-
-        setTimeout(() => {
-            // --- START TRACKING & RECORDING ---
-            setStatus('TRACKING');
-            statusRef.current = 'TRACKING';
-            smootherRef.current.reset();
-            if(heatmapRef.current) heatmapRef.current.reset();
-            trackingHistoryRef.current = [];
-            
-            if (configRef.current.enableVideoRecording) {
-                startVideoRecording();
-            }
-        }, 1500);
     }
+    else if (calibPhase === CalibrationPhase.VALIDATION) {
+        completeCalibrationAndStartTracking(validationErrorsRef.current);
+    }
+  };
+
+  const completeCalibrationAndStartTracking = (errors: number[]) => {
+    const avgError = errors.length > 0 ? errors.reduce((a, b) => a + b, 0) / errors.length : 0;
+    setAccuracyScore(avgError);
+    const isAccuracyGood = avgError < 300;
+    const statusMsg = isAccuracyGood
+      ? `Calibration Success! Mean Error: ${Math.round(avgError)}px`
+      : errors.length > 0 ? `Calibration Complete (Accuracy: ${Math.round(avgError)}px)` : 'Calibration complete (test mode)';
+    setLoadingMsg(statusMsg);
+    setStatus('LOADING_MODEL');
+
+    (async () => {
+      setSessionSaveStatus('saving');
+      setSessionSaveError(null);
+      try {
+        const videoBlob = await stopVideoRecordingAndGetBlob();
+        let videoUrl: string | undefined;
+        const calibrationImageUrls: string[] = [];
+        const blobToBase64 = (b: Blob): Promise<string> =>
+          new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res((r.result as string).split(',')[1] || '');
+            r.onerror = rej;
+            r.readAsDataURL(b);
+          });
+        if (videoBlob && videoBlob.size > 0) {
+          const data = await blobToBase64(videoBlob);
+          videoUrl = await uploadApi.upload(data, `calibration-${Date.now()}.webm`, 'video/webm');
+        }
+        for (let i = 0; i < calibrationImagesRef.current.length; i++) {
+          const data = await blobToBase64(calibrationImagesRef.current[i]);
+          const u = await uploadApi.upload(data, `calibration-frame-${Date.now()}-${i}.jpg`, 'image/jpeg');
+          calibrationImageUrls.push(u);
+        }
+        const calibrationGazeSamples = trainingSamplesRef.current.map((s) => ({
+          screenX: s.screenX,
+          screenY: s.screenY,
+          features: s.features,
+          timestamp: s.timestamp,
+        }));
+        await sessionsApi.create({
+          config: configRef.current as unknown as Record<string, unknown>,
+          validationErrors: errors,
+          meanErrorPx: errors.length > 0 ? avgError : undefined,
+          status: 'completed',
+          videoUrl,
+          calibrationImageUrls: calibrationImageUrls.length > 0 ? calibrationImageUrls : undefined,
+          calibrationGazeSamples,
+        });
+        setSessionSaveStatus('saved');
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setSessionSaveStatus('error');
+        setSessionSaveError(msg);
+        console.warn('[Session save]', e);
+        alert(`Không lưu được session: ${msg}\n\n• Chạy "npm run dev" (Next.js) — API /api chạy cùng origin, không cần set biến môi trường.\n• Nếu dùng host khác: set NEXT_PUBLIC_API_URL trong .env.local.\n• Kiểm tra DB + S3 đã cấu hình đúng (.env.local).`);
+      }
+    })();
+
+    setTimeout(() => {
+      setStatus('TRACKING');
+      statusRef.current = 'TRACKING';
+      smootherRef.current.reset();
+      if (heatmapRef.current) heatmapRef.current.reset();
+      trackingHistoryRef.current = [];
+      if (configRef.current.enableVideoRecording) {
+        startVideoRecording();
+      }
+    }, 1500);
   };
 
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
