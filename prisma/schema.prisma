@@ -31,3 +31,14 @@ model Session {
   // Eye tracking data during calibration: array of { screenX, screenY, features?, timestamp? }
   calibrationGazeSamples Json?
 }
+
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("admins")
+}
