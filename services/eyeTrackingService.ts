@@ -64,8 +64,9 @@ export class EyeTrackingService {
     const toleranceX = 0.06; // +/- 6% from center (Total 12% zone)
     const toleranceY = 0.08; // +/- 8% from center (Total 16% zone)
 
+    // Mirror-aware: video is shown flipped, so swap Left/Right so instructions match what user sees
     if (Math.abs(nose.x - centerX) > toleranceX) {
-      return { valid: false, message: nose.x < centerX ? "Move Right" : "Move Left", debug };
+      return { valid: false, message: nose.x < centerX ? "Move Left" : "Move Right", debug };
     }
     if (Math.abs(nose.y - centerY) > toleranceY) {
       return { valid: false, message: nose.y < centerY ? "Move Down" : "Move Up", debug };
