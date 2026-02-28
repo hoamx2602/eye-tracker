@@ -8,7 +8,7 @@ import { getAdminCookieName, verifyAdminToken } from '@/lib/admin-auth';
 
 const ADMIN_LOGIN = '/admin/login';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   // Allow /admin/login without auth
   if (pathname === ADMIN_LOGIN) {
