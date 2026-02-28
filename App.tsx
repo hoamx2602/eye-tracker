@@ -1057,7 +1057,7 @@ function App() {
             setSessionSaveStatus('error');
             setSessionSaveError(msg);
             console.warn('[Session save]', e);
-            alert(`Không lưu được session: ${msg}\n\nKiểm tra: đang chạy "vercel dev" (không dùng "npm run dev") hoặc đã set VITE_API_URL? DB + S3 đã cấu hình đúng?`);
+            alert(`Không lưu được session: ${msg}\n\n• Đang chạy "npm run dev" (Vite): cần set VITE_API_URL trong .env trỏ tới app đã deploy (vd: https://eye-tracker-xxx.vercel.app) để gọi API.\n• Hoặc chạy "npm run dev:vercel" để có API ngay trên máy.\n• Kiểm tra DB + S3 đã cấu hình đúng.`);
           }
         })();
 

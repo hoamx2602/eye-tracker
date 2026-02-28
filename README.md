@@ -17,8 +17,10 @@ Web-based eye tracking (MediaPipe Face Mesh, calibration, TPS/hybrid regression)
    - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET`
 4. Run migrations (first time or after schema change): `npm run db:migrate:dev` (or `npm run db:migrate` for production).
 5. **Chạy app:**
-   - **Để lưu session (API hoạt động):** dùng `npm run dev:vercel` (tức `vercel dev`). Cần [Vercel CLI](https://vercel.com/docs/cli) (`npm i -g vercel` hoặc `npx vercel dev`). Lệnh này chạy cả frontend và API `/api` local, nên upload + lưu DB sẽ hoạt động.
-   - Chỉ chạy `npm run dev` (Vite thuần): frontend chạy nhưng **không có** API `/api` → sau calibration sẽ báo lỗi "Không lưu được session" (fetch /api/upload và /api/sessions bị 404).
+   - **Để lưu session (API hoạt động):**
+     - **Cách 1:** `npm run dev:vercel` — chạy cả frontend + API trên máy (cần [Vercel CLI](https://vercel.com/docs/cli)).
+     - **Cách 2:** Chỉ chạy `npm run dev` (Vite) nhưng **set trong `.env`:** `VITE_API_URL=https://your-app.vercel.app` (URL app đã deploy trên Vercel). Khi đó frontend sẽ gọi API trên bản deploy, lưu session được mà không cần `vercel dev`.
+   - Chỉ chạy `npm run dev` mà **không** set `VITE_API_URL`: frontend chạy nhưng không có API → sau calibration báo lỗi "Không lưu được session" (404).
 
 ## API
 

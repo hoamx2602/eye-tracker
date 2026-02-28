@@ -1,10 +1,5 @@
 {
   "buildCommand": "prisma generate && vite build",
   "outputDirectory": "dist",
-  "framework": null,
-  "functions": {
-    "api/**/*.js": {
-      "runtime": "nodejs20.x"
-    }
-  }
+  "framework": null
 }
