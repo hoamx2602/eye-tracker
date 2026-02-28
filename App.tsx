@@ -23,6 +23,8 @@ import HeatmapLayer, { HeatmapRef } from './components/HeatmapLayer';
 import SettingsModal from './components/SettingsModal';
 import HeadPositionGuide from './components/HeadPositionGuide';
 import DiagnosticsPanel from './components/DiagnosticsPanel';
+import ConsentModal from './components/ConsentModal';
+import DemographicsForm, { type DemographicsData } from './components/DemographicsForm';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -139,7 +141,10 @@ function App() {
   const [loadingMsg, setLoadingMsg] = useState('');
   const [sessionSaveStatus, setSessionSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [sessionSaveError, setSessionSaveError] = useState<string | null>(null);
-  
+  const [showConsentModal, setShowConsentModal] = useState(false);
+  const [showDemographicsForm, setShowDemographicsForm] = useState(false);
+  const demographicsRef = useRef<DemographicsData | null>(null);
+
   // Head Positioning State
   const [headValidation, setHeadValidation] = useState<HeadValidationResult | null>(null);
   const [positionHoldTime, setPositionHoldTime] = useState<number | null>(null);
@@ -1047,7 +1052,10 @@ function App() {
           timestamp: s.timestamp,
         }));
         await sessionsApi.create({
-          config: configRef.current as unknown as Record<string, unknown>,
+          config: {
+            ...(configRef.current as unknown as Record<string, unknown>),
+            ...(demographicsRef.current ? { demographics: demographicsRef.current } : {}),
+          } as unknown as Record<string, unknown>,
           validationErrors: errors,
           meanErrorPx: errors.length > 0 ? avgError : undefined,
           status: 'completed',
@@ -1103,7 +1111,26 @@ function App() {
       console.warn("Fullscreen denied", e);
     }
     await startCamera();
+    setShowDemographicsForm(false);
     setStatus('HEAD_POSITIONING');
+  };
+
+  const handleStartCalibrationClick = () => {
+    setShowConsentModal(true);
+  };
+
+  const handleConsentAgree = () => {
+    setShowConsentModal(false);
+    setShowDemographicsForm(true);
+  };
+
+  const handleConsentDecline = () => {
+    setShowConsentModal(false);
+  };
+
+  const handleDemographicsSubmit = (data: DemographicsData) => {
+    demographicsRef.current = data;
+    handleStartProcess();
   };
 
   const startActualCalibration = () => {
@@ -1160,6 +1187,7 @@ function App() {
   const reset = () => {
     stopVideoRecording();
     setStatus('IDLE');
+    demographicsRef.current = null;
     setTrainingData([]);
     trainingSamplesRef.current = [];
     trackingHistoryRef.current = [];
@@ -1205,6 +1233,21 @@ function App() {
         />
       )}
 
+      {showConsentModal && (
+        <ConsentModal
+          open={showConsentModal}
+          onAgree={handleConsentAgree}
+          onDecline={handleConsentDecline}
+        />
+      )}
+
+      {showDemographicsForm && (
+        <DemographicsForm
+          onSubmit={handleDemographicsSubmit}
+          onBack={() => setShowDemographicsForm(false)}
+        />
+      )}
+
       {status === 'IDLE' && (
         <div className="flex flex-col items-center justify-center h-full space-y-8 p-4 z-10 relative">
           <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
@@ -1246,7 +1289,7 @@ function App() {
 
           <div className="flex space-x-4">
             <button
-                onClick={handleStartProcess}
+                onClick={handleStartCalibrationClick}
                 className="group relative px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-full transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(37,99,235,0.5)]"
             >
                 Start Calibration
