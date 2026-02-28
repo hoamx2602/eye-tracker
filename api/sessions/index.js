@@ -31,13 +31,27 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-      const { config, validationErrors, meanErrorPx, status } = body;
+      const {
+        config,
+        validationErrors,
+        meanErrorPx,
+        status,
+        videoUrl,
+        calibrationImageUrls,
+        calibrationGazeSamples,
+      } = body;
       const session = await prisma.session.create({
         data: {
           config: config ?? undefined,
           validationErrors: Array.isArray(validationErrors) ? validationErrors : [],
           meanErrorPx: typeof meanErrorPx === 'number' ? meanErrorPx : null,
           status: typeof status === 'string' ? status : 'completed',
+          videoUrl: typeof videoUrl === 'string' ? videoUrl : null,
+          calibrationImageUrls: Array.isArray(calibrationImageUrls) ? calibrationImageUrls : null,
+          calibrationGazeSamples:
+            Array.isArray(calibrationGazeSamples) || calibrationGazeSamples === null
+              ? calibrationGazeSamples
+              : undefined,
         },
       });
       return res.status(201).json(session);

@@ -22,6 +22,12 @@ model Session {
   validationErrors Float[] @default([])
   meanErrorPx      Float?
 
-  // Optional: status for future use (e.g. "calibration_completed", "tracking_started")
   status String? @default("completed")
+
+  // Calibration capture: video + images (URLs from blob storage)
+  videoUrl             String? @db.Text
+  calibrationImageUrls Json?   // string[]
+
+  // Eye tracking data during calibration: array of { screenX, screenY, features?, timestamp? }
+  calibrationGazeSamples Json?
 }

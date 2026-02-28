@@ -30,6 +30,7 @@ export interface TrainingSample {
   screenX: number;
   screenY: number;
   features: number[]; // Flattened vector for regression
+  timestamp?: number; // For API export (calibration capture)
 }
 
 export type AppState = 'IDLE' | 'LOADING_MODEL' | 'HEAD_POSITIONING' | 'CALIBRATION' | 'TRACKING';

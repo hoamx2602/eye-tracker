@@ -13,7 +13,7 @@ import {
 } from './types';
 import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
 import { HybridRegressor, GazeSmoother, DataCleaner } from './services/mathUtils';
-import { sessionsApi } from './services/api';
+import { sessionsApi, uploadApi } from './services/api';
 import CalibrationLayer from './components/CalibrationLayer';
 import EyeMovementLayer from './components/EyeMovementLayer';
 import GazeCursor from './components/GazeCursor';
@@ -131,6 +131,8 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [status, setStatus] = useState<AppState>('IDLE');
   const [loadingMsg, setLoadingMsg] = useState('');
+  const [sessionSaveStatus, setSessionSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [sessionSaveError, setSessionSaveError] = useState<string | null>(null);
   
   // Head Positioning State
   const [headValidation, setHeadValidation] = useState<HeadValidationResult | null>(null);
@@ -197,9 +199,11 @@ function App() {
   // --- RECORDING STATE ---
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  const recordingResolveRef = useRef<((b: Blob | null) => void) | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [lightLevel, setLightLevel] = useState<{ value: number; status: 'too_dark' | 'low' | 'ok' | 'good' } | null>(null);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
+  const calibrationImagesRef = useRef<Blob[]>([]);
   
   // --- FACE CAPTURE STATE ---
   const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
@@ -293,6 +297,10 @@ function App() {
         
         recorder.onstop = () => {
             const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+            if (recordingResolveRef.current) {
+              recordingResolveRef.current(blob);
+              recordingResolveRef.current = null;
+            }
             const url = URL.createObjectURL(blob);
             setRecordedVideoUrl(url);
             recordedChunksRef.current = [];
@@ -313,6 +321,38 @@ function App() {
         mediaRecorderRef.current.stop();
         setIsRecording(false);
     }
+  };
+
+  const stopVideoRecordingAndGetBlob = (): Promise<Blob | null> => {
+    return new Promise((resolve) => {
+      if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
+        resolve(null);
+        return;
+      }
+      recordingResolveRef.current = resolve;
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    });
+  };
+
+  const captureCurrentFrameAsBlob = (): Promise<Blob | null> => {
+    return new Promise((resolve) => {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2 || video.videoWidth === 0) {
+        resolve(null);
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(null);
+        return;
+      }
+      ctx.drawImage(video, 0, 0);
+      canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
+    });
   };
 
   // --- FACE CAPTURE LOGIC ---
@@ -754,9 +794,10 @@ function App() {
         const screenY = (point.y / 100) * window.innerHeight;
 
         if (calibPhase !== CalibrationPhase.VALIDATION) {
-            const newSample: TrainingSample = { screenX, screenY, features: avgVector };
+            const newSample: TrainingSample = { screenX, screenY, features: avgVector, timestamp: Date.now() };
             trainingSamplesRef.current.push(newSample);
             setTrainingData([...trainingSamplesRef.current]);
+            captureCurrentFrameAsBlob().then((b) => b && calibrationImagesRef.current.push(b));
         } else {
             const prediction = hybridRegressorRef.current.predict(avgVector, configRef.current.regressionMethod);
             const err = Math.sqrt(Math.pow(prediction.x - screenX, 2) + Math.pow(prediction.y - screenY, 2));
@@ -830,10 +871,12 @@ function App() {
         screenX: avgX,
         screenY: avgY,
         features: avgFeatures,
+        timestamp: Date.now(),
       });
       added++;
     }
 
+    captureCurrentFrameAsBlob().then((b) => b && calibrationImagesRef.current.push(b));
     const kindName = EXERCISE_KINDS[currentExerciseIndex] || 'unknown';
     console.log(`[Exercise:${kindName}] Added ${added} samples from ${data.length} raw frames`);
     setTrainingData([...trainingSamplesRef.current]);
@@ -932,13 +975,58 @@ function App() {
         setLoadingMsg(statusMsg);
         setStatus('LOADING_MODEL'); 
         
-        // Persist session to API (config + validation result)
-        sessionsApi.create({
-          config: configRef.current as unknown as Record<string, unknown>,
-          validationErrors: errors,
-          meanErrorPx: avgError,
-          status: 'completed',
-        }).catch((err) => console.warn('[Session save]', err));
+        (async () => {
+          setSessionSaveStatus('saving');
+          setSessionSaveError(null);
+          try {
+            const videoBlob = await stopVideoRecordingAndGetBlob();
+            let videoUrl: string | undefined;
+            const calibrationImageUrls: string[] = [];
+
+            const blobToBase64 = (b: Blob): Promise<string> =>
+              new Promise((res, rej) => {
+                const r = new FileReader();
+                r.onload = () => res((r.result as string).split(',')[1] || '');
+                r.onerror = rej;
+                r.readAsDataURL(b);
+              });
+
+            if (videoBlob && videoBlob.size > 0) {
+              const data = await blobToBase64(videoBlob);
+              videoUrl = await uploadApi.upload(data, `calibration-${Date.now()}.webm`, 'video/webm');
+            }
+
+            for (let i = 0; i < calibrationImagesRef.current.length; i++) {
+              const data = await blobToBase64(calibrationImagesRef.current[i]);
+              const u = await uploadApi.upload(data, `calibration-frame-${Date.now()}-${i}.jpg`, 'image/jpeg');
+              calibrationImageUrls.push(u);
+            }
+
+            const calibrationGazeSamples = trainingSamplesRef.current.map((s) => ({
+              screenX: s.screenX,
+              screenY: s.screenY,
+              features: s.features,
+              timestamp: s.timestamp,
+            }));
+
+            await sessionsApi.create({
+              config: configRef.current as unknown as Record<string, unknown>,
+              validationErrors: errors,
+              meanErrorPx: avgError,
+              status: 'completed',
+              videoUrl,
+              calibrationImageUrls: calibrationImageUrls.length > 0 ? calibrationImageUrls : undefined,
+              calibrationGazeSamples,
+            });
+            setSessionSaveStatus('saved');
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            setSessionSaveStatus('error');
+            setSessionSaveError(msg);
+            console.warn('[Session save]', e);
+            alert(`Không lưu được session: ${msg}\n\nKiểm tra: đang chạy "vercel dev" (không dùng "npm run dev") hoặc đã set VITE_API_URL? DB + S3 đã cấu hình đúng?`);
+          }
+        })();
 
         setTimeout(() => {
             // --- START TRACKING & RECORDING ---
@@ -1008,6 +1096,10 @@ function App() {
     const points = generateCalibrationPoints(configRef.current.calibrationPointsCount);
     setCalibPoints(points);
     
+    calibrationImagesRef.current = [];
+    startVideoRecording();
+    setSessionSaveStatus('idle');
+    setSessionSaveError(null);
     setStatus('CALIBRATION');
   };
 
@@ -1142,6 +1234,11 @@ function App() {
             <p className={`animate-pulse font-bold ${accuracyScore && accuracyScore > 400 ? 'text-orange-400' : 'text-blue-300'}`}>
               {loadingMsg}
             </p>
+            {sessionSaveStatus === 'saving' && <p className="text-sm text-gray-400">Đang lưu session...</p>}
+            {sessionSaveStatus === 'saved' && <p className="text-sm text-green-400">Đã lưu session.</p>}
+            {sessionSaveStatus === 'error' && sessionSaveError && (
+              <p className="text-sm text-red-400 max-w-md text-center">{sessionSaveError}</p>
+            )}
           </div>
         </div>
       )}

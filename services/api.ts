@@ -4,10 +4,11 @@
  */
 
 const getBaseUrl = (): string => {
-  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) {
-    return (import.meta.env as { VITE_API_URL?: string }).VITE_API_URL.replace(/\/$/, '');
-  }
-  return ''; // same origin → /api/...
+  try {
+    const env = (import.meta as unknown as { env?: { VITE_API_URL?: string } }).env;
+    if (env?.VITE_API_URL) return env.VITE_API_URL.replace(/\/$/, '');
+  } catch (_) {}
+  return '';
 };
 
 export interface CreateSessionPayload {
@@ -15,6 +16,9 @@ export interface CreateSessionPayload {
   validationErrors?: number[];
   meanErrorPx?: number;
   status?: string;
+  videoUrl?: string;
+  calibrationImageUrls?: string[];
+  calibrationGazeSamples?: Array<{ screenX: number; screenY: number; features?: number[]; timestamp?: number }>;
 }
 
 export interface Session {
@@ -25,6 +29,9 @@ export interface Session {
   validationErrors: number[];
   meanErrorPx: number | null;
   status: string | null;
+  videoUrl: string | null;
+  calibrationImageUrls: string[] | null;
+  calibrationGazeSamples: unknown;
 }
 
 export const sessionsApi = {
@@ -51,5 +58,19 @@ export const sessionsApi = {
     });
     if (!res.ok) throw new Error(`Session create failed: ${res.status}`);
     return res.json();
+  },
+};
+
+/** Upload a file (base64) to blob storage; returns URL. */
+export const uploadApi = {
+  async upload(base64Data: string, filename: string, contentType?: string): Promise<string> {
+    const res = await fetch(`${getBaseUrl()}/api/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: base64Data, filename, contentType }),
+    });
+    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+    const { url } = await res.json();
+    return url;
   },
 };
