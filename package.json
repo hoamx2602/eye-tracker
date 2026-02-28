@@ -10,25 +10,30 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:seed": "tsx scripts/seed-admin.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.998.0",
     "@mediapipe/camera_utils": "^0.3.1675466862",
     "@mediapipe/tasks-vision": "^0.10.32",
     "@prisma/client": "^5.22.0",
+    "bcryptjs": "^3.0.3",
     "next": "^16.1.6",
     "prisma": "^5.22.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.14.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "autoprefixer": "^10.4.20",
+    "dotenv": "^17.3.1",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
+    "tsx": "^4.21.0",
     "typescript": "~5.8.2"
   }
 }
