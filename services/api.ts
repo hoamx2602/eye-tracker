@@ -1,12 +1,13 @@
 /**
- * API client for backend (Vercel serverless /api).
- * Base URL: VITE_API_URL or same origin (for Vercel deploy).
+ * API client for backend (Next.js /api or optional NEXT_PUBLIC_API_URL).
+ * With next dev / same origin: no env needed. Optional: set NEXT_PUBLIC_API_URL for different host.
  */
 
 const getBaseUrl = (): string => {
+  if (typeof window === 'undefined') return '';
   try {
-    const env = (import.meta as unknown as { env?: { VITE_API_URL?: string } }).env;
-    if (env?.VITE_API_URL) return env.VITE_API_URL.replace(/\/$/, '');
+    const url = (process.env as { NEXT_PUBLIC_API_URL?: string }).NEXT_PUBLIC_API_URL;
+    if (url) return url.replace(/\/$/, '');
   } catch (_) {}
   return '';
 };

@@ -2,12 +2,11 @@
   "name": "precision-eye-tracker",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:vercel": "vercel dev",
-    "build": "prisma generate && vite build",
-    "preview": "vite preview",
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "next lint",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
@@ -18,16 +17,18 @@
     "@mediapipe/camera_utils": "^0.3.1675466862",
     "@mediapipe/tasks-vision": "^0.10.32",
     "@prisma/client": "^5.22.0",
+    "next": "^16.1.6",
     "prisma": "^5.22.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.2.0",
     "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "tailwindcss": "^4.2.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "~5.8.2"
   }
 }

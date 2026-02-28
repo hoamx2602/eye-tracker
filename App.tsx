@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { 
   AppState, 
@@ -193,7 +195,7 @@ function App() {
   const collectionBufferRef = useRef<number[][]>([]);
   const trainingSamplesRef = useRef<TrainingSample[]>([]);
   const validationErrorsRef = useRef<number[]>([]); 
-  const timerRef = useRef<number[]>([]);
+  const timerRef = useRef<(number | ReturnType<typeof setTimeout>)[]>([]);
   const trackingHistoryRef = useRef<GazeRecord[]>([]);
 
   // Refs for click hold logic
@@ -1057,7 +1059,7 @@ function App() {
             setSessionSaveStatus('error');
             setSessionSaveError(msg);
             console.warn('[Session save]', e);
-            alert(`Không lưu được session: ${msg}\n\n• Đang chạy "npm run dev" (Vite): cần set VITE_API_URL trong .env trỏ tới app đã deploy (vd: https://eye-tracker-xxx.vercel.app) để gọi API.\n• Hoặc chạy "npm run dev:vercel" để có API ngay trên máy.\n• Kiểm tra DB + S3 đã cấu hình đúng.`);
+            alert(`Không lưu được session: ${msg}\n\n• Chạy "npm run dev" (Next.js) — API /api chạy cùng origin, không cần set biến môi trường.\n• Nếu dùng host khác: set NEXT_PUBLIC_API_URL trong .env.local.\n• Kiểm tra DB + S3 đã cấu hình đúng (.env.local).`);
           }
         })();
 

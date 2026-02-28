@@ -21,10 +21,14 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
   isBlinking,
   status
 }) => {
-  // Initial position: Bottom Left, slightly padded
-  const [position, setPosition] = useState({ x: 16, y: typeof window !== 'undefined' ? window.innerHeight - 220 : 500 });
+  // Initial position: same on server and client to avoid hydration mismatch; then sync from window after mount
+  const [position, setPosition] = useState({ x: 16, y: 500 });
   const isDragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    setPosition({ x: 16, y: window.innerHeight - 220 });
+  }, []);
 
   useEffect(() => {
      // Handle window resize to keep it on screen roughly

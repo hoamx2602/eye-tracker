@@ -4,7 +4,7 @@
 
 # Precision Eye Tracker
 
-Web-based eye tracking (MediaPipe Face Mesh, calibration, TPS/hybrid regression). Deployable on Vercel with API + PostgreSQL.
+Web-based eye tracking (MediaPipe Face Mesh, calibration, TPS/hybrid regression). **Next.js** app deployable on Vercel with API routes + PostgreSQL.
 
 ## Run locally
 
@@ -12,26 +12,22 @@ Web-based eye tracking (MediaPipe Face Mesh, calibration, TPS/hybrid regression)
 
 1. Install dependencies: `npm install`
 2. (Optional) Set `GEMINI_API_KEY` in `.env.local` if you use Gemini features.
-3. **API + DB + S3:** Copy `.env.example` to `.env` and set:
+3. **API + DB + S3:** Copy `.env.example` to `.env.local` and set:
    - `DATABASE_URL` (PostgreSQL, e.g. Neon or Supabase pooled)
    - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET`
 4. Run migrations (first time or after schema change): `npm run db:migrate:dev` (or `npm run db:migrate` for production).
-5. **Chạy app:**
-   - **Để lưu session (API hoạt động):**
-     - **Cách 1:** `npm run dev:vercel` — chạy cả frontend + API trên máy (cần [Vercel CLI](https://vercel.com/docs/cli)).
-     - **Cách 2:** Chỉ chạy `npm run dev` (Vite) nhưng **set trong `.env`:** `VITE_API_URL=https://your-app.vercel.app` (URL app đã deploy trên Vercel). Khi đó frontend sẽ gọi API trên bản deploy, lưu session được mà không cần `vercel dev`.
-   - Chỉ chạy `npm run dev` mà **không** set `VITE_API_URL`: frontend chạy nhưng không có API → sau calibration báo lỗi "Không lưu được session" (404).
+5. **Chạy app:** `npm run dev` — chạy cả frontend và API (Next.js) tại http://localhost:3000. Không cần Vercel CLI; `/api/upload` và `/api/sessions` chạy ngay trên máy.
 
 ## API
 
-- **Base URL:** Same origin `/api` (or set `VITE_API_URL` for a different host).
+- **Base URL:** Same origin `/api` (optional: set `NEXT_PUBLIC_API_URL` in `.env.local` for a different host).
 - **Endpoints:**
   - `GET /api/sessions` — list sessions (query: `limit`, `cursor`).
   - `POST /api/sessions` — create session (body: `config`, `validationErrors`, `meanErrorPx`, `status`, `videoUrl`, `calibrationImageUrls`, `calibrationGazeSamples`).
   - `GET /api/sessions/:id` — get one session.
-  - `POST /api/upload` — upload a file (body: `data` base64, `filename`, `contentType`). Uploads to **AWS S3**, returns `{ url }`. Requires `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET`.
+  - `POST /api/upload` — upload a file (body: `data` base64, `filename`, `contentType`). Uploads to **AWS S3**, returns `{ url }`. Requires `AWS_*` env vars.
 
-The frontend records **video** and captures **images** during calibration, uploads them via `/api/upload`, then saves the session (including eye-tracking gaze samples) via `POST /api/sessions`.
+The frontend records **video** and captures **images** during calibration, uploads them via `/api/upload`, then saves the session via `POST /api/sessions`.
 
 ## Database & migrations
 
@@ -46,6 +42,6 @@ Use a **pooled** connection string for serverless (Neon/Supabase) to avoid conne
 
 1. Connect the repo to Vercel.
 2. Add env vars: `DATABASE_URL` (PostgreSQL, pooled), and for uploads: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET`.
-3. Build runs `prisma generate && vite build`; API is under `api/` (Node 20).
+3. Build runs `prisma generate && next build`; API routes are under `app/api/`.
 
 No need to run migrations on Vercel at deploy time if you run them in CI or once per DB (e.g. `npm run db:migrate` in a GitHub Action or after creating a new DB).
