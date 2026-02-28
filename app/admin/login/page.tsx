@@ -28,9 +28,9 @@ export default function AdminLoginPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 401) {
-          setError('Email hoặc mật khẩu không đúng.');
+          setError('Invalid email or password.');
         } else {
-          setError(data.error || 'Đăng nhập thất bại.');
+          setError(data.error || 'Login failed.');
         }
         setLoading(false);
         return;
@@ -38,7 +38,7 @@ export default function AdminLoginPage() {
       router.push(from);
       router.refresh();
     } catch {
-      setError('Lỗi kết nối. Vui lòng thử lại.');
+      setError('Connection error. Please try again.');
       setLoading(false);
     }
   }
@@ -47,7 +47,7 @@ export default function AdminLoginPage() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-slate-100 p-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-semibold">Đăng nhập Admin</h1>
+          <h1 className="text-2xl font-semibold">Admin Login</h1>
           <p className="text-slate-400 text-sm mt-1">Eye Tracker Admin</p>
         </div>
 
@@ -74,7 +74,7 @@ export default function AdminLoginPage() {
           </div>
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-1">
-              Mật khẩu
+              Password
             </label>
             <input
               id="password"
@@ -92,13 +92,13 @@ export default function AdminLoginPage() {
             disabled={loading}
             className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+            {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
 
         <p className="text-center text-sm text-slate-400">
           <Link href="/" className="text-blue-400 hover:text-blue-300 underline">
-            Quay lại app
+            Back to app
           </Link>
         </p>
       </div>
