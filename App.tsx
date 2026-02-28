@@ -140,6 +140,8 @@ function App() {
   const [stableFrameCount, setStableFrameCount] = useState(0);
   const headPosStartTimeRef = useRef<number | null>(null);
   const lastHeadDebugLogRef = useRef<number>(0);
+  const calibrationResumeRef = useRef(false); // true when we returned to HEAD_POSITIONING from CALIBRATION (resume same step)
+  const headInvalidSinceRef = useRef<number | null>(null); // debounce: head invalid start time
   
   const hybridRegressorRef = useRef<HybridRegressor>(new HybridRegressor());
   const [calibPhase, setCalibPhase] = useState<CalibrationPhase>(CalibrationPhase.INITIAL_MAPPING);
@@ -484,13 +486,30 @@ function App() {
                       if (remaining === 0) {
                           headPosStartTimeRef.current = null;
                           setPositionHoldTime(null);
-                          startActualCalibration();
+                          if (calibrationResumeRef.current) {
+                              calibrationResumeRef.current = false;
+                              setStatus('CALIBRATION');
+                          } else {
+                              startActualCalibration();
+                          }
                       }
                   } else {
                       setStableFrameCount(0);
                       headPosStartTimeRef.current = null;
                       setPositionHoldTime(null);
                   }
+              }
+
+              // During CALIBRATION: if head invalid (wrong distance / off-center), return to Head Positioning after short debounce
+              if (statusRef.current === 'CALIBRATION' && !validation.valid) {
+                  if (headInvalidSinceRef.current === null) headInvalidSinceRef.current = now;
+                  else if (now - headInvalidSinceRef.current > 500) {
+                      headInvalidSinceRef.current = null;
+                      calibrationResumeRef.current = true;
+                      setStatus('HEAD_POSITIONING');
+                  }
+              } else if (statusRef.current === 'CALIBRATION' && validation.valid) {
+                  headInvalidSinceRef.current = null;
               }
 
               // Draw Face Mesh on debugCanvas (skip during HEAD_POSITIONING — handled by headPosCanvas)
