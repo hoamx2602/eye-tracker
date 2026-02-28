@@ -137,7 +137,9 @@ function App() {
   // Head Positioning State
   const [headValidation, setHeadValidation] = useState<HeadValidationResult | null>(null);
   const [positionHoldTime, setPositionHoldTime] = useState<number | null>(null);
+  const [stableFrameCount, setStableFrameCount] = useState(0);
   const headPosStartTimeRef = useRef<number | null>(null);
+  const lastHeadDebugLogRef = useRef<number>(0);
   
   const hybridRegressorRef = useRef<HybridRegressor>(new HybridRegressor());
   const [calibPhase, setCalibPhase] = useState<CalibrationPhase>(CalibrationPhase.INITIAL_MAPPING);
@@ -148,6 +150,9 @@ function App() {
   useEffect(() => { statusRef.current = status; }, [status]);
   useEffect(() => {
     if (status !== 'CALIBRATION' && status !== 'TRACKING') setLightLevel(null);
+  }, [status]);
+  useEffect(() => {
+    if (status !== 'HEAD_POSITIONING') setStableFrameCount(0);
   }, [status]);
 
   const [calibPoints, setCalibPoints] = useState<CalibrationPoint[]>([]);
@@ -449,6 +454,12 @@ function App() {
               setHeadValidation(validation);
               isHeadValidRef.current = validation.valid;
 
+              // Debug log (throttled) during Head Positioning so user can see values in Console
+              if (statusRef.current === 'HEAD_POSITIONING' && validation.debug && now - lastHeadDebugLogRef.current > 500) {
+                lastHeadDebugLogRef.current = now;
+                console.log('[Head Position]', validation.valid ? 'OK' : validation.message, '| faceWidth:', validation.debug.faceWidth.toFixed(3), 'min:', validation.debug.minFaceWidth.toFixed(3), 'max:', validation.debug.maxFaceWidth.toFixed(3), 'target:', validation.debug.targetDistanceCm + 'cm');
+              }
+
               // --- PERIODIC FACE CAPTURE (Only during Tracking) ---
               if (statusRef.current === 'TRACKING' && configRef.current.faceCaptureInterval > 0) {
                   const intervalMs = configRef.current.faceCaptureInterval * 1000;
@@ -462,6 +473,7 @@ function App() {
               
               if (statusRef.current === 'HEAD_POSITIONING') {
                   if (validation.valid) {
+                      setStableFrameCount(c => c + 1);
                       if (!headPosStartTimeRef.current) {
                           headPosStartTimeRef.current = now;
                       }
@@ -475,6 +487,7 @@ function App() {
                           startActualCalibration();
                       }
                   } else {
+                      setStableFrameCount(0);
                       headPosStartTimeRef.current = null;
                       setPositionHoldTime(null);
                   }
@@ -637,16 +650,17 @@ function App() {
       ctx.fill();
       ctx.globalAlpha = 1;
 
-      // Draw face mesh dots (mirrored)
+      // Draw face mesh: all 478 landmarks — always green; only the box shows pass/fail (red/green)
       const lm = currentFaceLandmarksRef.current;
       if (lm && lm.length > 0) {
-        ctx.fillStyle = valid ? 'rgba(56, 189, 248, 0.45)' : 'rgba(251, 146, 60, 0.45)';
-        for (let i = 0; i < lm.length; i += 2) {
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.95)';
+        const r = 1.5;
+        for (let i = 0; i < lm.length; i++) {
           const p = lm[i];
           const x = (1 - p.x) * W;
           const y = p.y * H;
           ctx.beginPath();
-          ctx.arc(x, y, 1, 0, Math.PI * 2);
+          ctx.arc(x, y, r, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -1263,9 +1277,17 @@ function App() {
             )}
           </div>
 
-          <div className="text-center bg-gray-900 bg-opacity-90 px-6 py-3 rounded-xl border border-gray-800">
+          <div className="text-center bg-gray-900 bg-opacity-90 px-6 py-3 rounded-xl border border-gray-800 max-w-lg mx-auto">
             <p className={`text-xl font-bold transition-colors duration-300 ${headValidation?.valid ? 'text-green-400' : 'text-red-400'}`}>
               {headValidation?.message || 'Detecting face...'}
+            </p>
+            <p className="text-cyan-300 text-sm mt-2 font-mono">
+              {headValidation?.debug
+                ? `faceWidth: ${headValidation.debug.faceWidth.toFixed(3)} (min: ${headValidation.debug.minFaceWidth.toFixed(3)}, max: ${headValidation.debug.maxFaceWidth.toFixed(3)}) · target ${headValidation.debug.targetDistanceCm}cm`
+                : 'Debug: center face in frame to see values (or check Console)'}
+            </p>
+            <p className="text-gray-300 text-sm mt-1.5 font-mono">
+              Stable frames: <span className={headValidation?.valid ? 'text-green-400 font-semibold' : 'text-gray-500'}>{stableFrameCount}</span> / 60
             </p>
           </div>
         </div>

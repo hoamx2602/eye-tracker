@@ -4,6 +4,8 @@ import { EyeLandmarkIndices, EyeFeatures, HeadPose } from "../types";
 export interface HeadValidationResult {
   valid: boolean;
   message: string;
+  /** Debug: face width in normalized coords (for tuning distance thresholds) */
+  debug?: { faceWidth: number; minFaceWidth: number; maxFaceWidth: number; targetDistanceCm: number };
 }
 
 export class EyeTrackingService {
@@ -47,6 +49,14 @@ export class EyeTrackingService {
     const leftEdge = landmarks[EyeLandmarkIndices.LEFT_FACE_EDGE];
     const rightEdge = landmarks[EyeLandmarkIndices.RIGHT_FACE_EDGE];
 
+    // Always compute distance debug so UI can show it in all states
+    const faceWidth = Math.sqrt(Math.pow(rightEdge.x - leftEdge.x, 2) + Math.pow(rightEdge.y - leftEdge.y, 2));
+    const D = Math.max(40, Math.min(90, faceDistanceCm));
+    const minFaceWidth = 0.09 + (90 - D) * 0.0012;
+    // Pass at ~65cm (faceWidth ~0.14); at 55cm faceWidth ~0.158 must fail → max below that.
+    const maxFaceWidth = 0.17 - (D - 40) * 0.0007;  // 40cm→0.17, 65cm→0.152, 90cm→0.135
+    const debug = { faceWidth, minFaceWidth, maxFaceWidth, targetDistanceCm: D };
+
     // 1. Center Check (Horizontal & Vertical)
     const centerX = 0.5;
     const centerY = 0.5;
@@ -55,27 +65,21 @@ export class EyeTrackingService {
     const toleranceY = 0.08; // +/- 8% from center (Total 16% zone)
 
     if (Math.abs(nose.x - centerX) > toleranceX) {
-      return { valid: false, message: nose.x < centerX ? "Move Right" : "Move Left" };
+      return { valid: false, message: nose.x < centerX ? "Move Right" : "Move Left", debug };
     }
     if (Math.abs(nose.y - centerY) > toleranceY) {
-      return { valid: false, message: nose.y < centerY ? "Move Down" : "Move Up" };
+      return { valid: false, message: nose.y < centerY ? "Move Down" : "Move Up", debug };
     }
 
-    // 2. Size/Distance Check: use config faceDistance (cm) to derive allowed face width in frame.
-    // Closer (smaller cm) → face should be larger. Farther (larger cm) → face smaller.
-    const faceWidth = Math.sqrt(Math.pow(rightEdge.x - leftEdge.x, 2) + Math.pow(rightEdge.y - leftEdge.y, 2));
-    const D = Math.max(40, Math.min(90, faceDistanceCm));
-    const minFaceWidth = 0.15 + (90 - D) * 0.002; // e.g. 40cm→0.25, 60cm→0.21, 90cm→0.15
-    const maxFaceWidth = 0.58 - (D - 40) * 0.004; // e.g. 40cm→0.58, 60cm→0.48, 90cm→0.38
-
-    if (faceWidth < minFaceWidth) return { valid: false, message: "Move Closer" };
-    if (faceWidth > maxFaceWidth) return { valid: false, message: "Move Back" };
+    // 2. Size/Distance Check
+    if (faceWidth < minFaceWidth) return { valid: false, message: "Move Closer", debug };
+    if (faceWidth > maxFaceWidth) return { valid: false, message: "Move Back", debug };
 
     // 3. Tilt Check (Head Rotation)
     const tilt = Math.abs(leftEdge.y - rightEdge.y);
-    if (tilt > 0.12) return { valid: false, message: "Straighten Head" };
+    if (tilt > 0.12) return { valid: false, message: "Straighten Head", debug };
 
-    return { valid: true, message: "Perfect! Hold Steady..." };
+    return { valid: true, message: "Perfect! Hold Steady...", debug };
   }
 
   isBlinking(landmarks: NormalizedLandmark[]): boolean {

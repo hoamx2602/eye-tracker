@@ -49,6 +49,11 @@ const HeadPositionGuide: React.FC<HeadPositionGuideProps> = ({ validation, count
         <p className="text-gray-500 text-xs mt-2">
           Center your face inside the box.
         </p>
+        {validation?.debug && (
+          <p className="text-gray-400 text-xs mt-3 font-mono">
+            faceWidth: {validation.debug.faceWidth.toFixed(3)} (min: {validation.debug.minFaceWidth.toFixed(3)}, max: {validation.debug.maxFaceWidth.toFixed(3)}) · target {validation.debug.targetDistanceCm}cm
+          </p>
+        )}
       </div>
 
       <style>{`
