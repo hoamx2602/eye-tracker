@@ -9,6 +9,25 @@ interface EyeMovementLayerProps {
 }
 
 const COUNTDOWN_MS = 2000;
+const PAD = 12;
+const MIN = PAD;
+const MAX = 100 - PAD;
+const CENTER = 50;
+const RANGE = MAX - MIN; // 76
+
+// Target movement speed in percentage-units per second (when the dot is actually moving).
+// All exercises derive their duration from this so the perceived speed is identical.
+const TARGET_SPEED = 25;
+
+const H_PAUSE_MS = 1000;
+
+function dist(a: { x: number; y: number }, b: { x: number; y: number }) {
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+}
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
+}
 
 const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, onComplete }) => {
   const rafRef = useRef<number | null>(null);
@@ -17,36 +36,59 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
   const [pos, setPos] = useState<{ x: number; y: number; scale: number }>({ x: 50, y: 50, scale: 1 });
   const [countdown, setCountdown] = useState(Math.ceil(COUNTDOWN_MS / 1000));
 
-  const durationMs = useMemo(() => {
-    switch (kind) {
-      case 'wiggling': return 20000;
-      case 'horizontal': return 8000;
-      case 'vertical': return 8000;
-      case 'forward_backward': return 7000;
-      case 'diagonal': return 9000;
-      case 'h_pattern': return 10000;
-      default: return 8000;
+  const { path, durationMs } = useMemo(() => {
+    const tl = { x: MIN, y: MIN };
+    const tr = { x: MAX, y: MIN };
+    const bl = { x: MIN, y: MAX };
+    const br = { x: MAX, y: MAX };
+    const midL = { x: MIN, y: CENTER };
+    const midR = { x: MAX, y: CENTER };
+
+    // --- Horizontal: triangle wave left → right → left ---
+    if (kind === 'horizontal') {
+      const totalDist = 2 * RANGE;
+      const dur = (totalDist / TARGET_SPEED) * 1000;
+      const fn = (t: number) => {
+        const lt = Math.max(0, Math.min(1, t));
+        const tri = lt < 0.5 ? lt * 2 : 2 - lt * 2;
+        return { x: lerp(MIN, MAX, tri), y: CENTER, scale: 1 };
+      };
+      return { path: fn, durationMs: dur };
     }
-  }, [kind]);
 
-    const path = useMemo(() => {
-    const pad = 12;
-    const min = pad;
-    const max = 100 - pad;
-    const center = 50;
-    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-    const easeInOut = (t: number) => 0.5 - Math.cos(Math.PI * t) / 2;
+    // --- Vertical: triangle wave top → bottom → top ---
+    if (kind === 'vertical') {
+      const totalDist = 2 * RANGE;
+      const dur = (totalDist / TARGET_SPEED) * 1000;
+      const fn = (t: number) => {
+        const lt = Math.max(0, Math.min(1, t));
+        const tri = lt < 0.5 ? lt * 2 : 2 - lt * 2;
+        return { x: CENTER, y: lerp(MIN, MAX, tri), scale: 1 };
+      };
+      return { path: fn, durationMs: dur };
+    }
 
-    // Precompute arc-length table for wiggling (Lissajous) so speed is constant.
-    // High resolution (10k samples) + Simpson's rule for accurate integration.
-    let wigglingTable: { s: number[]; totalLen: number; n: number; twoLoops: number; a: number; b: number } | null = null;
+    // --- Forward / backward: zoom in/out at center ---
+    if (kind === 'forward_backward') {
+      const dur = 7000;
+      const easeInOut = (t: number) => 0.5 - Math.cos(Math.PI * t) / 2;
+      const fn = (t: number) => {
+        const e = easeInOut(Math.max(0, Math.min(1, t)));
+        const pulse = 0.5 - Math.cos(2 * Math.PI * e) / 2;
+        const scale = 0.4 + pulse * 4.0;
+        return { x: CENTER, y: CENTER, scale };
+      };
+      return { path: fn, durationMs: dur };
+    }
+
+    // --- Wiggling: Lissajous, arc-length parameterized ---
     if (kind === 'wiggling') {
-      const amplitude = max - center;
+      const amplitude = MAX - CENTER;
       const a = amplitude;
       const b = amplitude;
       const n = 10000;
       const twoLoops = 4 * Math.PI;
-      const speed = (ang: number) =>
+      const speedFn = (ang: number) =>
         Math.sqrt(a * a * Math.cos(ang) * Math.cos(ang) + 4 * b * b * Math.cos(2 * ang) * Math.cos(2 * ang));
       const dt = twoLoops / n;
       const sTable: number[] = new Array(n + 1);
@@ -55,43 +97,15 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         const a0 = (i - 1) * dt;
         const aMid = a0 + dt / 2;
         const a1 = i * dt;
-        sTable[i] = sTable[i - 1]! + (dt / 6) * (speed(a0) + 4 * speed(aMid) + speed(a1));
+        sTable[i] = sTable[i - 1]! + (dt / 6) * (speedFn(a0) + 4 * speedFn(aMid) + speedFn(a1));
       }
-      wigglingTable = { s: sTable, totalLen: sTable[n]!, n, twoLoops, a, b };
-    }
+      const totalLen = sTable[n]!;
+      const dur = (totalLen / TARGET_SPEED) * 1000;
 
-    function segment(t: number, n: number) {
-      const clamped = Math.max(0, Math.min(0.999999, t));
-      const idx = Math.floor(clamped * n);
-      const localT = clamped * n - idx;
-      return { idx, localT };
-    }
-
-    return (t: number): { x: number; y: number; scale: number } => {
-      const e = easeInOut(Math.max(0, Math.min(1, t)));
-
-      if (kind === 'horizontal') {
-        const x = lerp(min, max, 0.5 - Math.cos(2 * Math.PI * e) / 2);
-        return { x, y: center, scale: 1 };
-      }
-
-      if (kind === 'vertical') {
-        const y = lerp(min, max, 0.5 - Math.cos(2 * Math.PI * e) / 2);
-        return { x: center, y, scale: 1 };
-      }
-
-      if (kind === 'forward_backward') {
-        const pulse = 0.5 - Math.cos(2 * Math.PI * e) / 2;
-        const scale = 0.4 + pulse * 4.0;
-        return { x: center, y: center, scale };
-      }
-
-      // Wiggling: Lissajous shape, arc-length parameterized (binary search for constant speed).
-      if (kind === 'wiggling' && wigglingTable) {
-        const { s: sTable, totalLen, n: wN, twoLoops, a, b } = wigglingTable;
+      const fn = (t: number) => {
         const linearT = Math.max(0, Math.min(1, t));
         const s = linearT * totalLen;
-        let lo = 0, hi = wN;
+        let lo = 0, hi = n;
         while (lo < hi) {
           const mid = (lo + hi) >>> 1;
           if (sTable[mid]! < s) lo = mid + 1;
@@ -101,40 +115,85 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         const s0 = sTable[i]!;
         const s1 = sTable[i + 1] ?? totalLen;
         const frac = s1 > s0 ? (s - s0) / (s1 - s0) : 0;
-        const ang = (i + frac) * (twoLoops / wN);
-        const x = center + a * Math.sin(ang);
-        const y = center + b * Math.sin(2 * ang);
-        return { x, y, scale: 1 };
+        const ang = (i + frac) * (twoLoops / n);
+        return { x: CENTER + a * Math.sin(ang), y: CENTER + b * Math.sin(2 * ang), scale: 1 };
+      };
+      return { path: fn, durationMs: dur };
+    }
+
+    // --- Diagonal: TL→BR, BR→TL, TL→TR(transition), TR→BL, BL→TR ---
+    // Time per segment proportional to its length so speed is constant.
+    if (kind === 'diagonal') {
+      const segs: Array<[{ x: number; y: number }, { x: number; y: number }]> = [
+        [tl, br], [br, tl], [tl, tr], [tr, bl], [bl, tr],
+      ];
+      const lengths = segs.map(([a, b]) => dist(a, b));
+      const totalDist = lengths.reduce((s, l) => s + l, 0);
+      const dur = (totalDist / TARGET_SPEED) * 1000;
+      const cumFrac: number[] = [0];
+      for (let i = 0; i < lengths.length; i++) {
+        cumFrac.push(cumFrac[i]! + lengths[i]! / totalDist);
       }
 
-      if (kind === 'diagonal') {
-        const { idx, localT } = segment(e, 4);
-        const lt = easeInOut(localT);
-        const tl = { x: min, y: min };
-        const tr = { x: max, y: min };
-        const bl = { x: min, y: max };
-        const br = { x: max, y: max };
-        const pairs: Array<[{ x: number; y: number }, { x: number; y: number }]> = [
-          [tl, br], [tr, bl], [bl, tr], [br, tl],
-        ];
-        const [aPt, bPt] = pairs[idx]!;
-        return { x: lerp(aPt.x, bPt.x, lt), y: lerp(aPt.y, bPt.y, lt), scale: 1 };
+      const fn = (t: number) => {
+        const lt = Math.max(0, Math.min(0.999999, t));
+        let idx = 0;
+        for (let i = 0; i < segs.length - 1; i++) {
+          if (lt >= cumFrac[i + 1]!) idx = i + 1;
+        }
+        const segStart = cumFrac[idx]!;
+        const segEnd = cumFrac[idx + 1]!;
+        const local = segEnd > segStart ? (lt - segStart) / (segEnd - segStart) : 0;
+        const [aPt, bPt] = segs[idx]!;
+        return { x: lerp(aPt.x, bPt.x, local), y: lerp(aPt.y, bPt.y, local), scale: 1 };
+      };
+      return { path: fn, durationMs: dur };
+    }
+
+    // --- H-pattern: pause 1s at each keypoint, move linearly between them ---
+    // TL → BL → midL → midR → BR → TR (draws an H)
+    {
+      const waypoints = [tl, bl, midL, midR, br, tr];
+      const moveLengths: number[] = [];
+      for (let i = 0; i < waypoints.length - 1; i++) {
+        moveLengths.push(dist(waypoints[i]!, waypoints[i + 1]!));
+      }
+      const totalMoveDist = moveLengths.reduce((s, l) => s + l, 0);
+      const moveTimeMs = (totalMoveDist / TARGET_SPEED) * 1000;
+      const pauseCount = waypoints.length; // pause at each waypoint
+      const totalPauseMs = pauseCount * H_PAUSE_MS;
+      const dur = moveTimeMs + totalPauseMs;
+
+      // Build timeline: [pause, move, pause, move, ..., pause]
+      type Seg = { type: 'pause'; pos: { x: number; y: number }; durFrac: number }
+               | { type: 'move'; from: { x: number; y: number }; to: { x: number; y: number }; durFrac: number };
+      const timeline: Seg[] = [];
+      for (let i = 0; i < waypoints.length; i++) {
+        timeline.push({ type: 'pause', pos: waypoints[i]!, durFrac: H_PAUSE_MS / dur });
+        if (i < waypoints.length - 1) {
+          const moveDur = (moveLengths[i]! / TARGET_SPEED) * 1000;
+          timeline.push({ type: 'move', from: waypoints[i]!, to: waypoints[i + 1]!, durFrac: moveDur / dur });
+        }
       }
 
-      // h_pattern: left vertical (down), cross (to right), right vertical (up)
-      {
-        const leftX = min;
-        const rightX = max;
-        const topY = min;
-        const midY = center;
-        const botY = max;
-        const { idx, localT } = segment(e, 3);
-        const lt = easeInOut(localT);
-        if (idx === 0) return { x: leftX, y: lerp(topY, botY, lt), scale: 1 };
-        if (idx === 1) return { x: lerp(leftX, rightX, lt), y: midY, scale: 1 };
-        return { x: rightX, y: lerp(botY, topY, lt), scale: 1 };
-      }
-    };
+      const fn = (t: number) => {
+        const lt = Math.max(0, Math.min(1, t));
+        let acc = 0;
+        for (const seg of timeline) {
+          if (lt <= acc + seg.durFrac) {
+            const local = seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0;
+            if (seg.type === 'pause') {
+              return { x: seg.pos.x, y: seg.pos.y, scale: 1 };
+            }
+            return { x: lerp(seg.from.x, seg.to.x, local), y: lerp(seg.from.y, seg.to.y, local), scale: 1 };
+          }
+          acc += seg.durFrac;
+        }
+        const last = waypoints[waypoints.length - 1]!;
+        return { x: last.x, y: last.y, scale: 1 };
+      };
+      return { path: fn, durationMs: dur };
+    }
   }, [kind]);
 
   useEffect(() => {
@@ -147,7 +206,6 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
       if (startRef.current == null) startRef.current = now;
       const totalElapsed = now - startRef.current;
 
-      // Countdown phase
       if (totalElapsed < COUNTDOWN_MS) {
         const remaining = Math.ceil((COUNTDOWN_MS - totalElapsed) / 1000);
         setCountdown(remaining);
@@ -159,7 +217,6 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
 
       setCountdown(0);
 
-      // Animation phase
       const animElapsed = totalElapsed - COUNTDOWN_MS;
       const t = Math.max(0, Math.min(1, animElapsed / durationMs));
       const p = path(t);
@@ -199,7 +256,6 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         <p className="text-sm">Follow the dot with your eyes. Keep your head still.</p>
       </div>
 
-      {/* Countdown overlay */}
       {countdown > 0 && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center">
           <p className="text-gray-500 text-sm mb-2">Get Ready</p>
@@ -208,7 +264,6 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         </div>
       )}
 
-      {/* Animated dot */}
       <div
         className="absolute rounded-full bg-red-500"
         style={{
