@@ -1056,10 +1056,7 @@ function App() {
     const avgError = errors.length > 0 ? errors.reduce((a, b) => a + b, 0) / errors.length : 0;
     setAccuracyScore(avgError);
     const isAccuracyGood = avgError < 300;
-    const statusMsg = isAccuracyGood
-      ? `Calibration Success! Mean Error: ${Math.round(avgError)}px`
-      : errors.length > 0 ? `Calibration Complete (Accuracy: ${Math.round(avgError)}px)` : 'Calibration complete (test mode)';
-    setLoadingMsg(statusMsg);
+    setLoadingMsg('Saving samples');
     setStatus('LOADING_MODEL');
 
     (async () => {
@@ -1132,6 +1129,20 @@ function App() {
         }
         setLastSavedCounts({ samples: sampleCount, images: imageCount });
         setSessionSaveStatus('saved');
+        const statusMsg = isAccuracyGood
+          ? `Calibration Success! Mean Error: ${Math.round(avgError)}px`
+          : errors.length > 0 ? `Calibration Complete (Accuracy: ${Math.round(avgError)}px)` : 'Calibration complete (test mode)';
+        setLoadingMsg(statusMsg);
+        setTimeout(() => {
+          setStatus('TRACKING');
+          statusRef.current = 'TRACKING';
+          smootherRef.current.reset();
+          if (heatmapRef.current) heatmapRef.current.reset();
+          trackingHistoryRef.current = [];
+          if (configRef.current.enableVideoRecording) {
+            startVideoRecording();
+          }
+        }, 1200);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         setSessionSaveStatus('error');
@@ -1140,17 +1151,6 @@ function App() {
         alert(`Không lưu được session: ${msg}\n\n• Chạy "npm run dev" (Next.js) — API /api chạy cùng origin, không cần set biến môi trường.\n• Nếu dùng host khác: set NEXT_PUBLIC_API_URL trong .env.local.\n• Kiểm tra DB + S3 đã cấu hình đúng (.env.local).`);
       }
     })();
-
-    setTimeout(() => {
-      setStatus('TRACKING');
-      statusRef.current = 'TRACKING';
-      smootherRef.current.reset();
-      if (heatmapRef.current) heatmapRef.current.reset();
-      trackingHistoryRef.current = [];
-      if (configRef.current.enableVideoRecording) {
-        startVideoRecording();
-      }
-    }, 1500);
   };
 
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
@@ -1381,14 +1381,16 @@ function App() {
             <p className={`animate-pulse font-bold ${accuracyScore && accuracyScore > 400 ? 'text-orange-400' : 'text-blue-300'}`}>
               {loadingMsg}
             </p>
-            {sessionSaveStatus === 'saving' && <p className="text-sm text-gray-400">Đang lưu session...</p>}
+            {sessionSaveStatus === 'saving' && (
+              <p className="text-sm text-gray-400">You can relax for a moment.</p>
+            )}
             {sessionSaveStatus === 'saved' && (
               <p className="text-sm text-green-400">
-                Đã lưu session.
+                Session saved.
                 {lastSavedCounts && (
                   <span className="block text-gray-400 text-xs mt-0.5">
-                    {lastSavedCounts.samples} samples, {lastSavedCounts.images} ảnh. Vào Admin → Sessions (F5 để refresh) để xem.
-                    {lastSavedCounts.samples === 0 && ' — Không có dữ liệu calibration.'}
+                    {lastSavedCounts.samples} samples, {lastSavedCounts.images} images. Go to Admin → Sessions (refresh to see).
+                    {lastSavedCounts.samples === 0 && ' — No calibration data.'}
                   </span>
                 )}
               </p>
