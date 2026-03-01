@@ -18,7 +18,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100">
+    <div className="min-h-screen bg-slate-900 text-slate-100 overflow-y-auto" style={{ height: '100vh' }}>
       <header className="fixed top-0 left-0 right-0 z-50 h-14 border-b border-slate-700 bg-slate-800 shadow-sm">
         <div className="h-full max-w-6xl mx-auto px-4 flex items-center justify-between">
           <nav className="flex items-center gap-6">
