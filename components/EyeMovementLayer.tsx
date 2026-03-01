@@ -87,10 +87,10 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
       const a = amplitude;
       const b = amplitude;
       const n = 10000;
-      const twoLoops = 4 * Math.PI;
+      const oneLoop = 2 * Math.PI;
       const speedFn = (ang: number) =>
         Math.sqrt(a * a * Math.cos(ang) * Math.cos(ang) + 4 * b * b * Math.cos(2 * ang) * Math.cos(2 * ang));
-      const dt = twoLoops / n;
+      const dt = oneLoop / n;
       const sTable: number[] = new Array(n + 1);
       sTable[0] = 0;
       for (let i = 1; i <= n; i++) {
@@ -115,7 +115,7 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         const s0 = sTable[i]!;
         const s1 = sTable[i + 1] ?? totalLen;
         const frac = s1 > s0 ? (s - s0) / (s1 - s0) : 0;
-        const ang = (i + frac) * (twoLoops / n);
+        const ang = (i + frac) * (oneLoop / n);
         return { x: CENTER + a * Math.sin(ang), y: CENTER + b * Math.sin(2 * ang), scale: 1 };
       };
       return { path: fn, durationMs: dur };
