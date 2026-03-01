@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
@@ -40,6 +40,100 @@ async function getSignedUrl(url: string): Promise<string | null> {
   }
 }
 
+function CalibrationSampleCard({
+  sample,
+  index,
+  signedUrl,
+  showTooltip,
+  onMouseEnterCard,
+  onMouseLeaveCard,
+  onMouseEnterTooltip,
+  onMouseLeaveTooltip,
+}: {
+  sample: CalibrationSample;
+  index: number;
+  signedUrl: string;
+  showTooltip: boolean;
+  onMouseEnterCard: () => void;
+  onMouseLeaveCard: () => void;
+  onMouseEnterTooltip: () => void;
+  onMouseLeaveTooltip: () => void;
+}) {
+  const head = sample.head;
+  const tooltipEl = showTooltip && (
+    <div
+      className="absolute z-20 left-1/2 -translate-x-1/2 top-full mt-2 w-64 max-w-[calc(100vw-2rem)] bg-slate-800 border border-slate-600 rounded-lg p-3 text-xs shadow-xl"
+      role="tooltip"
+      onMouseEnter={onMouseEnterTooltip}
+      onMouseLeave={onMouseLeaveTooltip}
+    >
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-full border-4 border-transparent border-b-slate-600" />
+      <p className="font-semibold text-slate-200 mb-2">Sample #{index + 1}</p>
+      <dl className="space-y-1 text-slate-300">
+        <div><dt className="text-slate-500">screenX</dt><dd className="font-mono">{sample.screenX != null ? sample.screenX : '—'}</dd></div>
+        <div><dt className="text-slate-500">screenY</dt><dd className="font-mono">{sample.screenY != null ? sample.screenY : '—'}</dd></div>
+        {sample.timestamp != null && (
+          <div><dt className="text-slate-500">timestamp</dt><dd className="font-mono">{sample.timestamp}</dd></div>
+        )}
+        {sample.features && (
+          <div><dt className="text-slate-500">features</dt><dd className="font-mono">{sample.features.length} dims</dd></div>
+        )}
+        {head && (
+          <>
+            <div><dt className="text-slate-500">head.valid</dt><dd>{String(head.valid)}</dd></div>
+            <div><dt className="text-slate-500">head.message</dt><dd>{head.message}</dd></div>
+            {head.faceWidth != null && <div><dt className="text-slate-500">head.faceWidth</dt><dd className="font-mono">{head.faceWidth.toFixed(4)}</dd></div>}
+            {head.minFaceWidth != null && <div><dt className="text-slate-500">head.minFaceWidth</dt><dd className="font-mono">{head.minFaceWidth.toFixed(4)}</dd></div>}
+            {head.maxFaceWidth != null && <div><dt className="text-slate-500">head.maxFaceWidth</dt><dd className="font-mono">{head.maxFaceWidth.toFixed(4)}</dd></div>}
+            {head.targetDistanceCm != null && <div><dt className="text-slate-500">head.targetDistanceCm</dt><dd className="font-mono">{head.targetDistanceCm} cm</dd></div>}
+          </>
+        )}
+      </dl>
+    </div>
+  );
+  return (
+    <div
+      className="rounded-lg overflow-visible border border-slate-600 bg-slate-900 flex flex-col relative"
+      onMouseEnter={onMouseEnterCard}
+      onMouseLeave={onMouseLeaveCard}
+    >
+      <div className="relative rounded-t-lg">
+        {sample.imageUrl ? (
+          <a
+            href={signedUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block aspect-video bg-slate-800 overflow-hidden rounded-t-lg"
+          >
+            <img
+              src={signedUrl}
+              alt={`Sample ${index + 1}`}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+          </a>
+        ) : (
+          <div className="aspect-video bg-slate-800 flex items-center justify-center text-slate-500 text-xs rounded-t-lg">
+            No image
+          </div>
+        )}
+        {tooltipEl}
+      </div>
+      <div className="p-2 text-xs space-y-0.5">
+        <p className="text-slate-400 font-mono">
+          ({sample.screenX != null ? Math.round(sample.screenX) : '—'}, {sample.screenY != null ? Math.round(sample.screenY) : '—'}) px
+        </p>
+        {head && (
+          <p className={head.valid ? 'text-green-500' : 'text-amber-500'}>
+            {head.valid ? 'Head OK' : head.message}
+            {head.faceWidth != null && ` · fw ${head.faceWidth.toFixed(3)}`}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminSessionDetailPage() {
   const params = useParams();
   const id = params?.id as string;
@@ -53,6 +147,20 @@ export default function AdminSessionDetailPage() {
   const samples = Array.isArray(session?.calibrationGazeSamples) ? session!.calibrationGazeSamples : [];
   const isNewFormat = samples.some((s) => s && ('imageUrl' in s || 'head' in s));
   const imageUrlsForCompat = Array.isArray(session?.calibrationImageUrls) ? (session!.calibrationImageUrls as string[]) : [];
+
+  const [visibleSampleCount, setVisibleSampleCount] = useState(10);
+  const visibleSamples = samples.slice(0, visibleSampleCount);
+  const hasMoreSamples = visibleSampleCount < samples.length;
+
+  const [activeTooltipIndex, setActiveTooltipIndex] = useState<number | null>(null);
+  const tooltipHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearTooltipHideTimeout = () => {
+    if (tooltipHideTimeoutRef.current) {
+      clearTimeout(tooltipHideTimeoutRef.current);
+      tooltipHideTimeoutRef.current = null;
+    }
+  };
+  useEffect(() => () => clearTooltipHideTimeout(), []);
 
   useEffect(() => {
     if (!id) return;
@@ -219,45 +327,43 @@ export default function AdminSessionDetailPage() {
           {isNewFormat ? 'Calibration samples' : 'Calibration images'}
         </h2>
         {isNewFormat && samples.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {samples.map((s, i) => (
-              <div
-                key={i}
-                className="rounded-lg overflow-hidden border border-slate-600 bg-slate-900 flex flex-col"
-              >
-                {s.imageUrl ? (
-                  <a
-                    href={signedSampleUrls[i] || s.imageUrl!}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block aspect-video bg-slate-800"
-                  >
-                    <img
-                      src={signedSampleUrls[i] || s.imageUrl!}
-                      alt={`Sample ${i + 1}`}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                  </a>
-                ) : (
-                  <div className="aspect-video bg-slate-800 flex items-center justify-center text-slate-500 text-xs">
-                    No image
-                  </div>
-                )}
-                <div className="p-2 text-xs space-y-0.5">
-                  <p className="text-slate-400 font-mono">
-                    ({s.screenX != null ? Math.round(s.screenX) : '—'}, {s.screenY != null ? Math.round(s.screenY) : '—'}) px
-                  </p>
-                  {s.head && (
-                    <p className={s.head.valid ? 'text-green-500' : 'text-amber-500'}>
-                      {s.head.valid ? 'Head OK' : s.head.message}
-                      {s.head.faceWidth != null && ` · fw ${s.head.faceWidth.toFixed(3)}`}
-                    </p>
-                  )}
-                </div>
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {visibleSamples.map((s, i) => (
+                <CalibrationSampleCard
+                  key={i}
+                  sample={s}
+                  index={i}
+                  signedUrl={signedSampleUrls[i] || s.imageUrl || ''}
+                  showTooltip={activeTooltipIndex === i}
+                  onMouseEnterCard={() => {
+                    clearTooltipHideTimeout();
+                    setActiveTooltipIndex(i);
+                  }}
+                  onMouseLeaveCard={() => {
+                    clearTooltipHideTimeout();
+                    tooltipHideTimeoutRef.current = setTimeout(() => setActiveTooltipIndex(null), 200);
+                  }}
+                  onMouseEnterTooltip={() => {
+                    clearTooltipHideTimeout();
+                    setActiveTooltipIndex(i);
+                  }}
+                  onMouseLeaveTooltip={() => setActiveTooltipIndex(null)}
+                />
+              ))}
+            </div>
+            {hasMoreSamples && (
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setVisibleSampleCount((c) => Math.min(c + 10, samples.length))}
+                  className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition"
+                >
+                  Load more ({samples.length - visibleSampleCount} remaining)
+                </button>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         ) : imageUrls.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {imageUrls.map((url, i) => (
