@@ -31,6 +31,22 @@ export interface TrainingSample {
   screenY: number;
   features: number[]; // Flattened vector for regression
   timestamp?: number; // For API export (calibration capture)
+  /** Head validation snapshot at capture time (for per-sample storage). */
+  head?: HeadSnapshot;
+  /** Filled after upload when saving session. */
+  imageUrl?: string;
+  /** In-memory only: blob to upload for this sample (exercise). Omitted when sending to API. */
+  blobForUpload?: Blob;
+}
+
+/** Serializable head validation snapshot for calibration samples. */
+export interface HeadSnapshot {
+  valid: boolean;
+  message: string;
+  faceWidth?: number;
+  minFaceWidth?: number;
+  maxFaceWidth?: number;
+  targetDistanceCm?: number;
 }
 
 export type AppState = 'IDLE' | 'LOADING_MODEL' | 'HEAD_POSITIONING' | 'CALIBRATION' | 'TRACKING';

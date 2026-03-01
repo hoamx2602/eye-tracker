@@ -19,7 +19,14 @@ export interface CreateSessionPayload {
   status?: string;
   videoUrl?: string;
   calibrationImageUrls?: string[];
-  calibrationGazeSamples?: Array<{ screenX: number; screenY: number; features?: number[]; timestamp?: number }>;
+  calibrationGazeSamples?: Array<{
+    screenX: number;
+    screenY: number;
+    features?: number[];
+    timestamp?: number;
+    head?: { valid: boolean; message: string; faceWidth?: number; minFaceWidth?: number; maxFaceWidth?: number; targetDistanceCm?: number };
+    imageUrl?: string | null;
+  }>;
 }
 
 export interface Session {

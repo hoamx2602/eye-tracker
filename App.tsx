@@ -7,6 +7,7 @@ import {
   CalibrationPoint, 
   EyeFeatures, 
   TrainingSample,
+  HeadSnapshot,
   EyeLandmarkIndices,
   AppConfig,
   CalibrationMethod,
@@ -147,6 +148,8 @@ function App() {
 
   // Head Positioning State
   const [headValidation, setHeadValidation] = useState<HeadValidationResult | null>(null);
+  const headValidationRef = useRef<HeadValidationResult | null>(null);
+  useEffect(() => { headValidationRef.current = headValidation; }, [headValidation]);
   const [positionHoldTime, setPositionHoldTime] = useState<number | null>(null);
   const [stableFrameCount, setStableFrameCount] = useState(0);
   const headPosStartTimeRef = useRef<number | null>(null);
@@ -180,7 +183,8 @@ function App() {
   // Exercise state
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const exerciseTargetRef = useRef<{ x: number; y: number } | null>(null);
-  const exerciseDataRef = useRef<{ screenX: number; screenY: number; features: number[] }[]>([]);
+  const exerciseDataRef = useRef<{ screenX: number; screenY: number; features: number[]; head?: HeadSnapshot }[]>([]);
+  const exerciseBlobsRef = useRef<Blob[]>([]);
   const exerciseActiveRef = useRef(false);
 
   const [accuracyScore, setAccuracyScore] = useState<number | null>(null);
@@ -465,6 +469,7 @@ function App() {
               // --- CONTINUOUS HEAD VALIDATION ---
               const validation = eyeTrackingService.validateHeadPosition(landmarks, configRef.current.faceDistance);
               setHeadValidation(validation);
+              headValidationRef.current = validation;
               isHeadValidRef.current = validation.valid;
 
               // Debug log (throttled) during Head Positioning so user can see values in Console
@@ -573,11 +578,16 @@ function App() {
                     const target = exerciseTargetRef.current;
                     if (target) {
                       const inputVector = eyeTrackingService.prepareFeatureVector(features);
+                      const len = exerciseDataRef.current.length;
                       exerciseDataRef.current.push({
                         screenX: target.x,
                         screenY: target.y,
                         features: inputVector,
+                        head: toHeadSnapshot(headValidationRef.current),
                       });
+                      if (len % 5 === 0) {
+                        captureCurrentFrameAsBlob().then((b) => b && exerciseBlobsRef.current.push(b));
+                      }
                     }
                   }
                   
@@ -818,6 +828,20 @@ function App() {
 
   }, [currentCalibIndex, status, calibPoints, calibPhase, config.calibrationSpeed, config.calibrationMethod, retryCount]);
 
+  const toHeadSnapshot = (v: HeadValidationResult | null): HeadSnapshot | undefined => {
+    if (!v) return undefined;
+    return {
+      valid: v.valid,
+      message: v.message,
+      ...(v.debug && {
+        faceWidth: v.debug.faceWidth,
+        minFaceWidth: v.debug.minFaceWidth,
+        maxFaceWidth: v.debug.maxFaceWidth,
+        targetDistanceCm: v.debug.targetDistanceCm,
+      }),
+    };
+  };
+
   // Common function to process buffer and advance state
   const processCalibBuffer = (buffer: number[][]) => {
      const point = calibPoints[currentCalibIndex];
@@ -838,7 +862,13 @@ function App() {
         const screenY = (point.y / 100) * window.innerHeight;
 
         if (calibPhase !== CalibrationPhase.VALIDATION) {
-            const newSample: TrainingSample = { screenX, screenY, features: avgVector, timestamp: Date.now() };
+            const newSample: TrainingSample = {
+              screenX,
+              screenY,
+              features: avgVector,
+              timestamp: Date.now(),
+              head: toHeadSnapshot(headValidationRef.current),
+            };
             trainingSamplesRef.current.push(newSample);
             setTrainingData([...trainingSamplesRef.current]);
             captureCurrentFrameAsBlob().then((b) => b && calibrationImagesRef.current.push(b));
@@ -864,7 +894,9 @@ function App() {
 
   const processExerciseData = () => {
     const data = exerciseDataRef.current;
+    const blobs = exerciseBlobsRef.current.slice();
     exerciseDataRef.current = [];
+    exerciseBlobsRef.current = [];
     exerciseActiveRef.current = false;
 
     if (data.length < 10) {
@@ -911,16 +943,21 @@ function App() {
         avgFeatures[j] /= window.length;
       }
 
+      const originalIndex = startIdx + i;
+      const blobIdx = Math.floor(originalIndex / 5);
+      const blobForUpload = blobIdx < blobs.length ? blobs[blobIdx] : undefined;
+
       trainingSamplesRef.current.push({
         screenX: avgX,
         screenY: avgY,
         features: avgFeatures,
         timestamp: Date.now(),
+        head: window[0].head,
+        ...(blobForUpload && { blobForUpload }),
       });
       added++;
     }
 
-    captureCurrentFrameAsBlob().then((b) => b && calibrationImagesRef.current.push(b));
     const kindName = EXERCISE_KINDS[currentExerciseIndex] || 'unknown';
     console.log(`[Exercise:${kindName}] Added ${added} samples from ${data.length} raw frames`);
     setTrainingData([...trainingSamplesRef.current]);
@@ -932,6 +969,7 @@ function App() {
     if (nextIndex < EXERCISE_KINDS.length) {
       setCurrentExerciseIndex(nextIndex);
       exerciseDataRef.current = [];
+      exerciseBlobsRef.current = [];
       exerciseActiveRef.current = true;
     } else {
       // All exercises done — train regressor with all data and proceed to validation
@@ -998,8 +1036,9 @@ function App() {
             console.log(`[Calibration] Grid mapping done with ${data.length} samples, starting exercises...`);
             setCalibPhase(CalibrationPhase.EXERCISES);
             setCurrentExerciseIndex(0);
-            exerciseDataRef.current = [];
-            exerciseActiveRef.current = true;
+      exerciseDataRef.current = [];
+      exerciseBlobsRef.current = [];
+      exerciseActiveRef.current = true;
         } else {
             setCalibPhase(CalibrationPhase.VALIDATION);
             setCalibPoints(VALIDATION_POINTS);
@@ -1028,7 +1067,6 @@ function App() {
       try {
         const videoBlob = await stopVideoRecordingAndGetBlob();
         let videoUrl: string | undefined;
-        const calibrationImageUrls: string[] = [];
         const blobToBase64 = (b: Blob): Promise<string> =>
           new Promise((res, rej) => {
             const r = new FileReader();
@@ -1040,17 +1078,36 @@ function App() {
           const data = await blobToBase64(videoBlob);
           videoUrl = await uploadApi.upload(data, `calibration-${Date.now()}.webm`, 'video/webm');
         }
-        for (let i = 0; i < calibrationImagesRef.current.length; i++) {
-          const data = await blobToBase64(calibrationImagesRef.current[i]);
-          const u = await uploadApi.upload(data, `calibration-frame-${Date.now()}-${i}.jpg`, 'image/jpeg');
-          calibrationImageUrls.push(u);
+        const gridImageCount = calibrationImagesRef.current.length;
+        const samples = trainingSamplesRef.current;
+        const calibrationGazeSamples: Array<{
+          screenX: number;
+          screenY: number;
+          features?: number[];
+          timestamp?: number;
+          head?: HeadSnapshot;
+          imageUrl?: string | null;
+        }> = [];
+        for (let i = 0; i < samples.length; i++) {
+          const s = samples[i]!;
+          let imageUrl: string | null = null;
+          const blob = i < gridImageCount
+            ? calibrationImagesRef.current[i] ?? null
+            : (s.blobForUpload ?? null);
+          if (blob) {
+            const data = await blobToBase64(blob);
+            imageUrl = await uploadApi.upload(data, `calibration-sample-${Date.now()}-${i}.jpg`, 'image/jpeg');
+          }
+          calibrationGazeSamples.push({
+            screenX: s.screenX,
+            screenY: s.screenY,
+            features: s.features,
+            timestamp: s.timestamp,
+            head: s.head,
+            imageUrl: imageUrl ?? undefined,
+          });
         }
-        const calibrationGazeSamples = trainingSamplesRef.current.map((s) => ({
-          screenX: s.screenX,
-          screenY: s.screenY,
-          features: s.features,
-          timestamp: s.timestamp,
-        }));
+        const calibrationImageUrls = calibrationGazeSamples.map((s) => s.imageUrl).filter((u): u is string => Boolean(u));
         await sessionsApi.create({
           config: {
             ...(configRef.current as unknown as Record<string, unknown>),
@@ -1148,6 +1205,7 @@ function App() {
     // Reset exercise state
     setCurrentExerciseIndex(0);
     exerciseDataRef.current = [];
+    exerciseBlobsRef.current = [];
     exerciseActiveRef.current = false;
     exerciseTargetRef.current = null;
     
@@ -1196,6 +1254,7 @@ function App() {
     // Reset exercise state
     setCurrentExerciseIndex(0);
     exerciseDataRef.current = [];
+    exerciseBlobsRef.current = [];
     exerciseActiveRef.current = false;
     exerciseTargetRef.current = null;
     if (document.fullscreenElement) document.exitFullscreen();

@@ -4,6 +4,15 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
+type CalibrationSample = {
+  screenX?: number;
+  screenY?: number;
+  features?: number[];
+  timestamp?: number;
+  head?: { valid: boolean; message: string; faceWidth?: number; minFaceWidth?: number; maxFaceWidth?: number; targetDistanceCm?: number };
+  imageUrl?: string | null;
+};
+
 type SessionDetail = {
   id: string;
   createdAt: string;
@@ -12,6 +21,7 @@ type SessionDetail = {
   meanErrorPx: number | null;
   videoUrl: string | null;
   calibrationImageUrls: unknown;
+  calibrationGazeSamples?: CalibrationSample[] | null;
   validationErrors?: number[];
   config?: unknown;
 };
@@ -38,6 +48,11 @@ export default function AdminSessionDetailPage() {
   const [notFound, setNotFound] = useState(false);
   const [signedVideoUrl, setSignedVideoUrl] = useState<string | null>(null);
   const [signedImageUrls, setSignedImageUrls] = useState<string[]>([]);
+  const [signedSampleUrls, setSignedSampleUrls] = useState<string[]>([]);
+
+  const samples = Array.isArray(session?.calibrationGazeSamples) ? session!.calibrationGazeSamples : [];
+  const isNewFormat = samples.some((s) => s && ('imageUrl' in s || 'head' in s));
+  const imageUrlsForCompat = Array.isArray(session?.calibrationImageUrls) ? (session!.calibrationImageUrls as string[]) : [];
 
   useEffect(() => {
     if (!id) return;
@@ -56,16 +71,27 @@ export default function AdminSessionDetailPage() {
         const imageUrls = Array.isArray(data.calibrationImageUrls)
           ? (data.calibrationImageUrls as string[])
           : [];
+        const sampleImageUrls = Array.isArray(data.calibrationGazeSamples)
+          ? (data.calibrationGazeSamples as CalibrationSample[])
+              .map((s) => s.imageUrl)
+              .filter((u): u is string => Boolean(u))
+          : [];
         const urlsToSign = [
           ...(data.videoUrl ? [data.videoUrl] : []),
-          ...imageUrls,
+          ...(sampleImageUrls.length > 0 ? sampleImageUrls : imageUrls),
         ];
         if (urlsToSign.length > 0) {
           const signed = await Promise.all(urlsToSign.map((u) => getSignedUrl(u)));
           if (cancelled) return;
           const videoCount = data.videoUrl ? 1 : 0;
           if (data.videoUrl) setSignedVideoUrl(signed[0] ?? null);
-          setSignedImageUrls(signed.slice(videoCount).map((u) => u ?? ''));
+          if (sampleImageUrls.length > 0) {
+            setSignedSampleUrls(signed.slice(videoCount).map((u) => u ?? ''));
+            setSignedImageUrls([]);
+          } else {
+            setSignedImageUrls(signed.slice(videoCount).map((u) => u ?? ''));
+            setSignedSampleUrls([]);
+          }
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -75,9 +101,9 @@ export default function AdminSessionDetailPage() {
     return () => { cancelled = true; };
   }, [id]);
 
-  const imageUrls = Array.isArray(session?.calibrationImageUrls)
-    ? (session!.calibrationImageUrls as string[])
-    : [];
+  const imageUrls = isNewFormat
+    ? samples.map((s) => s.imageUrl ?? '').filter(Boolean)
+    : imageUrlsForCompat;
 
   if (loading) {
     return (
@@ -149,7 +175,9 @@ export default function AdminSessionDetailPage() {
           </div>
           <div>
             <dt className="text-xs text-slate-500 uppercase">Calibration images</dt>
-            <dd className="text-sm text-slate-200 mt-0.5">{imageUrls.length}</dd>
+            <dd className="text-sm text-slate-200 mt-0.5">
+              {isNewFormat ? samples.filter((s) => s.imageUrl).length : imageUrls.length}
+            </dd>
           </div>
         </dl>
       </div>
@@ -185,12 +213,52 @@ export default function AdminSessionDetailPage() {
         )}
       </div>
 
-      {/* Calibration images */}
+      {/* Calibration images / per-sample */}
       <div className="rounded-xl bg-slate-800/60 border border-slate-700/80 p-5 shadow-xl">
         <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-4">
-          Calibration images
+          {isNewFormat ? 'Calibration samples' : 'Calibration images'}
         </h2>
-        {imageUrls.length > 0 ? (
+        {isNewFormat && samples.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {samples.map((s, i) => (
+              <div
+                key={i}
+                className="rounded-lg overflow-hidden border border-slate-600 bg-slate-900 flex flex-col"
+              >
+                {s.imageUrl ? (
+                  <a
+                    href={signedSampleUrls[i] || s.imageUrl!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block aspect-video bg-slate-800"
+                  >
+                    <img
+                      src={signedSampleUrls[i] || s.imageUrl!}
+                      alt={`Sample ${i + 1}`}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  </a>
+                ) : (
+                  <div className="aspect-video bg-slate-800 flex items-center justify-center text-slate-500 text-xs">
+                    No image
+                  </div>
+                )}
+                <div className="p-2 text-xs space-y-0.5">
+                  <p className="text-slate-400 font-mono">
+                    ({s.screenX != null ? Math.round(s.screenX) : '—'}, {s.screenY != null ? Math.round(s.screenY) : '—'}) px
+                  </p>
+                  {s.head && (
+                    <p className={s.head.valid ? 'text-green-500' : 'text-amber-500'}>
+                      {s.head.valid ? 'Head OK' : s.head.message}
+                      {s.head.faceWidth != null && ` · fw ${s.head.faceWidth.toFixed(3)}`}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : imageUrls.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {imageUrls.map((url, i) => (
               <a
