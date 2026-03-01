@@ -60,3 +60,16 @@ html {
 .shadow-glow {
   box-shadow: 0 0 10px 2px rgba(59, 130, 246, 0.5);
 }
+
+/* Kill Recharts default white tooltip wrapper */
+.recharts-tooltip-wrapper {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.recharts-default-tooltip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}

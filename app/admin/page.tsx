@@ -17,7 +17,7 @@ export default async function AdminDashboardPage() {
   const from7 = daysAgo(7);
   const from14 = daysAgo(14);
 
-  const [total, last7, last14, withVideo, withCalibrationImages, avgError, recentSessions, sessionsForFeatures] =
+  const [total, last7, last14, withVideo, withCalibrationImages, avgError, recentSessions, sessionsForFeatures, sessionsForDemographics] =
     await Promise.all([
       prisma.session.count(),
       prisma.session.count({ where: { createdAt: { gte: from7 } } }),
@@ -42,6 +42,9 @@ export default async function AdminDashboardPage() {
           meanErrorPx: true,
         },
       }),
+      prisma.session.findMany({
+        select: { demographics: true, config: true },
+      }),
     ]);
 
   const meanErrorAvg = avgError._avg.meanErrorPx ?? null;
@@ -65,6 +68,58 @@ export default async function AdminDashboardPage() {
       label: formatDay(new Date(date)),
     }));
 
+  type Demographics = { age?: number; gender?: string; country?: string; eyeConditions?: string[] };
+  const getDemographics = (s: { demographics: unknown; config: unknown }): Demographics | null => {
+    const d = s.demographics ?? (s.config as Record<string, unknown> | null)?.demographics;
+    return d && typeof d === 'object' && !Array.isArray(d) ? (d as Demographics) : null;
+  };
+
+  const byAgeBucket: Record<string, number> = {
+    '0-17': 0,
+    '18-25': 0,
+    '26-35': 0,
+    '36-45': 0,
+    '46-55': 0,
+    '56-65': 0,
+    '65+': 0,
+  };
+  const byCountry: Record<string, number> = {};
+  const byEyeCondition: Record<string, number> = {};
+
+  for (const s of sessionsForDemographics) {
+    const d = getDemographics(s);
+    if (!d) continue;
+    if (typeof d.age === 'number') {
+      if (d.age <= 17) byAgeBucket['0-17']++;
+      else if (d.age <= 25) byAgeBucket['18-25']++;
+      else if (d.age <= 35) byAgeBucket['26-35']++;
+      else if (d.age <= 45) byAgeBucket['36-45']++;
+      else if (d.age <= 55) byAgeBucket['46-55']++;
+      else if (d.age <= 65) byAgeBucket['56-65']++;
+      else byAgeBucket['65+']++;
+    }
+    if (d.country && d.country !== 'not_specified') {
+      byCountry[d.country] = (byCountry[d.country] ?? 0) + 1;
+    }
+    if (Array.isArray(d.eyeConditions)) {
+      for (const c of d.eyeConditions) {
+        if (c && c !== 'none') {
+          byEyeCondition[c] = (byEyeCondition[c] ?? 0) + 1;
+        }
+      }
+    }
+  }
+
+  const sessionsByAge = Object.entries(byAgeBucket)
+    .map(([range, count]) => ({ range, count }))
+    .filter((d) => d.count > 0);
+  const sessionsByCountry = Object.entries(byCountry)
+    .sort(([, a], [, b]) => b - a)
+    .map(([country, count]) => ({ country, count }));
+  const topEyeConditions = Object.entries(byEyeCondition)
+    .sort(([, a], [, b]) => b - a)
+    .map(([condition, count]) => ({ condition, count }));
+
   const stats = {
     total,
     last7,
@@ -73,6 +128,9 @@ export default async function AdminDashboardPage() {
     withCalibrationImages,
     meanErrorAvg,
     sessionsByDay,
+    sessionsByAge,
+    sessionsByCountry,
+    topEyeConditions,
     featureAnalytics: computeFeatureAnalytics(sessionsForFeatures),
   };
 

@@ -19,6 +19,37 @@ import type { FeatureAnalytics } from '@/lib/featureAnalytics';
 const CHART_COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6'];
 const PIE_COLORS = ['#3b82f6', '#64748b'];
 
+/** Tooltip nền tối, không box trắng */
+const TOOLTIP_WRAPPER_STYLE = { backgroundColor: 'transparent', border: 'none' };
+
+function DarkTooltip({
+  active,
+  payload,
+  label,
+  formatter,
+}: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ name?: string; value?: unknown }>;
+  label?: string | number;
+  formatter?: (value: unknown) => [string, string];
+}) {
+  if (!active || !payload?.length) return null;
+  const fmt = formatter ?? ((v: unknown) => [String(v), (payload?.[0] as { name?: string })?.name ?? 'Value']);
+  return (
+    <div className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 shadow-xl text-left">
+      {label != null && <p className="text-slate-200 text-xs font-medium mb-1">{String(label)}</p>}
+      {payload.map((entry, i) => {
+        const [value, name] = fmt(entry.value);
+        return (
+          <p key={i} className="text-slate-300 text-xs">
+            {name}: <span className="text-blue-300 font-mono">{value}</span>
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 type SessionsByDay = { date: string; count: number; label: string };
 
 type DashboardStats = {
@@ -29,11 +60,14 @@ type DashboardStats = {
   withCalibrationImages: number;
   meanErrorAvg: number | null;
   sessionsByDay: SessionsByDay[];
+  sessionsByAge?: { range: string; count: number }[];
+  sessionsByCountry?: { country: string; count: number }[];
+  topEyeConditions?: { condition: string; count: number }[];
   featureAnalytics?: FeatureAnalytics;
 };
 
 export default function AdminDashboardCharts({ stats }: { stats: DashboardStats }) {
-  const { total, last7, last14, withVideo, withCalibrationImages, meanErrorAvg, sessionsByDay, featureAnalytics } =
+  const { total, last7, last14, withVideo, withCalibrationImages, meanErrorAvg, sessionsByDay, sessionsByAge, sessionsByCountry, topEyeConditions, featureAnalytics } =
     stats;
 
   const pieData = [
@@ -112,14 +146,11 @@ export default function AdminDashboardCharts({ stats }: { stats: DashboardStats 
                 allowDecimals={false}
               />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1e293b',
-                  border: '1px solid #475569',
-                  borderRadius: '8px',
-                }}
-                labelStyle={{ color: '#e2e8f0' }}
-                formatter={(value: number) => [value, 'Sessions']}
-                labelFormatter={(label) => label}
+                cursor={false}
+                wrapperStyle={TOOLTIP_WRAPPER_STYLE}
+                content={({ active, payload, label }) => (
+                  <DarkTooltip active={active} payload={payload} label={label} formatter={(v) => [String(v), 'Sessions']} />
+                )}
               />
               <Area
                 type="monotone"
@@ -155,12 +186,11 @@ export default function AdminDashboardCharts({ stats }: { stats: DashboardStats 
                   allowDecimals={false}
                 />
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1e293b',
-                    border: '1px solid #475569',
-                    borderRadius: '8px',
-                  }}
-                  formatter={(value: number) => [value, 'Sessions']}
+                  cursor={false}
+                  wrapperStyle={TOOLTIP_WRAPPER_STYLE}
+                  content={({ active, payload, label }) => (
+                    <DarkTooltip active={active} payload={payload} label={label} formatter={(v) => [String(v), 'Sessions']} />
+                  )}
                 />
                 <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               </BarChart>
@@ -185,7 +215,7 @@ export default function AdminDashboardCharts({ stats }: { stats: DashboardStats 
                     paddingAngle={2}
                     dataKey="value"
                     label={({ name, percent }) =>
-                      `${name} ${(percent * 100).toFixed(0)}%`
+                      `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
                     }
                   >
                     {pieData.map((entry, index) => (
@@ -193,12 +223,11 @@ export default function AdminDashboardCharts({ stats }: { stats: DashboardStats 
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1e293b',
-                      border: '1px solid #475569',
-                      borderRadius: '8px',
-                    }}
-                    formatter={(value: number) => [value, 'Sessions']}
+                    cursor={false}
+                    wrapperStyle={TOOLTIP_WRAPPER_STYLE}
+                    content={({ active, payload, label }) => (
+                      <DarkTooltip active={active} payload={payload} label={label} formatter={(v) => [String(v), 'Sessions']} />
+                    )}
                   />
                   <Legend
                     wrapperStyle={{ fontSize: '12px' }}
@@ -211,7 +240,66 @@ export default function AdminDashboardCharts({ stats }: { stats: DashboardStats 
             )}
           </div>
         </div>
-      </div>
+        </div>
+
+      {/* Demographics: by age, country, eye conditions */}
+      {(sessionsByAge?.length || sessionsByCountry?.length || topEyeConditions?.length) ? (
+        <div className="space-y-6">
+          <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider">
+            Demographics (sessions with demographics)
+          </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {sessionsByAge && sessionsByAge.length > 0 && (
+              <div className="rounded-xl bg-slate-800/60 border border-slate-700/80 p-5 shadow-xl">
+                <h3 className="text-slate-300 font-medium mb-1">Sessions by age</h3>
+                <p className="text-slate-500 text-xs mb-4">Age range (years)</p>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={sessionsByAge} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                      <XAxis dataKey="range" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                      <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip cursor={false} wrapperStyle={TOOLTIP_WRAPPER_STYLE} content={({ active, payload, label }) => <DarkTooltip active={active} payload={payload} label={label} />} />
+                      <Bar dataKey="count" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+            {sessionsByCountry && sessionsByCountry.length > 0 && (
+              <div className="rounded-xl bg-slate-800/60 border border-slate-700/80 p-5 shadow-xl">
+                <h3 className="text-slate-300 font-medium mb-1">Sessions by country</h3>
+                <p className="text-slate-500 text-xs mb-4">Top countries</p>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={sessionsByCountry.slice(0, 12)} layout="vertical" margin={{ top: 4, right: 8, left: 4, bottom: 4 }}>
+                      <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                      <YAxis type="category" dataKey="country" tick={{ fill: '#94a3b8', fontSize: 10 }} width={100} />
+                      <Tooltip cursor={false} wrapperStyle={TOOLTIP_WRAPPER_STYLE} content={({ active, payload, label }) => <DarkTooltip active={active} payload={payload} label={label} />} />
+                      <Bar dataKey="count" fill="#10b981" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+            {topEyeConditions && topEyeConditions.length > 0 && (
+              <div className="rounded-xl bg-slate-800/60 border border-slate-700/80 p-5 shadow-xl">
+                <h3 className="text-slate-300 font-medium mb-1">Top eye conditions</h3>
+                <p className="text-slate-500 text-xs mb-4">Most reported (sessions may have multiple)</p>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={topEyeConditions.slice(0, 12)} layout="vertical" margin={{ top: 4, right: 8, left: 4, bottom: 4 }}>
+                      <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                      <YAxis type="category" dataKey="condition" tick={{ fill: '#94a3b8', fontSize: 10 }} width={90} />
+                      <Tooltip cursor={false} wrapperStyle={TOOLTIP_WRAPPER_STYLE} content={({ active, payload, label }) => <DarkTooltip active={active} payload={payload} label={label} />} />
+                      <Bar dataKey="count" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {featureAnalytics && (featureAnalytics.totalSamples > 0 || featureAnalytics.validationErrorBuckets.some((b) => b.count > 0) || featureAnalytics.sessionMeanErrorList.length > 0) && (
         <div className="space-y-6">
@@ -229,7 +317,7 @@ export default function AdminDashboardCharts({ stats }: { stats: DashboardStats 
                   <BarChart data={featureAnalytics.dimensionStats} layout="vertical" margin={{ top: 4, right: 24, left: 90, bottom: 4 }}>
                     <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 10 }} />
                     <YAxis type="category" dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} width={88} />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }} />
+                    <Tooltip cursor={false} wrapperStyle={TOOLTIP_WRAPPER_STYLE} content={({ active, payload, label }) => <DarkTooltip active={active} payload={payload} label={label} />} />
                     <Bar dataKey="mean" fill="#3b82f6" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -246,7 +334,7 @@ export default function AdminDashboardCharts({ stats }: { stats: DashboardStats 
                     <BarChart data={featureAnalytics.validationErrorBuckets} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                       <XAxis dataKey="range" tick={{ fill: '#94a3b8', fontSize: 11 }} />
                       <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} allowDecimals={false} />
-                      <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }} />
+                      <Tooltip cursor={false} wrapperStyle={TOOLTIP_WRAPPER_STYLE} content={({ active, payload, label }) => <DarkTooltip active={active} payload={payload} label={label} />} />
                       <Bar dataKey="count" fill="#22c55e" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -274,7 +362,7 @@ export default function AdminDashboardCharts({ stats }: { stats: DashboardStats 
                       <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                         <XAxis dataKey="range" tick={{ fill: '#94a3b8', fontSize: 11 }} />
                         <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} allowDecimals={false} />
-                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }} />
+                        <Tooltip cursor={false} wrapperStyle={TOOLTIP_WRAPPER_STYLE} content={({ active, payload, label }) => <DarkTooltip active={active} payload={payload} label={label} />} />
                         <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
