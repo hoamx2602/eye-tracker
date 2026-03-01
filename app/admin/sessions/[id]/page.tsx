@@ -26,6 +26,7 @@ type SessionDetail = {
   calibrationGazeSamples?: CalibrationSample[] | null;
   validationErrors?: number[];
   config?: unknown;
+  demographics?: { age?: number; gender?: string; country?: string; eyeConditions?: string[] } | null;
 };
 
 async function getSignedUrl(url: string): Promise<string | null> {
@@ -451,6 +452,8 @@ export default function AdminSessionDetailPage() {
     );
   }
 
+  const demographics = session.demographics ?? (session.config && typeof session.config === 'object' ? (session.config as Record<string, unknown>).demographics as { age?: number; gender?: string; country?: string; eyeConditions?: string[] } | undefined : undefined);
+
   return (
     <div className="space-y-8">
       <div className="flex items-center gap-4 flex-wrap">
@@ -502,6 +505,43 @@ export default function AdminSessionDetailPage() {
           </div>
         </dl>
       </div>
+
+      {/* Demographics */}
+      {demographics && (
+        <div className="rounded-xl bg-slate-800/60 border border-slate-700/80 p-5 shadow-xl">
+          <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-4">
+            Demographics
+          </h2>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {demographics.age != null && (
+              <div>
+                <dt className="text-xs text-slate-500 uppercase">Age</dt>
+                <dd className="text-sm text-slate-200 mt-0.5">{demographics.age}</dd>
+              </div>
+            )}
+            {demographics.gender != null && demographics.gender !== '' && (
+              <div>
+                <dt className="text-xs text-slate-500 uppercase">Gender</dt>
+                <dd className="text-sm text-slate-200 mt-0.5">{demographics.gender}</dd>
+              </div>
+            )}
+            {demographics.country != null && demographics.country !== '' && (
+              <div>
+                <dt className="text-xs text-slate-500 uppercase">Country</dt>
+                <dd className="text-sm text-slate-200 mt-0.5">{demographics.country}</dd>
+              </div>
+            )}
+            {Array.isArray(demographics.eyeConditions) && demographics.eyeConditions.length > 0 && (
+              <div className="sm:col-span-2">
+                <dt className="text-xs text-slate-500 uppercase">Eye conditions</dt>
+                <dd className="text-sm text-slate-200 mt-0.5">
+                  {demographics.eyeConditions.filter((c) => c !== 'none').join(', ') || 'None'}
+                </dd>
+              </div>
+            )}
+          </dl>
+        </div>
+      )}
 
       {/* Video */}
       <div className="rounded-xl bg-slate-800/60 border border-slate-700/80 p-5 shadow-xl">

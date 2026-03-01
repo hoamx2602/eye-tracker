@@ -18,6 +18,9 @@ model Session {
   // Snapshot of app config at session start (JSON)
   config Json?
 
+  // Demographics at calibration time (age, gender, country, eyeConditions)
+  demographics Json?
+
   // After calibration: validation errors per point (pixels), mean error
   validationErrors Float[] @default([])
   meanErrorPx      Float?

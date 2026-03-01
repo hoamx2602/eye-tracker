@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       config,
+      demographics,
       validationErrors,
       meanErrorPx,
       status,
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest) {
     const session = await prisma.session.create({
       data: {
         config: config ?? undefined,
+        demographics: demographics != null && typeof demographics === 'object' ? demographics : undefined,
         validationErrors: Array.isArray(validationErrors) ? validationErrors : [],
         meanErrorPx: typeof meanErrorPx === 'number' ? meanErrorPx : null,
         status: typeof status === 'string' ? status : 'completed',
