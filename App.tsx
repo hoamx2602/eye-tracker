@@ -1479,7 +1479,7 @@ function App() {
       )}
 
       {/* Diagnostics Panel (Now Draggable) */}
-      {status !== 'HEAD_POSITIONING' && (
+      {status !== 'IDLE' && status !== 'HEAD_POSITIONING' && (
          <DiagnosticsPanel 
             showCamera={showCamera}
             setShowCamera={setShowCamera}
