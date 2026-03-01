@@ -82,7 +82,7 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
 
       if (kind === 'forward_backward') {
         const pulse = 0.5 - Math.cos(2 * Math.PI * e) / 2;
-        const scale = 0.7 + pulse * 1.1;
+        const scale = 0.4 + pulse * 4.0;
         return { x: center, y: center, scale };
       }
 
