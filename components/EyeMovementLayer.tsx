@@ -19,7 +19,7 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
 
   const durationMs = useMemo(() => {
     switch (kind) {
-      case 'wiggling': return 8000;
+      case 'wiggling': return 20000;
       case 'horizontal': return 8000;
       case 'vertical': return 8000;
       case 'forward_backward': return 7000;
@@ -36,6 +36,29 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
     const center = 50;
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
     const easeInOut = (t: number) => 0.5 - Math.cos(Math.PI * t) / 2;
+
+    // Precompute arc-length table for wiggling (Lissajous) so speed is constant.
+    // High resolution (10k samples) + Simpson's rule for accurate integration.
+    let wigglingTable: { s: number[]; totalLen: number; n: number; twoLoops: number; a: number; b: number } | null = null;
+    if (kind === 'wiggling') {
+      const amplitude = max - center;
+      const a = amplitude;
+      const b = amplitude;
+      const n = 10000;
+      const twoLoops = 4 * Math.PI;
+      const speed = (ang: number) =>
+        Math.sqrt(a * a * Math.cos(ang) * Math.cos(ang) + 4 * b * b * Math.cos(2 * ang) * Math.cos(2 * ang));
+      const dt = twoLoops / n;
+      const sTable: number[] = new Array(n + 1);
+      sTable[0] = 0;
+      for (let i = 1; i <= n; i++) {
+        const a0 = (i - 1) * dt;
+        const aMid = a0 + dt / 2;
+        const a1 = i * dt;
+        sTable[i] = sTable[i - 1]! + (dt / 6) * (speed(a0) + 4 * speed(aMid) + speed(a1));
+      }
+      wigglingTable = { s: sTable, totalLen: sTable[n]!, n, twoLoops, a, b };
+    }
 
     function segment(t: number, n: number) {
       const clamped = Math.max(0, Math.min(0.999999, t));
@@ -63,13 +86,22 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         return { x: center, y: center, scale };
       }
 
-      // Wiggling: Lissajous-like figure spanning full calibration range (same as other exercises).
-      // Previously a=10, b=7 (~20%×14% area) was too small for high-precision eye-tracking.
-      if (kind === 'wiggling') {
-        const amplitude = max - center; // 38% each way → full range [pad, 100-pad]
-        const a = amplitude;
-        const b = amplitude;
-        const ang = 2 * Math.PI * e * 2; // 2 full loops
+      // Wiggling: Lissajous shape, arc-length parameterized (binary search for constant speed).
+      if (kind === 'wiggling' && wigglingTable) {
+        const { s: sTable, totalLen, n: wN, twoLoops, a, b } = wigglingTable;
+        const linearT = Math.max(0, Math.min(1, t));
+        const s = linearT * totalLen;
+        let lo = 0, hi = wN;
+        while (lo < hi) {
+          const mid = (lo + hi) >>> 1;
+          if (sTable[mid]! < s) lo = mid + 1;
+          else hi = mid;
+        }
+        const i = Math.max(0, lo - 1);
+        const s0 = sTable[i]!;
+        const s1 = sTable[i + 1] ?? totalLen;
+        const frac = s1 > s0 ? (s - s0) / (s1 - s0) : 0;
+        const ang = (i + frac) * (twoLoops / wN);
         const x = center + a * Math.sin(ang);
         const y = center + b * Math.sin(2 * ang);
         return { x, y, scale: 1 };

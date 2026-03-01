@@ -1364,37 +1364,12 @@ function App() {
          />
       )}
 
-      {/* Light level: measure and notify user for accuracy */}
-      {(status === 'CALIBRATION' || status === 'TRACKING') && lightLevel && (
-        <>
-          {/* Persistent indicator: numeric value + status */}
-          <div
-            className={`fixed top-4 right-4 z-[180] px-3 py-2 rounded-lg border shadow-lg text-sm font-medium flex items-center gap-2 ${
-              lightLevel.status === 'too_dark'
-                ? 'bg-red-900/90 border-red-600 text-red-200'
-                : lightLevel.status === 'low'
-                ? 'bg-amber-900/90 border-amber-600 text-amber-200'
-                : lightLevel.status === 'ok'
-                ? 'bg-gray-800/90 border-gray-600 text-gray-200'
-                : 'bg-green-900/40 border-green-600 text-green-200'
-            }`}
-          >
-            <span aria-hidden>{lightLevel.status === 'good' ? '☀️' : lightLevel.status === 'ok' ? '💡' : '🔦'}</span>
-            <span>
-              Light: <strong>{lightLevel.value}</strong>
-              <span className="opacity-90 ml-1">
-                ({lightLevel.status === 'too_dark' ? 'Too dark' : lightLevel.status === 'low' ? 'Low' : lightLevel.status === 'ok' ? 'OK' : 'Good'})
-              </span>
-            </span>
-          </div>
-          {/* Prominent warning only when too dark */}
-          {lightLevel.status === 'too_dark' && (
-            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[181] px-4 py-2 rounded-lg bg-red-900/95 border border-red-500 text-red-100 text-sm font-medium shadow-lg flex items-center gap-2 max-w-md text-center">
-              <span aria-hidden>💡</span>
-              <span>Lighting is too low for accurate tracking. Add front light or move to a brighter area.</span>
-            </div>
-          )}
-        </>
+      {/* Light level: warning when too dark (value + status shown in DiagnosticsPanel) */}
+      {(status === 'CALIBRATION' || status === 'TRACKING') && lightLevel?.status === 'too_dark' && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[181] px-4 py-2 rounded-lg bg-red-900/95 border border-red-500 text-red-100 text-sm font-medium shadow-lg flex items-center gap-2 max-w-md text-center">
+          <span aria-hidden>💡</span>
+          <span>Lighting is too low for accurate tracking. Add front light or move to a brighter area.</span>
+        </div>
       )}
       {status === 'CALIBRATION' && calibPhase !== CalibrationPhase.EXERCISES && (
         <CalibrationLayer
@@ -1488,6 +1463,7 @@ function App() {
             capturedImagesCount={capturedImages.length}
             isBlinking={isBlinking}
             status={status}
+            lightLevel={lightLevel}
          />
       )}
     </div>

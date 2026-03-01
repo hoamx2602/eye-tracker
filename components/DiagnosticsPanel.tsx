@@ -10,6 +10,7 @@ interface DiagnosticsPanelProps {
   capturedImagesCount: number;
   isBlinking: boolean;
   status: AppState;
+  lightLevel?: { value: number; status: 'too_dark' | 'low' | 'ok' | 'good' } | null;
 }
 
 const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
@@ -19,7 +20,8 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
   rawFeatures,
   capturedImagesCount,
   isBlinking,
-  status
+  status,
+  lightLevel
 }) => {
   // Initial position: same on server and client to avoid hydration mismatch; then sync from window after mount
   const [position, setPosition] = useState({ x: 16, y: 500 });
@@ -113,6 +115,16 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
         <div className="text-[9px] text-gray-500">
             Imgs Captured: {capturedImagesCount}
         </div>
+
+        {lightLevel && (
+          <div className={`text-[10px] font-medium mb-1 ${
+            lightLevel.status === 'too_dark' ? 'text-red-400' :
+            lightLevel.status === 'low' ? 'text-amber-400' :
+            lightLevel.status === 'ok' ? 'text-gray-400' : 'text-green-400'
+          }`}>
+            Light: {lightLevel.value} ({lightLevel.status === 'too_dark' ? 'Too dark' : lightLevel.status === 'low' ? 'Low' : lightLevel.status === 'ok' ? 'OK' : 'Good'})
+          </div>
+        )}
 
         {isBlinking && <div className="text-red-500 font-bold text-xs mb-1">BLINK DETECTED</div>}
         <div className="text-[10px] text-gray-600 mt-1 pt-1 border-t border-gray-800">Status: {status}</div>
