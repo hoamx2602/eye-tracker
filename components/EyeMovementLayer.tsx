@@ -9,7 +9,7 @@ interface EyeMovementLayerProps {
 }
 
 const COUNTDOWN_MS = 2000;
-const PAD = 12;
+const PAD = 4;
 const MIN = PAD;
 const MAX = 100 - PAD;
 const CENTER = 50;
