@@ -142,6 +142,7 @@ function App() {
   const [loadingMsg, setLoadingMsg] = useState('');
   const [sessionSaveStatus, setSessionSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [sessionSaveError, setSessionSaveError] = useState<string | null>(null);
+  const [lastSavedCounts, setLastSavedCounts] = useState<{ samples: number; images: number } | null>(null);
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [showDemographicsForm, setShowDemographicsForm] = useState(false);
   const demographicsRef = useRef<DemographicsData | null>(null);
@@ -1066,6 +1067,7 @@ function App() {
       setSessionSaveError(null);
       try {
         const videoBlob = await stopVideoRecordingAndGetBlob();
+        await new Promise((r) => setTimeout(r, 300));
         let videoUrl: string | undefined;
         const blobToBase64 = (b: Blob): Promise<string> =>
           new Promise((res, rej) => {
@@ -1076,7 +1078,7 @@ function App() {
           });
         if (videoBlob && videoBlob.size > 0) {
           const data = await blobToBase64(videoBlob);
-          videoUrl = await uploadApi.upload(data, `calibration-${Date.now()}.webm`, 'video/webm');
+          videoUrl = (await uploadApi.upload(data, `calibration-${Date.now()}.webm`, 'video/webm')) ?? undefined;
         }
         const gridImageCount = calibrationImagesRef.current.length;
         const samples = trainingSamplesRef.current;
@@ -1096,7 +1098,7 @@ function App() {
             : (s.blobForUpload ?? null);
           if (blob) {
             const data = await blobToBase64(blob);
-            imageUrl = await uploadApi.upload(data, `calibration-sample-${Date.now()}-${i}.jpg`, 'image/jpeg');
+            imageUrl = (await uploadApi.upload(data, `calibration-sample-${Date.now()}-${i}.jpg`, 'image/jpeg')) ?? null;
           }
           calibrationGazeSamples.push({
             screenX: s.screenX,
@@ -1108,7 +1110,12 @@ function App() {
           });
         }
         const calibrationImageUrls = calibrationGazeSamples.map((s) => s.imageUrl).filter((u): u is string => Boolean(u));
-        await sessionsApi.create({
+        const sampleCount = calibrationGazeSamples.length;
+        const imageCount = calibrationImageUrls.length;
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Session save] Sending:', { sampleCount, imageCount, hasVideo: Boolean(videoUrl) });
+        }
+        const created = await sessionsApi.create({
           config: {
             ...(configRef.current as unknown as Record<string, unknown>),
             ...(demographicsRef.current ? { demographics: demographicsRef.current } : {}),
@@ -1120,6 +1127,10 @@ function App() {
           calibrationImageUrls: calibrationImageUrls.length > 0 ? calibrationImageUrls : undefined,
           calibrationGazeSamples,
         });
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Session save] Created session:', created.id);
+        }
+        setLastSavedCounts({ samples: sampleCount, images: imageCount });
         setSessionSaveStatus('saved');
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -1371,7 +1382,17 @@ function App() {
               {loadingMsg}
             </p>
             {sessionSaveStatus === 'saving' && <p className="text-sm text-gray-400">Đang lưu session...</p>}
-            {sessionSaveStatus === 'saved' && <p className="text-sm text-green-400">Đã lưu session.</p>}
+            {sessionSaveStatus === 'saved' && (
+              <p className="text-sm text-green-400">
+                Đã lưu session.
+                {lastSavedCounts && (
+                  <span className="block text-gray-400 text-xs mt-0.5">
+                    {lastSavedCounts.samples} samples, {lastSavedCounts.images} ảnh. Vào Admin → Sessions (F5 để refresh) để xem.
+                    {lastSavedCounts.samples === 0 && ' — Không có dữ liệu calibration.'}
+                  </span>
+                )}
+              </p>
+            )}
             {sessionSaveStatus === 'error' && sessionSaveError && (
               <p className="text-sm text-red-400 max-w-md text-center">{sessionSaveError}</p>
             )}

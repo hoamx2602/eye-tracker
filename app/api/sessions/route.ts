@@ -39,6 +39,12 @@ export async function POST(request: NextRequest) {
       calibrationGazeSamples,
     } = body;
 
+    const sampleCount = Array.isArray(calibrationGazeSamples) ? calibrationGazeSamples.length : 0;
+    const imageUrlCount = Array.isArray(calibrationImageUrls) ? calibrationImageUrls.length : 0;
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[api/sessions POST] Received:', { sampleCount, imageUrlCount, hasVideo: Boolean(videoUrl) });
+    }
+
     const session = await prisma.session.create({
       data: {
         config: config ?? undefined,

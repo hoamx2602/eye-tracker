@@ -69,16 +69,23 @@ export const sessionsApi = {
   },
 };
 
-/** Upload a file (base64) to blob storage; returns URL. */
+/** Upload a file (base64) to blob storage; returns URL. Skips upload if data is empty; returns null. */
 export const uploadApi = {
-  async upload(base64Data: string, filename: string, contentType?: string): Promise<string> {
+  async upload(base64Data: string, filename: string, contentType?: string): Promise<string | null> {
+    if (!base64Data || typeof base64Data !== 'string' || base64Data.length < 10) {
+      return null;
+    }
     const res = await fetch(`${getBaseUrl()}/api/upload`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data: base64Data, filename, contentType }),
     });
-    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      const msg = (errBody && typeof errBody.error === 'string') ? errBody.error : `Upload failed: ${res.status}`;
+      throw new Error(msg);
+    }
     const { url } = await res.json();
-    return url;
+    return url ?? null;
   },
 };

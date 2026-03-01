@@ -51,7 +51,13 @@ export async function POST(request: NextRequest) {
     };
 
     if (!base64Data || !filename) {
-      return NextResponse.json({ error: 'Missing data or filename' }, { status: 400 });
+      return NextResponse.json(
+        { error: base64Data === undefined || base64Data === '' ? 'Missing or empty data' : 'Missing filename' },
+        { status: 400 }
+      );
+    }
+    if (typeof base64Data !== 'string') {
+      return NextResponse.json({ error: 'data must be a base64 string' }, { status: 400 });
     }
 
     const buffer = Buffer.from(base64Data, 'base64');

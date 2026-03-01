@@ -11,6 +11,7 @@ type SessionRow = {
   meanErrorPx: number | null;
   videoUrl: string | null;
   calibrationImageUrls: unknown;
+  calibrationGazeSamples?: Array<{ imageUrl?: string | null }> | null;
 };
 
 type ListResponse = { sessions: SessionRow[]; nextCursor: string | null };
@@ -58,8 +59,10 @@ export default function AdminSessionsPage() {
     }
   }
 
-  function hasImages(urls: unknown): boolean {
-    return Array.isArray(urls) && urls.length > 0;
+  function hasImages(s: SessionRow): boolean {
+    if (Array.isArray(s.calibrationImageUrls) && s.calibrationImageUrls.length > 0) return true;
+    const samples = Array.isArray(s.calibrationGazeSamples) ? s.calibrationGazeSamples : [];
+    return samples.some((sample) => sample && (sample as { imageUrl?: string | null }).imageUrl);
   }
 
   return (
@@ -110,7 +113,7 @@ export default function AdminSessionsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        {hasImages(s.calibrationImageUrls) ? (
+                        {hasImages(s) ? (
                           <span className="text-emerald-400">Yes</span>
                         ) : (
                           <span className="text-slate-500">No</span>
