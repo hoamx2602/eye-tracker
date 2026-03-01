@@ -24,10 +24,12 @@
 | 07 | [07-admin-dashboard.md](./07-admin-dashboard.md) | Dashboard thống kê (/admin) |
 | 08 | [08-admin-sessions-list.md](./08-admin-sessions-list.md) | Trang danh sách sessions (/admin/sessions) |
 | 09 | [09-admin-session-detail.md](./09-admin-session-detail.md) | Trang chi tiết session: ảnh, video (/admin/sessions/[id]) |
+| 10 | [10-calibration-per-sample-storage.md](./10-calibration-per-sample-storage.md) | Calibration: lưu mỗi sample kèm tọa độ + head + ảnh (1:1) |
 
 ## Thứ tự gợi ý
 1. **01** → **02** → **03** → **04** (nền tảng auth + data).
 2. **05** → **06** (vào được khu vực admin và login).
 3. **07** → **08** → **09** (dashboard và xem dữ liệu).
+4. **10** (calibration per-sample): có thể làm sau 09 để admin session detail hiển thị per-sample; hoặc làm độc lập.
 
 Đọc từng ticket, khi muốn implement ticket nào thì bảo rõ số/tên ticket để implement đúng scope.
