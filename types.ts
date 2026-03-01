@@ -37,6 +37,8 @@ export interface TrainingSample {
   imageUrl?: string;
   /** In-memory only: blob to upload for this sample (exercise). Omitted when sending to API. */
   blobForUpload?: Blob;
+  /** Pattern name for display (e.g. "Grid point 1", "horizontal", "h_pattern"). */
+  patternName?: string;
 }
 
 /** Serializable head validation snapshot for calibration samples. */

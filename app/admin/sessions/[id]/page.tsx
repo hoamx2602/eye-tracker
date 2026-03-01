@@ -11,6 +11,7 @@ type CalibrationSample = {
   timestamp?: number;
   head?: { valid: boolean; message: string; faceWidth?: number; minFaceWidth?: number; maxFaceWidth?: number; targetDistanceCm?: number };
   imageUrl?: string | null;
+  patternName?: string;
 };
 
 type SessionDetail = {
@@ -69,6 +70,9 @@ function CalibrationSampleCard({
     >
       <div className="absolute left-1/2 -translate-x-1/2 bottom-full border-4 border-transparent border-b-slate-600" />
       <p className="font-semibold text-slate-200 mb-2">Sample #{index + 1}</p>
+      {sample.patternName && (
+        <p className="text-slate-400 mb-2">Pattern: {sample.patternName}</p>
+      )}
       <dl className="space-y-1 text-slate-300">
         <div><dt className="text-slate-500">screenX</dt><dd className="font-mono">{sample.screenX != null ? sample.screenX : '—'}</dd></div>
         <div><dt className="text-slate-500">screenY</dt><dd className="font-mono">{sample.screenY != null ? sample.screenY : '—'}</dd></div>
@@ -120,6 +124,11 @@ function CalibrationSampleCard({
         {tooltipEl}
       </div>
       <div className="p-2 text-xs space-y-0.5">
+        {sample.patternName && (
+          <p className="text-slate-300 font-medium truncate" title={sample.patternName}>
+            {sample.patternName}
+          </p>
+        )}
         <p className="text-slate-400 font-mono">
           ({sample.screenX != null ? Math.round(sample.screenX) : '—'}, {sample.screenY != null ? Math.round(sample.screenY) : '—'}) px
         </p>

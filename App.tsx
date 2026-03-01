@@ -869,6 +869,7 @@ function App() {
               features: avgVector,
               timestamp: Date.now(),
               head: toHeadSnapshot(headValidationRef.current),
+              patternName: `Grid point ${point.id}`,
             };
             trainingSamplesRef.current.push(newSample);
             setTrainingData([...trainingSamplesRef.current]);
@@ -920,6 +921,7 @@ function App() {
     const targetCount = 30;
     const step = Math.max(1, Math.floor(trimmed.length / targetCount));
     let added = 0;
+    const kindName = EXERCISE_KINDS[currentExerciseIndex] || 'unknown';
 
     for (let i = 0; i < trimmed.length; i += step) {
       const windowEnd = Math.min(i + step, trimmed.length);
@@ -954,12 +956,12 @@ function App() {
         features: avgFeatures,
         timestamp: Date.now(),
         head: window[0].head,
+        patternName: kindName,
         ...(blobForUpload && { blobForUpload }),
       });
       added++;
     }
 
-    const kindName = EXERCISE_KINDS[currentExerciseIndex] || 'unknown';
     console.log(`[Exercise:${kindName}] Added ${added} samples from ${data.length} raw frames`);
     setTrainingData([...trainingSamplesRef.current]);
     advanceExercise();
@@ -1086,6 +1088,7 @@ function App() {
           timestamp?: number;
           head?: HeadSnapshot;
           imageUrl?: string | null;
+          patternName?: string;
         }> = [];
         for (let i = 0; i < samples.length; i++) {
           const s = samples[i]!;
@@ -1104,6 +1107,7 @@ function App() {
             timestamp: s.timestamp,
             head: s.head,
             imageUrl: imageUrl ?? undefined,
+            ...(s.patternName != null && { patternName: s.patternName }),
           });
         }
         const calibrationImageUrls = calibrationGazeSamples.map((s) => s.imageUrl).filter((u): u is string => Boolean(u));
