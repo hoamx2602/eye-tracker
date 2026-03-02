@@ -28,6 +28,8 @@ type SessionDetail = {
   validationErrors?: number[];
   config?: unknown;
   demographics?: { age?: number; gender?: string; country?: string; eyeConditions?: string[] } | null;
+  /** From TestRun table (or legacy: config.testTrajectories) */
+  testTrajectories?: TestTrajectorySegment[] | null;
 };
 
 async function getSignedUrl(url: string): Promise<string | null> {
@@ -352,7 +354,7 @@ export default function AdminSessionDetailPage() {
             samples={samples}
             validationErrors={session.validationErrors}
             meanErrorPx={session.meanErrorPx}
-            testTrajectories={(session.config && typeof session.config === 'object' && Array.isArray((session.config as Record<string, unknown>).testTrajectories)) ? (session.config as { testTrajectories: TestTrajectorySegment[] }).testTrajectories : undefined}
+            testTrajectories={session.testTrajectories ?? (session.config && typeof session.config === 'object' && Array.isArray((session.config as Record<string, unknown>).testTrajectories) ? (session.config as { testTrajectories: TestTrajectorySegment[] }).testTrajectories : undefined)}
           />
         </div>
       )}

@@ -12,9 +12,14 @@ export async function GET(
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
   try {
-    const session = await prisma.session.findUnique({ where: { id } });
+    const session = await prisma.session.findUnique({
+      where: { id },
+      include: { testRun: true },
+    });
     if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json(session);
+    const { testRun, ...rest } = session;
+    const payload = { ...rest, testTrajectories: testRun?.trajectories ?? undefined };
+    return NextResponse.json(payload);
   } catch (e) {
     console.error('[api/sessions/[id]]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
