@@ -1072,23 +1072,79 @@ function App() {
     (async () => {
       setSessionSaveStatus('saving');
       setSessionSaveError(null);
+      const blobToBase64 = (b: Blob): Promise<string> =>
+        new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res((r.result as string).split(',')[1] || '');
+          r.onerror = rej;
+          r.readAsDataURL(b);
+        });
+
+      /** Run up to `concurrency` promises at a time. */
+      const runWithConcurrency = async <T, R>(
+        items: T[],
+        concurrency: number,
+        fn: (item: T, index: number) => Promise<R>
+      ): Promise<R[]> => {
+        const results: R[] = new Array(items.length);
+        let index = 0;
+        const worker = async (): Promise<void> => {
+          while (index < items.length) {
+            const i = index++;
+            results[i] = await fn(items[i], i);
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
+        );
+        return results;
+      };
+
       try {
         const videoBlob = await stopVideoRecordingAndGetBlob();
-        await new Promise((r) => setTimeout(r, 300));
-        let videoUrl: string | undefined;
-        const blobToBase64 = (b: Blob): Promise<string> =>
-          new Promise((res, rej) => {
-            const r = new FileReader();
-            r.onload = () => res((r.result as string).split(',')[1] || '');
-            r.onerror = rej;
-            r.readAsDataURL(b);
-          });
-        if (videoBlob && videoBlob.size > 0) {
-          const data = await blobToBase64(videoBlob);
-          videoUrl = (await uploadApi.upload(data, `calibration-${Date.now()}.webm`, 'video/webm')) ?? undefined;
-        }
         const gridImageCount = calibrationImagesRef.current.length;
         const samples = trainingSamplesRef.current;
+        const timestamp = Date.now();
+
+        // Build list of image uploads: { sampleIndex, blob }
+        const imageUploads: { sampleIndex: number; blob: Blob }[] = [];
+        for (let i = 0; i < samples.length; i++) {
+          const blob = i < gridImageCount
+            ? calibrationImagesRef.current[i] ?? null
+            : (samples[i]!.blobForUpload ?? null);
+          if (blob) imageUploads.push({ sampleIndex: i, blob });
+        }
+
+        // Upload video and all images in parallel (images with concurrency limit 6)
+        const IMAGE_CONCURRENCY = 6;
+
+        const [videoUrlResult, imageUrlsByOrder] = await Promise.all([
+          videoBlob && videoBlob.size > 0
+            ? blobToBase64(videoBlob).then((data) =>
+                uploadApi.upload(data, `calibration-${timestamp}.webm`, 'video/webm')
+              )
+            : Promise.resolve(null),
+          runWithConcurrency(
+            imageUploads,
+            IMAGE_CONCURRENCY,
+            async ({ blob, sampleIndex }) => {
+              const data = await blobToBase64(blob);
+              const url = await uploadApi.upload(
+                data,
+                `calibration-sample-${timestamp}-${sampleIndex}.jpg`,
+                'image/jpeg'
+              );
+              return { sampleIndex, url };
+            }
+          ),
+        ]);
+
+        const videoUrl = videoUrlResult ?? undefined;
+        const imageUrlByIndex = new Map<number, string>();
+        imageUrlsByOrder.forEach(({ sampleIndex, url }) => {
+          if (url) imageUrlByIndex.set(sampleIndex, url);
+        });
+
         const calibrationGazeSamples: Array<{
           screenX: number;
           screenY: number;
@@ -1097,28 +1153,18 @@ function App() {
           head?: HeadSnapshot;
           imageUrl?: string | null;
           patternName?: string;
-        }> = [];
-        for (let i = 0; i < samples.length; i++) {
-          const s = samples[i]!;
-          let imageUrl: string | null = null;
-          const blob = i < gridImageCount
-            ? calibrationImagesRef.current[i] ?? null
-            : (s.blobForUpload ?? null);
-          if (blob) {
-            const data = await blobToBase64(blob);
-            imageUrl = (await uploadApi.upload(data, `calibration-sample-${Date.now()}-${i}.jpg`, 'image/jpeg')) ?? null;
-          }
-          calibrationGazeSamples.push({
-            screenX: s.screenX,
-            screenY: s.screenY,
-            features: s.features,
-            timestamp: s.timestamp,
-            head: s.head,
-            imageUrl: imageUrl ?? undefined,
-            ...(s.patternName != null && { patternName: s.patternName }),
-          });
-        }
-        const calibrationImageUrls = calibrationGazeSamples.map((s) => s.imageUrl).filter((u): u is string => Boolean(u));
+        }> = samples.map((s, i) => ({
+          screenX: s.screenX,
+          screenY: s.screenY,
+          features: s.features,
+          timestamp: s.timestamp,
+          head: s.head,
+          imageUrl: imageUrlByIndex.get(i) ?? undefined,
+          ...(s.patternName != null && { patternName: s.patternName }),
+        }));
+        const calibrationImageUrls = calibrationGazeSamples
+          .map((s) => s.imageUrl)
+          .filter((u): u is string => Boolean(u));
         const sampleCount = calibrationGazeSamples.length;
         const imageCount = calibrationImageUrls.length;
         if (process.env.NODE_ENV === 'development') {
