@@ -99,11 +99,22 @@ export const uploadApi = {
   async uploadBlob(blob: Blob, filename: string, contentType?: string): Promise<string | null> {
     if (!blob || blob.size === 0) return null;
     const baseUrl = getBaseUrl();
-    const presignRes = await fetch(`${baseUrl}/api/upload/presign`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename, contentType: contentType || blob.type }),
-    });
+    let presignRes: Response;
+    try {
+      presignRes = await fetch(`${baseUrl}/api/upload/presign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, contentType: contentType || blob.type }),
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === 'Failed to fetch' || msg.includes('fetch')) {
+        throw new Error(
+          'Không kết nối được API (kiểm tra mạng hoặc CORS). Nếu đang deploy Vercel: không cần set NEXT_PUBLIC_API_URL.'
+        );
+      }
+      throw e;
+    }
     if (!presignRes.ok) {
       const errBody = await presignRes.json().catch(() => ({}));
       const msg = (errBody && typeof errBody.error === 'string') ? errBody.error : `Presign failed: ${presignRes.status}`;
@@ -111,12 +122,22 @@ export const uploadApi = {
     }
     const { uploadUrl, publicUrl } = await presignRes.json();
     if (!uploadUrl || !publicUrl) throw new Error('Invalid presign response');
-    const putRes = await fetch(uploadUrl, {
-      method: 'PUT',
-      body: blob,
-      headers: { 'Content-Type': contentType || blob.type || 'application/octet-stream' },
-    });
-    if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+    try {
+      const putRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: blob,
+        headers: { 'Content-Type': contentType || blob.type || 'application/octet-stream' },
+      });
+      if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === 'Failed to fetch' || msg.includes('fetch')) {
+        throw new Error(
+          'Upload lên S3 bị chặn. Cấu hình CORS trên bucket S3: thêm origin https://eye-tracker-hoamx.vercel.app (và http://localhost:3000 cho dev), AllowedMethods: PUT, GET.'
+        );
+      }
+      throw e;
+    }
     return publicUrl;
   },
 };

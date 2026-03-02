@@ -1258,7 +1258,7 @@ function App() {
         setSessionSaveStatus('error');
         setSessionSaveError(msg);
         console.warn('[Session save]', e);
-        alert(`Không lưu được session: ${msg}\n\n• Chạy "npm run dev" (Next.js) — API /api chạy cùng origin, không cần set biến môi trường.\n• Nếu dùng host khác: set NEXT_PUBLIC_API_URL trong .env.local.\n• Kiểm tra DB + S3 đã cấu hình đúng (.env.local).`);
+        alert(`Không lưu được session: ${msg}\n\n• Chạy "npm run dev" (Next.js) — API /api chạy cùng origin, không cần set biến môi trường.\n• Trên Vercel: không set NEXT_PUBLIC_API_URL (dùng cùng domain). Cấu hình CORS bucket S3: thêm domain app vào AllowedOrigins, AllowedMethods: PUT, GET.\n• Kiểm tra DB + S3 đã cấu hình đúng (biến môi trường trên Vercel).`);
       }
     })();
   };
