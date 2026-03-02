@@ -302,19 +302,18 @@ export default function AdminSessionSampleDetailPage() {
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0, translateX: 0, translateY: 0 });
-  const zoomContainerRef = useRef<HTMLDivElement>(null);
+  const [zoomContainer, setZoomContainer] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const el = zoomContainerRef.current;
-    if (!el) return;
+    if (!zoomContainer) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const delta = e.deltaY > 0 ? -0.15 : 0.15;
       setScale((s) => Math.min(10, Math.max(0.5, s + delta)));
     };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, []);
+    zoomContainer.addEventListener('wheel', onWheel, { passive: false });
+    return () => zoomContainer.removeEventListener('wheel', onWheel);
+  }, [zoomContainer]);
 
   useEffect(() => {
     if (!id) return;
@@ -443,7 +442,7 @@ export default function AdminSessionSampleDetailPage() {
               {sample.imageUrl ? (
                 <div className="rounded-lg overflow-hidden border border-slate-600 bg-slate-900 max-w-md">
                   <div
-                    ref={zoomContainerRef}
+                    ref={setZoomContainer}
                     className="relative w-full aspect-video overflow-hidden cursor-grab active:cursor-grabbing select-none bg-slate-900"
                     onWheel={handleWheel}
                     onMouseDown={handleMouseDown}
