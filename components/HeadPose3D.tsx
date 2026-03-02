@@ -1,9 +1,18 @@
 'use client';
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Line } from '@react-three/drei';
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
+
+export type FocusAxis = 'pitch' | 'yaw' | 'roll' | null;
+
+const CAMERA_TARGETS: Record<string, THREE.Vector3> = {
+  pitch: new THREE.Vector3(4.5, 0.3, 0),
+  yaw:   new THREE.Vector3(0, 4.5, 0.4),
+  roll:  new THREE.Vector3(0, 0.3, 4.5),
+};
 
 function AxisLine({ start, end, color }: { start: [number, number, number]; end: [number, number, number]; color: string }) {
   return <Line points={[start, end]} color={color} lineWidth={1.5} dashed dashSize={0.15} gapSize={0.08} />;
@@ -245,17 +254,56 @@ function ContextLossHandler({ onLost }: { onLost: () => void }) {
   return null;
 }
 
-function Scene({ pitchRad, yawRad, rollRad, pitchDeg, yawDeg, rollDeg, onContextLost }: {
+function CameraAnimator({ focusAxis, controlsRef }: { focusAxis: FocusAxis; controlsRef: React.RefObject<OrbitControlsImpl | null> }) {
+  const { camera, invalidate } = useThree();
+  const targetPos = useRef(new THREE.Vector3());
+  const animating = useRef(false);
+  const prevFocus = useRef<FocusAxis>(null);
+
+  useEffect(() => {
+    if (focusAxis && focusAxis !== prevFocus.current) {
+      const dest = CAMERA_TARGETS[focusAxis];
+      if (dest) {
+        targetPos.current.copy(dest);
+        animating.current = true;
+        invalidate();
+      }
+    }
+    prevFocus.current = focusAxis;
+  }, [focusAxis, invalidate]);
+
+  useFrame(() => {
+    if (!animating.current) return;
+    camera.position.lerp(targetPos.current, 0.08);
+    camera.lookAt(0, 0, 0);
+    controlsRef.current?.target.set(0, 0, 0);
+    controlsRef.current?.update();
+    invalidate();
+    if (camera.position.distanceTo(targetPos.current) < 0.02) {
+      camera.position.copy(targetPos.current);
+      camera.lookAt(0, 0, 0);
+      controlsRef.current?.update();
+      animating.current = false;
+    }
+  });
+
+  return null;
+}
+
+function Scene({ pitchRad, yawRad, rollRad, pitchDeg, yawDeg, rollDeg, onContextLost, focusAxis }: {
   pitchRad: number; yawRad: number; rollRad: number;
   pitchDeg: number; yawDeg: number; rollDeg: number;
   onContextLost: () => void;
+  focusAxis: FocusAxis;
 }) {
   const axisLen = 2.2;
   const euler = useMemo(() => new THREE.Euler(pitchRad, yawRad, rollRad, 'YXZ'), [pitchRad, yawRad, rollRad]);
+  const controlsRef = useRef<OrbitControlsImpl>(null);
 
   return (
     <>
       <ContextLossHandler onLost={onContextLost} />
+      <CameraAnimator focusAxis={focusAxis} controlsRef={controlsRef} />
       <ambientLight intensity={0.45} />
       <directionalLight position={[2, 3, 5]} intensity={1.1} />
       <directionalLight position={[-3, -1, 2]} intensity={0.25} />
@@ -277,23 +325,24 @@ function Scene({ pitchRad, yawRad, rollRad, pitchDeg, yawDeg, rollDeg, onContext
       <Text position={[0.2, 0, axisLen + 0.15]} fontSize={0.22} color="#f59e0b" anchorX="left" anchorY="middle" font={undefined}>Z</Text>
       <group position={[0, 1.5, 0]}>
         <CurvedArrowWithTip axis="y" radius={0.6} color="#22c55e" />
-        <Text position={[0, 0.35, 0]} fontSize={0.18} color="#22c55e" anchorX="center" anchorY="middle" font={undefined}>{`Yaw ${yawDeg.toFixed(1)}°`}</Text>
+        <Text position={[0, 0.55, 0]} fontSize={0.16} color="#22c55e" anchorX="center" anchorY="bottom" font={undefined}>{`Yaw ${yawDeg.toFixed(1)}°`}</Text>
       </group>
       <group position={[1.6, 0, 0]}>
         <CurvedArrowWithTip axis="x" radius={0.6} color="#22d3ee" />
-        <Text position={[0, 0, 0.9]} fontSize={0.18} color="#22d3ee" anchorX="center" anchorY="middle" font={undefined}>{`Pitch ${pitchDeg.toFixed(1)}°`}</Text>
+        <Text position={[0, 0.55, 0.55]} fontSize={0.16} color="#22d3ee" anchorX="center" anchorY="bottom" font={undefined}>{`Pitch ${pitchDeg.toFixed(1)}°`}</Text>
       </group>
       <group position={[0, 0, 1.6]}>
         <CurvedArrowWithTip axis="z" radius={0.6} color="#f59e0b" />
-        <Text position={[0.9, 0, 0]} fontSize={0.18} color="#f59e0b" anchorX="center" anchorY="middle" font={undefined}>{`Roll ${rollDeg.toFixed(1)}°`}</Text>
+        <Text position={[0.55, 0.55, 0]} fontSize={0.16} color="#f59e0b" anchorX="center" anchorY="bottom" font={undefined}>{`Roll ${rollDeg.toFixed(1)}°`}</Text>
       </group>
-      <OrbitControls enablePan={false} enableZoom minDistance={3} maxDistance={8} />
+      <OrbitControls ref={controlsRef} enablePan={false} enableZoom minDistance={3} maxDistance={8} />
     </>
   );
 }
 
-export default function HeadPose3D({ pitchDeg, yawDeg, rollDeg }: {
+export default function HeadPose3D({ pitchDeg, yawDeg, rollDeg, focusAxis }: {
   pitchDeg: number; yawDeg: number; rollDeg: number;
+  focusAxis?: FocusAxis;
 }) {
   const pitchRad = (pitchDeg * Math.PI) / 180;
   const yawRad = (yawDeg * Math.PI) / 180;
@@ -336,9 +385,10 @@ export default function HeadPose3D({ pitchDeg, yawDeg, rollDeg }: {
           pitchRad={pitchRad} yawRad={yawRad} rollRad={rollRad}
           pitchDeg={pitchDeg} yawDeg={yawDeg} rollDeg={rollDeg}
           onContextLost={handleContextLost}
+          focusAxis={focusAxis ?? null}
         />
       </Canvas>
-      <p className="text-center text-xs text-slate-500 mt-2">Drag to rotate · Scroll to zoom</p>
+      <p className="text-center text-xs text-slate-500 mt-2">Drag to rotate · Scroll to zoom · Click Pitch/Yaw/Roll to focus</p>
     </div>
   );
 }

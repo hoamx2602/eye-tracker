@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { FEATURE_DIMENSION_NAMES } from '@/lib/featureAnalytics';
 import dynamic from 'next/dynamic';
+import type { FocusAxis } from '@/components/HeadPose3D';
 
 const HeadPose3D = dynamic(() => import('@/components/HeadPose3D'), { ssr: false });
 
@@ -298,6 +299,7 @@ export default function AdminSessionSampleDetailPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
+  const [headFocus, setHeadFocus] = useState<FocusAxis>(null);
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -519,33 +521,45 @@ export default function AdminSessionSampleDetailPage() {
             <p className="text-sm text-slate-500 mb-4">3D head orientation: Pitch (nod), Yaw (shake), Roll (tilt).</p>
             <div className="flex flex-wrap items-start justify-center gap-8">
               <div className="flex-1 min-w-[320px] max-w-[480px]">
-                <HeadPose3D pitchDeg={pitchDeg} yawDeg={yawDeg} rollDeg={rollDeg} />
+                <HeadPose3D pitchDeg={pitchDeg} yawDeg={yawDeg} rollDeg={rollDeg} focusAxis={headFocus} />
               </div>
               <div className="flex flex-col gap-4 min-w-[180px]">
-                <div className="rounded-lg bg-slate-800 border border-slate-600 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => setHeadFocus(headFocus === 'pitch' ? null : 'pitch')}
+                  className={`rounded-lg px-4 py-3 text-left transition-all ${headFocus === 'pitch' ? 'bg-cyan-900/40 border-cyan-500 ring-1 ring-cyan-500/50' : 'bg-slate-800 border-slate-600 hover:border-cyan-500/50'} border`}
+                >
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-3 h-3 rounded-full bg-cyan-400" />
                     <span className="text-xs text-slate-400 uppercase tracking-wider font-medium">Pitch</span>
                   </div>
                   <div className="text-lg font-mono font-bold text-cyan-400 tabular-nums">{pitchDeg.toFixed(1)}°</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Nod up/down</div>
-                </div>
-                <div className="rounded-lg bg-slate-800 border border-slate-600 px-4 py-3">
+                  <div className="text-[10px] text-slate-500 mt-0.5">Nod up/down · Click to focus</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHeadFocus(headFocus === 'yaw' ? null : 'yaw')}
+                  className={`rounded-lg px-4 py-3 text-left transition-all ${headFocus === 'yaw' ? 'bg-green-900/40 border-green-500 ring-1 ring-green-500/50' : 'bg-slate-800 border-slate-600 hover:border-green-500/50'} border`}
+                >
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-3 h-3 rounded-full bg-green-500" />
                     <span className="text-xs text-slate-400 uppercase tracking-wider font-medium">Yaw</span>
                   </div>
                   <div className="text-lg font-mono font-bold text-green-400 tabular-nums">{yawDeg.toFixed(1)}°</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Turn left/right</div>
-                </div>
-                <div className="rounded-lg bg-slate-800 border border-slate-600 px-4 py-3">
+                  <div className="text-[10px] text-slate-500 mt-0.5">Turn left/right · Click to focus</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHeadFocus(headFocus === 'roll' ? null : 'roll')}
+                  className={`rounded-lg px-4 py-3 text-left transition-all ${headFocus === 'roll' ? 'bg-amber-900/40 border-amber-500 ring-1 ring-amber-500/50' : 'bg-slate-800 border-slate-600 hover:border-amber-500/50'} border`}
+                >
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-3 h-3 rounded-full bg-amber-500" />
                     <span className="text-xs text-slate-400 uppercase tracking-wider font-medium">Roll</span>
                   </div>
                   <div className="text-lg font-mono font-bold text-amber-400 tabular-nums">{rollDeg.toFixed(1)}°</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Tilt head</div>
-                </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Tilt head · Click to focus</div>
+                </button>
               </div>
             </div>
           </div>
