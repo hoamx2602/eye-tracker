@@ -29,6 +29,8 @@ import ConsentModal from './components/ConsentModal';
 import DemographicsForm, { type DemographicsData } from './components/DemographicsForm';
 import RandomDotsOverlay from './components/RandomDotsOverlay';
 import ArticleReadingOverlay from './components/ArticleReadingOverlay';
+import StopSaveModal from './components/StopSaveModal';
+import CapturedImageModal from './components/CapturedImageModal';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -197,6 +199,7 @@ function App() {
   const [rawFeatures, setRawFeatures] = useState<EyeFeatures | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [trackingMode, setTrackingMode] = useState<TrackingMode>('free_gaze');
+  const [showStopSaveModal, setShowStopSaveModal] = useState(false);
   const [isBlinking, setIsBlinking] = useState(false);
   
   const [showCamera, setShowCamera] = useState(false);
@@ -234,6 +237,7 @@ function App() {
   
   // --- FACE CAPTURE STATE ---
   const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
+  const [capturedImageModalIndex, setCapturedImageModalIndex] = useState<number | null>(null);
   const lastCaptureTimeRef = useRef<number>(0);
   const lastBrightnessCheckTimeRef = useRef<number>(0);
   const brightnessCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1262,6 +1266,69 @@ function App() {
     document.body.removeChild(link);
   };
 
+  const downloadVideoBlob = (blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `eye_tracking_session_${new Date().toISOString().replace(/[:.]/g, "-")}.webm`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadCapturedImages = (images: CapturedImage[]) => {
+    images.forEach((img, i) => {
+      const link = document.createElement("a");
+      link.href = img.url;
+      link.download = `face_capture_${img.timestamp}_${i}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+  };
+
+  const handleStopSaveConfirm = async (options: { csv: boolean; video: boolean; images: boolean }) => {
+    const csvSnapshot = options.csv ? [...trackingHistoryRef.current] : [];
+    const imagesSnapshot = options.images ? [...capturedImages] : [];
+    let videoBlob: Blob | null = null;
+    if (options.video && mediaRecorderRef.current?.state !== 'inactive') {
+      videoBlob = await stopVideoRecordingAndGetBlob();
+    } else if (options.video && recordedVideoUrl) {
+      // Recording already stopped but we have URL - fetch as blob and download
+      try {
+        const res = await fetch(recordedVideoUrl);
+        videoBlob = await res.blob();
+      } catch (_) {
+        videoBlob = null;
+      }
+    }
+    if (!videoBlob && options.video) {
+      stopVideoRecording();
+    } else if (!options.video) {
+      stopVideoRecording();
+    }
+    reset();
+    setShowStopSaveModal(false);
+
+    // Trigger downloads after a short delay so state has settled
+    setTimeout(() => {
+      if (options.csv && csvSnapshot.length > 0) {
+        let csvContent = "data:text/csv;charset=utf-8,Timestamp,ScreenX,ScreenY\n";
+        csvSnapshot.forEach(row => { csvContent += `${row.timestamp},${row.x},${row.y}\n`; });
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `eye_tracking_data_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      if (videoBlob) downloadVideoBlob(videoBlob);
+      if (options.images && imagesSnapshot.length > 0) downloadCapturedImages(imagesSnapshot);
+    }, 100);
+  };
+
   const reset = () => {
     stopVideoRecording();
     setStatus('IDLE');
@@ -1356,13 +1423,29 @@ function App() {
                   <div className="text-xs font-bold text-gray-400 uppercase mb-2">Captured Faces ({capturedImages.length})</div>
                   <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-thin">
                       {capturedImages.map((img, i) => (
-                          <div key={i} className="flex-shrink-0 relative group">
-                              <img src={img.url} alt="capture" className="h-20 w-auto rounded border border-gray-600"/>
-                              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-[8px] p-0.5 text-center">{img.timestamp}</div>
-                          </div>
+                          <button
+                              key={i}
+                              type="button"
+                              onClick={() => setCapturedImageModalIndex(i)}
+                              className="flex-shrink-0 relative group rounded overflow-hidden border-2 border-transparent hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 transition"
+                          >
+                              <img src={img.url} alt={`Face ${i + 1}`} className="h-20 w-auto rounded border border-gray-600 pointer-events-none"/>
+                              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-[8px] p-0.5 text-center text-white">{img.timestamp}</div>
+                          </button>
                       ))}
                   </div>
               </div>
+           )}
+
+           {capturedImageModalIndex !== null && capturedImages[capturedImageModalIndex] && (
+             <CapturedImageModal
+               image={capturedImages[capturedImageModalIndex]}
+               index={capturedImageModalIndex}
+               total={capturedImages.length}
+               onClose={() => setCapturedImageModalIndex(null)}
+               onPrev={capturedImageModalIndex > 0 ? () => setCapturedImageModalIndex(capturedImageModalIndex - 1) : undefined}
+               onNext={capturedImageModalIndex < capturedImages.length - 1 ? () => setCapturedImageModalIndex(capturedImageModalIndex + 1) : undefined}
+             />
            )}
 
 
@@ -1567,12 +1650,19 @@ function App() {
              </div>
              <div className="w-px h-6 bg-gray-700 flex-shrink-0" />
 
-             <button onClick={handleDownloadCSV} className="px-4 py-1.5 text-xs font-bold rounded-md bg-green-700 text-white hover:bg-green-600 transition-colors shadow-sm flex-shrink-0">
-                Download CSV
-             </button>
-             <div className="w-px h-6 bg-gray-700 flex-shrink-0" />
-             <button onClick={reset} className="px-4 py-1.5 text-xs font-bold rounded-md bg-gray-800 border border-gray-600 hover:bg-gray-700 transition text-red-300 flex-shrink-0">Stop & Save</button>
+             <button onClick={() => setShowStopSaveModal(true)} className="px-4 py-1.5 text-xs font-bold rounded-md bg-gray-800 border border-gray-600 hover:bg-gray-700 transition text-red-300 flex-shrink-0">Stop & Save</button>
           </div>
+
+          {/* Stop & Save modal: choose what to download */}
+          {showStopSaveModal && (
+            <StopSaveModal
+              hasCsvData={trackingHistoryRef.current.length > 0}
+              hasVideo={isRecording || !!recordedVideoUrl}
+              hasImages={capturedImages.length > 0}
+              onConfirm={handleStopSaveConfirm}
+              onCancel={() => setShowStopSaveModal(false)}
+            />
+          )}
           
           {/* TRACKING SIDEBAR: CAPTURED IMAGES */}
           {config.faceCaptureInterval > 0 && capturedImages.length > 0 && (
