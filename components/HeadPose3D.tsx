@@ -39,6 +39,103 @@ function CurvedArrowWithTip({ axis, radius, color, segments = 40 }: { axis: 'x' 
   );
 }
 
+function AngleReference({ axis, angle, radius, color }: {
+  axis: 'x' | 'y' | 'z';
+  angle: number;
+  radius: number;
+  color: string;
+}) {
+  const pt = useCallback((t: number, r: number): [number, number, number] => {
+    if (axis === 'y') return [Math.sin(t) * r, 0, Math.cos(t) * r];
+    if (axis === 'x') return [0, -Math.sin(t) * r, Math.cos(t) * r];
+    return [-Math.sin(t) * r, Math.cos(t) * r, 0];
+  }, [axis]);
+
+  const ringPts = useMemo(() => {
+    const out: THREE.Vector3[] = [];
+    for (let i = 0; i <= 64; i++) {
+      const p = pt((Math.PI * 2 * i) / 64, radius);
+      out.push(new THREE.Vector3(...p));
+    }
+    return out;
+  }, [pt, radius]);
+
+  const { sectorGeo, arcPts } = useMemo(() => {
+    if (Math.abs(angle) < 0.005) return { sectorGeo: null, arcPts: null };
+    const segs = Math.max(12, Math.ceil(Math.abs(angle) / 0.06));
+    const positions: number[] = [];
+    const arc: THREE.Vector3[] = [];
+    for (let i = 0; i <= segs; i++) {
+      const t = (angle * i) / segs;
+      const p = pt(t, radius);
+      arc.push(new THREE.Vector3(...p));
+      if (i < segs) {
+        const t1 = (angle * (i + 1)) / segs;
+        const p1 = pt(t1, radius);
+        positions.push(0, 0, 0, ...p, ...p1);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.computeVertexNormals();
+    return { sectorGeo: geo, arcPts: arc };
+  }, [angle, pt, radius]);
+
+  const zeroEnd = useMemo(() => pt(0, radius + 0.15), [pt, radius]);
+  const angleEnd = useMemo(() => pt(angle, radius + 0.15), [pt, angle, radius]);
+  const zeroPt = useMemo(() => pt(0, radius), [pt, radius]);
+  const anglePt = useMemo(() => pt(angle, radius), [pt, angle, radius]);
+
+  const zeroLabelPos = useMemo(() => pt(0, radius + 0.28), [pt, radius]);
+  const labelRotation = useMemo((): THREE.Euler | undefined => {
+    if (axis === 'y') return new THREE.Euler(-Math.PI / 2, 0, 0);
+    return undefined;
+  }, [axis]);
+
+  return (
+    <group>
+      <Line points={ringPts} color={color} lineWidth={1} dashed dashSize={0.06} gapSize={0.04} />
+
+      {sectorGeo && (
+        <mesh geometry={sectorGeo}>
+          <meshBasicMaterial color={color} transparent opacity={0.18} side={THREE.DoubleSide} depthWrite={false} />
+        </mesh>
+      )}
+
+      {arcPts && <Line points={arcPts} color={color} lineWidth={2.5} />}
+
+      <Line points={[[0, 0, 0], zeroEnd]} color={color} lineWidth={1.5} dashed dashSize={0.08} gapSize={0.05} />
+
+      {Math.abs(angle) > 0.005 && (
+        <Line points={[[0, 0, 0], angleEnd]} color={color} lineWidth={2} />
+      )}
+
+      <mesh position={zeroPt}>
+        <sphereGeometry args={[0.035, 8, 8]} />
+        <meshBasicMaterial color={color} />
+      </mesh>
+      {Math.abs(angle) > 0.005 && (
+        <mesh position={anglePt}>
+          <sphereGeometry args={[0.035, 8, 8]} />
+          <meshBasicMaterial color={color} />
+        </mesh>
+      )}
+
+      <Text
+        position={zeroLabelPos}
+        fontSize={0.14}
+        color={color}
+        anchorX="center"
+        anchorY="middle"
+        font={undefined}
+        rotation={labelRotation}
+      >
+        0°
+      </Text>
+    </group>
+  );
+}
+
 function HeadModel({ euler }: { euler: THREE.Euler }) {
   const skin = '#c4a882';
   const skinLight = '#d4b896';
@@ -164,6 +261,11 @@ function Scene({ pitchRad, yawRad, rollRad, pitchDeg, yawDeg, rollDeg, onContext
       <directionalLight position={[-3, -1, 2]} intensity={0.25} />
       <hemisphereLight args={['#b1c4de', '#3d2817', 0.3]} />
       <HeadModel euler={euler} />
+
+      <AngleReference axis="y" angle={yawRad} radius={1.3} color="#22c55e" />
+      <AngleReference axis="x" angle={pitchRad} radius={1.3} color="#22d3ee" />
+      <AngleReference axis="z" angle={rollRad} radius={1.3} color="#f59e0b" />
+
       <AxisLine start={[0, -axisLen, 0]} end={[0, axisLen, 0]} color="#22c55e" />
       <mesh position={[0, axisLen, 0]}><coneGeometry args={[0.06, 0.2, 8]} /><meshBasicMaterial color="#22c55e" /></mesh>
       <Text position={[0.2, axisLen + 0.15, 0]} fontSize={0.22} color="#22c55e" anchorX="left" anchorY="middle" font={undefined}>Y</Text>
