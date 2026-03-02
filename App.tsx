@@ -1258,7 +1258,7 @@ function App() {
         setSessionSaveStatus('error');
         setSessionSaveError(msg);
         console.warn('[Session save]', e);
-        alert(`Không lưu được session: ${msg}\n\n• Chạy "npm run dev" (Next.js) — API /api chạy cùng origin, không cần set biến môi trường.\n• Trên Vercel: không set NEXT_PUBLIC_API_URL (dùng cùng domain). Cấu hình CORS bucket S3: thêm domain app vào AllowedOrigins, AllowedMethods: PUT, GET.\n• Kiểm tra DB + S3 đã cấu hình đúng (biến môi trường trên Vercel).`);
+        alert(`Could not save session: ${msg}\n\n• Run "npm run dev" (Next.js) — API runs on same origin, no env needed.\n• On Vercel: do not set NEXT_PUBLIC_API_URL (same domain). Configure S3 bucket CORS: add app domain to AllowedOrigins, AllowedMethods: PUT, GET.\n• Ensure DB and S3 env vars are set correctly on Vercel.`);
       }
     })();
   };

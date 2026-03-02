@@ -222,7 +222,7 @@ export default function SessionAnalytics({ samples, validationErrors, meanErrorP
       {testTrajectories && testTrajectories.length > 0 && (
         <SectionCard
           title="Test mode: Target vs Eye tracking"
-          subtitle="Vị trí target (%) và gaze dự đoán (%) theo thời gian — mỗi bước exercise ghi lại trong Test mode."
+          subtitle="Target position (%) and predicted gaze (%) over time — each exercise step recorded in Test mode."
         >
           <div className="space-y-6">
             {testTrajectories.map((seg, i) => (

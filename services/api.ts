@@ -110,7 +110,7 @@ export const uploadApi = {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg === 'Failed to fetch' || msg.includes('fetch')) {
         throw new Error(
-          'Không kết nối được API (kiểm tra mạng hoặc CORS). Nếu đang deploy Vercel: không cần set NEXT_PUBLIC_API_URL.'
+          'Cannot reach API (check network or CORS). On Vercel: do not set NEXT_PUBLIC_API_URL.'
         );
       }
       throw e;
@@ -133,7 +133,7 @@ export const uploadApi = {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg === 'Failed to fetch' || msg.includes('fetch')) {
         throw new Error(
-          'Upload lên S3 bị chặn. Cấu hình CORS trên bucket S3: thêm origin https://eye-tracker-hoamx.vercel.app (và http://localhost:3000 cho dev), AllowedMethods: PUT, GET.'
+          'S3 upload blocked. Configure CORS on your S3 bucket: add origin https://eye-tracker-hoamx.vercel.app (and http://localhost:3000 for dev), AllowedMethods: PUT, GET.'
         );
       }
       throw e;
