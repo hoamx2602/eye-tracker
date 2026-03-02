@@ -1502,64 +1502,76 @@ function App() {
              <ArticleReadingOverlay gazeX={gazePos.x} gazeY={gazePos.y} />
            )}
           
-          {/* TOOLBAR */}
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] flex items-center space-x-2 bg-gray-900 bg-opacity-90 p-2 rounded-lg border border-gray-700 shadow-xl">
+          {/* TOOLBAR — fixed layout, no jump when switching modes */}
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-2 bg-gray-900 bg-opacity-90 p-2 rounded-lg border border-gray-700 shadow-xl">
              {/* REC INDICATOR */}
              {isRecording && (
-                <div className="flex items-center space-x-1.5 px-2">
+                <div className="flex items-center space-x-1.5 px-2 flex-shrink-0">
                     <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse shadow-[0_0_8px_red]"></div>
                     <span className="text-[10px] font-bold text-red-200">REC</span>
                 </div>
              )}
-             <div className="w-px h-6 bg-gray-700 mx-1"></div>
+             <div className="w-px h-6 bg-gray-700 flex-shrink-0" />
 
-             {/* MODE SELECTOR */}
-             <div className="flex items-center bg-gray-800 rounded-md p-0.5">
+             {/* MODE SELECTOR — fixed width buttons to prevent text jump */}
+             <div className="flex items-center bg-gray-800 rounded-md p-0.5 flex-shrink-0">
                <button
                  onClick={() => setTrackingMode('free_gaze')}
-                 className={`px-3 py-1 text-xs font-bold rounded transition-colors ${trackingMode === 'free_gaze' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
+                 className={`w-[4.75rem] py-1.5 text-xs font-bold rounded transition-colors ${trackingMode === 'free_gaze' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
                >
                  Free Gaze
                </button>
                <button
                  onClick={() => setTrackingMode('random_dots')}
-                 className={`px-3 py-1 text-xs font-bold rounded transition-colors ${trackingMode === 'random_dots' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
+                 className={`w-[4.25rem] py-1.5 text-xs font-bold rounded transition-colors ${trackingMode === 'random_dots' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
                >
                  Dot Test
                </button>
                <button
                  onClick={() => setTrackingMode('article_reading')}
-                 className={`px-3 py-1 text-xs font-bold rounded transition-colors ${trackingMode === 'article_reading' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
+                 className={`w-[4rem] py-1.5 text-xs font-bold rounded transition-colors ${trackingMode === 'article_reading' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
                >
                  Article
                </button>
              </div>
-             <div className="w-px h-6 bg-gray-700 mx-1"></div>
+             <div className="w-px h-6 bg-gray-700 flex-shrink-0" />
 
-             {trackingMode === 'free_gaze' && (
-               <>
-                 <button
-                   onClick={() => setShowHeatmap(!showHeatmap)}
-                   className={`px-4 py-1.5 text-xs font-bold rounded-md transition-colors ${showHeatmap ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-                 >
-                   {showHeatmap ? 'Hide Heatmap' : 'Show Heatmap'}
-                 </button>
-                 {showHeatmap && (
-                    <button onClick={() => heatmapRef.current?.reset()} className="px-4 py-1.5 text-xs font-bold rounded-md bg-gray-700 text-gray-300 hover:bg-red-900 hover:text-white transition-colors">Clear Map</button>
-                 )}
-                 <div className="w-px h-6 bg-gray-700 mx-2"></div>
-               </>
-             )}
+             {/* HEATMAP SWITCHER — always visible; enabled only when Free Gaze */}
+             <div className="flex items-center gap-2 min-w-[11rem] flex-shrink-0">
+               <span className={`text-xs font-medium whitespace-nowrap ${trackingMode === 'free_gaze' ? 'text-gray-300' : 'text-gray-500'}`}>
+                 Heatmap
+               </span>
+               <button
+                 role="switch"
+                 aria-checked={showHeatmap}
+                 onClick={() => trackingMode === 'free_gaze' && setShowHeatmap(!showHeatmap)}
+                 disabled={trackingMode !== 'free_gaze'}
+                 className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900
+                   ${trackingMode !== 'free_gaze' ? 'cursor-not-allowed bg-gray-700 opacity-50' : showHeatmap ? 'bg-orange-600' : 'bg-gray-600 hover:bg-gray-500'}`}
+               >
+                 <span
+                   className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${showHeatmap ? 'translate-x-4' : 'translate-x-0'}`}
+                 />
+               </button>
+               <button
+                 onClick={() => heatmapRef.current?.reset()}
+                 disabled={trackingMode !== 'free_gaze' || !showHeatmap}
+                 className={`px-3 py-1 text-xs font-bold rounded-md flex-shrink-0 transition-colors ${
+                   trackingMode === 'free_gaze' && showHeatmap
+                     ? 'bg-gray-700 text-gray-300 hover:bg-red-900 hover:text-white cursor-pointer'
+                     : 'bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed'
+                 }`}
+               >
+                 Clear
+               </button>
+             </div>
+             <div className="w-px h-6 bg-gray-700 flex-shrink-0" />
 
-             <button onClick={handleDownloadCSV} className="px-4 py-1.5 text-xs font-bold rounded-md bg-green-700 text-white hover:bg-green-600 transition-colors shadow-sm">
+             <button onClick={handleDownloadCSV} className="px-4 py-1.5 text-xs font-bold rounded-md bg-green-700 text-white hover:bg-green-600 transition-colors shadow-sm flex-shrink-0">
                 Download CSV
              </button>
-             <div className="w-px h-6 bg-gray-700 mx-2"></div>
-             <button onClick={() => setShowSettings(true)} className="px-4 py-1.5 text-xs font-bold rounded-md bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors">
-                Settings
-             </button>
-             <div className="w-px h-6 bg-gray-700 mx-2"></div>
-             <button onClick={reset} className="px-4 py-1.5 text-xs font-bold rounded-md bg-gray-800 border border-gray-600 hover:bg-gray-700 transition text-red-300">Stop & Save</button>
+             <div className="w-px h-6 bg-gray-700 flex-shrink-0" />
+             <button onClick={reset} className="px-4 py-1.5 text-xs font-bold rounded-md bg-gray-800 border border-gray-600 hover:bg-gray-700 transition text-red-300 flex-shrink-0">Stop & Save</button>
           </div>
           
           {/* TRACKING SIDEBAR: CAPTURED IMAGES */}
