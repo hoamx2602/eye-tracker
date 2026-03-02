@@ -119,10 +119,18 @@ function EyeSchematicSingle({
   // Y value on axis: place text on opposite side from pupil
   const yProjX = px > cx ? cx - 5 : cx + 5;
   const yProjAnchor = px > cx ? 'end' : 'start';
-  // "Pupil" label: placed diagonally opposite to center, avoiding reference lines
-  const pupilLabelDx = px >= cx ? 14 : -14;
-  const pupilLabelDy = py >= cy ? 8 : -8;
-  const pupilLabelAnchor = px >= cx ? 'start' : 'end';
+  // "Pupil" label: leader line going diagonally away from center, avoiding reference lines
+  const pupilDirX = px >= cx ? 1 : -1;
+  const pupilDirY = py >= cy ? 1 : -1;
+  const pupilEdgeX = px + pupilDirX * 10;
+  const pupilEdgeY = py + pupilDirY * 10;
+  const pupilLeaderEndX = pupilEdgeX + pupilDirX * 14;
+  const pupilLeaderEndY = pupilEdgeY + pupilDirY * 14;
+  const pupilShelfDir = pupilDirX;
+  const pupilShelfEndX = pupilLeaderEndX + pupilShelfDir * 14;
+  const pupilShelfEndY = pupilLeaderEndY;
+  const pupilTextAnchor: string = pupilShelfDir > 0 ? 'start' : 'end';
+  const pupilTextX = pupilShelfEndX + pupilShelfDir * 2;
 
   return (
     <div className="flex flex-col items-center">
@@ -246,8 +254,11 @@ function EyeSchematicSingle({
             <text x={yProjX} y={py} fontSize="5" fill="#f59e0b" fontFamily="monospace" textAnchor={yProjAnchor} dominantBaseline="middle">
               {eyeY.toFixed(2)}
             </text>
-            {/* "Pupil" label: simple text offset diagonally from pupil */}
-            <text x={px + pupilLabelDx} y={py + pupilLabelDy} fontSize="6" fill={calloutColor} fontFamily="monospace" textAnchor={pupilLabelAnchor} dominantBaseline="middle">
+            {/* "Pupil" leader line callout (diagonal, away from reference lines) */}
+            <circle cx={pupilEdgeX} cy={pupilEdgeY} r="2.5" fill={calloutColor} />
+            <line x1={pupilEdgeX} y1={pupilEdgeY} x2={pupilLeaderEndX} y2={pupilLeaderEndY} stroke={calloutColor} strokeWidth="1" />
+            <line x1={pupilLeaderEndX} y1={pupilLeaderEndY} x2={pupilShelfEndX} y2={pupilShelfEndY} stroke={calloutColor} strokeWidth="1" />
+            <text x={pupilTextX} y={pupilShelfEndY} fontSize="7" fill={calloutColor} fontFamily="monospace" textAnchor={pupilTextAnchor} dominantBaseline="middle">
               Pupil
             </text>
           </g>
