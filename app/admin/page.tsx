@@ -2,6 +2,8 @@ import { prisma } from '@/lib/prisma';
 import AdminDashboardCharts from '@/components/AdminDashboardCharts';
 import { computeFeatureAnalytics } from '@/lib/featureAnalytics';
 
+export const dynamic = 'force-dynamic';
+
 function daysAgo(n: number) {
   const d = new Date();
   d.setDate(d.getDate() - n);
