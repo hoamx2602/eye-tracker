@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import SessionAnalytics from '@/components/SessionAnalytics';
 
 type CalibrationSample = {
   screenX?: number;
@@ -337,6 +338,20 @@ export default function AdminSessionDetailPage() {
               </div>
             )}
           </dl>
+        </div>
+      )}
+
+      {/* Data analysis */}
+      {samples.length > 0 && (
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider px-1">
+            Data analysis
+          </h2>
+          <SessionAnalytics
+            samples={samples}
+            validationErrors={session.validationErrors}
+            meanErrorPx={session.meanErrorPx}
+          />
         </div>
       )}
 
