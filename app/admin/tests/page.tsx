@@ -20,10 +20,6 @@ type ListResponse = { sessions: SessionRow[]; nextCursor: string | null };
 
 const PAGE_SIZE = 50;
 
-function isTestSession(s: SessionRow): boolean {
-  return Boolean(s.testRun);
-}
-
 export default function AdminTestsPage() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -34,12 +30,11 @@ export default function AdminTestsPage() {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch(`/api/sessions?limit=${PAGE_SIZE}`, { credentials: 'include' });
+        const res = await fetch(`/api/sessions?limit=${PAGE_SIZE}&testOnly=1`, { credentials: 'include' });
         if (!res.ok) return;
         const data: ListResponse = await res.json();
         if (!cancelled) {
-          const list = (data.sessions || []).filter(isTestSession);
-          setSessions(list);
+          setSessions(data.sessions || []);
           setNextCursor(data.nextCursor ?? null);
         }
       } finally {
@@ -54,13 +49,12 @@ export default function AdminTestsPage() {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const res = await fetch(`/api/sessions?limit=${PAGE_SIZE}&cursor=${encodeURIComponent(nextCursor)}`, {
+      const res = await fetch(`/api/sessions?limit=${PAGE_SIZE}&testOnly=1&cursor=${encodeURIComponent(nextCursor)}`, {
         credentials: 'include',
       });
       if (!res.ok) return;
       const data: ListResponse = await res.json();
-      const newList = (data.sessions || []).filter(isTestSession);
-      setSessions((prev) => [...prev, ...newList]);
+      setSessions((prev) => [...prev, ...(data.sessions || [])]);
       setNextCursor(data.nextCursor ?? null);
     } finally {
       setLoadingMore(false);

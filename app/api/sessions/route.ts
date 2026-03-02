@@ -10,17 +10,18 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);
     const cursor = searchParams.get('cursor') || undefined;
+    const testOnly = searchParams.get('testOnly') === '1';
 
     const sessions = await prisma.session.findMany({
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: { createdAt: 'desc' },
-      include: { testRun: true },
+      where: testOnly ? { testRun: { isNot: null } } : { testRun: null },
+      include: { testRun: testOnly },
     });
     const hasMore = sessions.length > limit;
     const list = hasMore ? sessions.slice(0, limit) : sessions;
     const nextCursor = hasMore ? list[list.length - 1].id : null;
-    // Expose testRun as { id, segmentCount } only (no trajectories in list)
     const sessionsForClient = list.map((s) => {
       const { testRun, ...rest } = s;
       const tr = testRun
