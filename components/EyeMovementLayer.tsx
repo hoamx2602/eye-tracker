@@ -155,31 +155,36 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
       return { path: fn, durationMs: dur };
     }
 
-    // --- Diagonal: TL→BR, BR→TL, TL→TR(transition), TR→BL, BL→TR ---
-    // Time per segment proportional to its length so speed is constant.
+    // --- Diagonal: TL→BR, BR→TL, TL→TR, TR→BL, BL→TR with 1s pause at each endpoint ---
     if (kind === 'diagonal') {
       const segs: Array<[{ x: number; y: number }, { x: number; y: number }]> = [
         [tl, br], [br, tl], [tl, tr], [tr, bl], [bl, tr],
       ];
       const lengths = segs.map(([a, b]) => dist(a, b));
-      const totalDist = lengths.reduce((s, l) => s + l, 0);
-      const dur = (totalDist / TARGET_SPEED) * 1000;
-      const cumFrac: number[] = [0];
-      for (let i = 0; i < lengths.length; i++) {
-        cumFrac.push(cumFrac[i]! + lengths[i]! / totalDist);
+      const totalMoveMs = (lengths.reduce((s, l) => s + l, 0) / TARGET_SPEED) * 1000;
+      const totalPauseMs = 6 * ENDPOINT_PAUSE_MS; // start + after each of 5 segments
+      const dur = totalMoveMs + totalPauseMs;
+
+      type Seg = { type: 'pause'; pos: { x: number; y: number }; durFrac: number } | { type: 'move'; from: { x: number; y: number }; to: { x: number; y: number }; durFrac: number };
+      const timeline: Seg[] = [];
+      for (let i = 0; i < segs.length; i++) {
+        timeline.push({ type: 'pause', pos: segs[i]![0], durFrac: ENDPOINT_PAUSE_MS / dur });
+        timeline.push({ type: 'move', from: segs[i]![0], to: segs[i]![1], durFrac: (lengths[i]! / TARGET_SPEED * 1000) / dur });
       }
+      timeline.push({ type: 'pause', pos: segs[segs.length - 1]![1], durFrac: ENDPOINT_PAUSE_MS / dur });
 
       const fn = (t: number) => {
-        const lt = Math.max(0, Math.min(0.999999, t));
-        let idx = 0;
-        for (let i = 0; i < segs.length - 1; i++) {
-          if (lt >= cumFrac[i + 1]!) idx = i + 1;
+        const lt = Math.max(0, Math.min(1, t));
+        let acc = 0;
+        for (const seg of timeline) {
+          if (lt <= acc + seg.durFrac) {
+            const local = seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0;
+            if (seg.type === 'pause') return { ...seg.pos, scale: 1 };
+            return { x: lerp(seg.from.x, seg.to.x, local), y: lerp(seg.from.y, seg.to.y, local), scale: 1 };
+          }
+          acc += seg.durFrac;
         }
-        const segStart = cumFrac[idx]!;
-        const segEnd = cumFrac[idx + 1]!;
-        const local = segEnd > segStart ? (lt - segStart) / (segEnd - segStart) : 0;
-        const [aPt, bPt] = segs[idx]!;
-        return { x: lerp(aPt.x, bPt.x, local), y: lerp(aPt.y, bPt.y, local), scale: 1 };
+        return { ...segs[segs.length - 1]![1], scale: 1 };
       };
       return { path: fn, durationMs: dur };
     }
