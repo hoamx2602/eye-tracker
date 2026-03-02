@@ -4,6 +4,9 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { FEATURE_DIMENSION_NAMES } from '@/lib/featureAnalytics';
+import dynamic from 'next/dynamic';
+
+const HeadPose3D = dynamic(() => import('@/components/HeadPose3D'), { ssr: false });
 
 type CalibrationSample = {
   screenX?: number;
@@ -129,7 +132,7 @@ function EyeSchematicSingle({
   const pupilShelfDir = pupilDirX;
   const pupilShelfEndX = pupilLeaderEndX + pupilShelfDir * 14;
   const pupilShelfEndY = pupilLeaderEndY;
-  const pupilTextAnchor: string = pupilShelfDir > 0 ? 'start' : 'end';
+  const pupilTextAnchor = pupilShelfDir > 0 ? 'start' : 'end' as const;
   const pupilTextX = pupilShelfEndX + pupilShelfDir * 2;
 
   return (
@@ -510,43 +513,39 @@ export default function AdminSessionSampleDetailPage() {
           </div>
         )}
 
-        {/* Head pose */}
+        {/* Head pose — interactive 3D */}
         {hasFeatures && (
           <div className="rounded-xl bg-slate-800/60 border border-slate-700 p-6 shadow-xl">
             <h2 className="text-lg font-semibold text-white mb-2">Head pose</h2>
-            <div className="flex flex-wrap items-center justify-center gap-8">
-              <svg viewBox="0 0 100 100" className="w-32 h-32" aria-hidden style={{ transform: `rotate(${rollDeg}deg)` }}>
-                <circle cx="50" cy="50" r="42" fill="none" stroke="#475569" strokeWidth="2" />
-                <line
-                  x1="50" y1="50"
-                  x2={50 + 35 * Math.cos((yawDeg * Math.PI) / 180) * Math.cos((pitchDeg * Math.PI) / 180)}
-                  y2={50 - 35 * Math.sin((pitchDeg * Math.PI) / 180)}
-                  stroke="#22d3ee" strokeWidth="3" strokeLinecap="round"
-                />
-                <ellipse cx="38" cy="42" rx="6" ry="4" fill="none" stroke="#64748b" strokeWidth="1" />
-                <ellipse cx="62" cy="42" rx="6" ry="4" fill="none" stroke="#64748b" strokeWidth="1" />
-                <text x="50" y="92" fontSize="9" fill="#64748b" textAnchor="middle">roll {rollDeg.toFixed(0)}°</text>
-              </svg>
-              <div className="flex flex-col gap-3 text-sm">
-                <div className="flex items-center gap-3">
-                  <span className="text-slate-500 w-20">Pitch</span>
-                  <div className="w-28 h-2.5 rounded-full bg-slate-700 relative">
-                    <div className="absolute inset-y-0 left-1/2 w-0.5 bg-slate-500" style={{ transform: 'translateX(-50%)' }} />
-                    <div className="absolute top-0 bottom-0 w-2 bg-cyan-400 rounded-full -ml-1" style={{ left: `${50 + Math.max(-45, Math.min(45, pitchDeg))}%`, transform: 'translateX(-50%)' }} />
+            <p className="text-sm text-slate-500 mb-4">3D head orientation: Pitch (nod), Yaw (shake), Roll (tilt).</p>
+            <div className="flex flex-wrap items-start justify-center gap-8">
+              <div className="flex-1 min-w-[320px] max-w-[480px]">
+                <HeadPose3D pitchDeg={pitchDeg} yawDeg={yawDeg} rollDeg={rollDeg} />
+              </div>
+              <div className="flex flex-col gap-4 min-w-[180px]">
+                <div className="rounded-lg bg-slate-800 border border-slate-600 px-4 py-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-3 h-3 rounded-full bg-cyan-400" />
+                    <span className="text-xs text-slate-400 uppercase tracking-wider font-medium">Pitch</span>
                   </div>
-                  <span className="font-mono text-slate-200 w-14">{pitchDeg.toFixed(1)}°</span>
+                  <div className="text-lg font-mono font-bold text-cyan-400 tabular-nums">{pitchDeg.toFixed(1)}°</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Nod up/down</div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-slate-500 w-20">Yaw</span>
-                  <div className="w-28 h-2.5 rounded-full bg-slate-700 relative">
-                    <div className="absolute inset-y-0 left-1/2 w-0.5 bg-slate-500" style={{ transform: 'translateX(-50%)' }} />
-                    <div className="absolute top-0 bottom-0 w-2 bg-cyan-400 rounded-full -ml-1" style={{ left: `${50 + Math.max(-45, Math.min(45, yawDeg))}%`, transform: 'translateX(-50%)' }} />
+                <div className="rounded-lg bg-slate-800 border border-slate-600 px-4 py-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-3 h-3 rounded-full bg-green-500" />
+                    <span className="text-xs text-slate-400 uppercase tracking-wider font-medium">Yaw</span>
                   </div>
-                  <span className="font-mono text-slate-200 w-14">{yawDeg.toFixed(1)}°</span>
+                  <div className="text-lg font-mono font-bold text-green-400 tabular-nums">{yawDeg.toFixed(1)}°</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Turn left/right</div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-slate-500 w-20">Roll</span>
-                  <span className="font-mono text-slate-200">Face tilted {rollDeg.toFixed(1)}°</span>
+                <div className="rounded-lg bg-slate-800 border border-slate-600 px-4 py-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-3 h-3 rounded-full bg-amber-500" />
+                    <span className="text-xs text-slate-400 uppercase tracking-wider font-medium">Roll</span>
+                  </div>
+                  <div className="text-lg font-mono font-bold text-amber-400 tabular-nums">{rollDeg.toFixed(1)}°</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Tilt head</div>
                 </div>
               </div>
             </div>

@@ -1188,7 +1188,9 @@ function App() {
             ...(configRef.current as unknown as Record<string, unknown>),
             ...(demographicsRef.current ? { demographics: demographicsRef.current } : {}),
           } as unknown as Record<string, unknown>,
-          demographics: demographicsRef.current ?? undefined,
+          demographics: demographicsRef.current
+            ? { ...demographicsRef.current, age: demographicsRef.current.age === '' ? undefined : demographicsRef.current.age }
+            : undefined,
           validationErrors: errors,
           meanErrorPx: errors.length > 0 ? avgError : undefined,
           status: 'completed',

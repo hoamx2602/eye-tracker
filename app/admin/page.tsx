@@ -23,7 +23,7 @@ export default async function AdminDashboardPage() {
       prisma.session.count({ where: { createdAt: { gte: from7 } } }),
       prisma.session.count({ where: { createdAt: { gte: from14 } } }),
       prisma.session.count({ where: { videoUrl: { not: null } } }),
-      prisma.session.count({ where: { calibrationImageUrls: { not: null } } }),
+      prisma.session.count({ where: { calibrationImageUrls: { not: { equals: null } } } }),
       prisma.session.aggregate({
         _avg: { meanErrorPx: true },
         where: { meanErrorPx: { not: null } },
