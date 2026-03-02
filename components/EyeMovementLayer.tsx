@@ -20,6 +20,8 @@ const RANGE = MAX - MIN; // 76
 const TARGET_SPEED = 25;
 
 const H_PAUSE_MS = 1000;
+/** Pause at start/end (and midpoint) for horizontal/vertical so user can fixate. */
+const ENDPOINT_PAUSE_MS = 1000;
 
 function dist(a: { x: number; y: number }, b: { x: number; y: number }) {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
@@ -44,26 +46,58 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
     const midL = { x: MIN, y: CENTER };
     const midR = { x: MAX, y: CENTER };
 
-    // --- Horizontal: triangle wave left → right → left ---
+    // --- Horizontal: pause at start (left) 1s → move right → pause 1s → move left → pause at end (left) 1s ---
     if (kind === 'horizontal') {
-      const totalDist = 2 * RANGE;
-      const dur = (totalDist / TARGET_SPEED) * 1000;
+      const moveTimeMs = (2 * RANGE / TARGET_SPEED) * 1000;
+      const totalPauseMs = 3 * ENDPOINT_PAUSE_MS;
+      const dur = moveTimeMs + totalPauseMs;
+      const segs: Array<{ type: 'pause'; pos: { x: number; y: number }; durFrac: number } | { type: 'move'; from: { x: number; y: number }; to: { x: number; y: number }; durFrac: number }> = [
+        { type: 'pause', pos: { x: MIN, y: CENTER }, durFrac: ENDPOINT_PAUSE_MS / dur },
+        { type: 'move', from: { x: MIN, y: CENTER }, to: { x: MAX, y: CENTER }, durFrac: (RANGE / TARGET_SPEED * 1000) / dur },
+        { type: 'pause', pos: { x: MAX, y: CENTER }, durFrac: ENDPOINT_PAUSE_MS / dur },
+        { type: 'move', from: { x: MAX, y: CENTER }, to: { x: MIN, y: CENTER }, durFrac: (RANGE / TARGET_SPEED * 1000) / dur },
+        { type: 'pause', pos: { x: MIN, y: CENTER }, durFrac: ENDPOINT_PAUSE_MS / dur },
+      ];
       const fn = (t: number) => {
         const lt = Math.max(0, Math.min(1, t));
-        const tri = lt < 0.5 ? lt * 2 : 2 - lt * 2;
-        return { x: lerp(MIN, MAX, tri), y: CENTER, scale: 1 };
+        let acc = 0;
+        for (const seg of segs) {
+          if (lt <= acc + seg.durFrac) {
+            const local = seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0;
+            if (seg.type === 'pause') return { ...seg.pos, scale: 1 };
+            return { x: lerp(seg.from.x, seg.to.x, local), y: lerp(seg.from.y, seg.to.y, local), scale: 1 };
+          }
+          acc += seg.durFrac;
+        }
+        return { x: MIN, y: CENTER, scale: 1 };
       };
       return { path: fn, durationMs: dur };
     }
 
-    // --- Vertical: triangle wave top → bottom → top ---
+    // --- Vertical: pause at start (top) 1s → move down → pause 1s → move up → pause at end (top) 1s ---
     if (kind === 'vertical') {
-      const totalDist = 2 * RANGE;
-      const dur = (totalDist / TARGET_SPEED) * 1000;
+      const moveTimeMs = (2 * RANGE / TARGET_SPEED) * 1000;
+      const totalPauseMs = 3 * ENDPOINT_PAUSE_MS;
+      const dur = moveTimeMs + totalPauseMs;
+      const segs: Array<{ type: 'pause'; pos: { x: number; y: number }; durFrac: number } | { type: 'move'; from: { x: number; y: number }; to: { x: number; y: number }; durFrac: number }> = [
+        { type: 'pause', pos: { x: CENTER, y: MIN }, durFrac: ENDPOINT_PAUSE_MS / dur },
+        { type: 'move', from: { x: CENTER, y: MIN }, to: { x: CENTER, y: MAX }, durFrac: (RANGE / TARGET_SPEED * 1000) / dur },
+        { type: 'pause', pos: { x: CENTER, y: MAX }, durFrac: ENDPOINT_PAUSE_MS / dur },
+        { type: 'move', from: { x: CENTER, y: MAX }, to: { x: CENTER, y: MIN }, durFrac: (RANGE / TARGET_SPEED * 1000) / dur },
+        { type: 'pause', pos: { x: CENTER, y: MIN }, durFrac: ENDPOINT_PAUSE_MS / dur },
+      ];
       const fn = (t: number) => {
         const lt = Math.max(0, Math.min(1, t));
-        const tri = lt < 0.5 ? lt * 2 : 2 - lt * 2;
-        return { x: CENTER, y: lerp(MIN, MAX, tri), scale: 1 };
+        let acc = 0;
+        for (const seg of segs) {
+          if (lt <= acc + seg.durFrac) {
+            const local = seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0;
+            if (seg.type === 'pause') return { ...seg.pos, scale: 1 };
+            return { x: lerp(seg.from.x, seg.to.x, local), y: lerp(seg.from.y, seg.to.y, local), scale: 1 };
+          }
+          acc += seg.durFrac;
+        }
+        return { x: CENTER, y: MIN, scale: 1 };
       };
       return { path: fn, durationMs: dur };
     }
