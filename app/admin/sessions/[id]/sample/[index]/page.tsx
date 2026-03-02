@@ -54,6 +54,8 @@ function EyeSchematicSingle({
 }) {
   const [arcHover, setArcHover] = useState(false);
   const [rHover, setRHover] = useState(false);
+  const [irisHover, setIrisHover] = useState(false);
+  const [pupilHover, setPupilHover] = useState(false);
   const scale = 18;
   const cx = 50;
   const cy = 50;
@@ -102,6 +104,26 @@ function EyeSchematicSingle({
   const thetaTextAnchor = thetaShelfDir > 0 ? 'start' : 'end';
   const thetaTextX = thetaShelfEndX + thetaShelfDir * 2;
 
+  // --- Iris (ellipse) callout: dot on right edge of ellipse, leader goes right ---
+  const irisTargetX = cx + 40;
+  const irisTargetY = cy;
+  const irisLeaderEndX = irisTargetX + 16;
+  const irisLeaderEndY = irisTargetY - 12;
+  const irisShelfEndX = irisLeaderEndX + 14;
+  const irisShelfEndY = irisLeaderEndY;
+
+  // --- Pupil hover: reference lines to axes ---
+  // X value on axis: place text on opposite side from pupil
+  const xProjY = py > cy ? cy - 5 : cy + 6;
+  const xProjBaseline = py > cy ? 'auto' : 'hanging';
+  // Y value on axis: place text on opposite side from pupil
+  const yProjX = px > cx ? cx - 5 : cx + 5;
+  const yProjAnchor = px > cx ? 'end' : 'start';
+  // "Pupil" label: placed diagonally opposite to center, avoiding reference lines
+  const pupilLabelDx = px >= cx ? 14 : -14;
+  const pupilLabelDy = py >= cy ? 8 : -8;
+  const pupilLabelAnchor = px >= cx ? 'start' : 'end';
+
   return (
     <div className="flex flex-col items-center">
       <span className="text-sm text-slate-400 mb-3 font-medium">{label}</span>
@@ -114,8 +136,15 @@ function EyeSchematicSingle({
         {/* Full axis lines (faint) */}
         <line x1="5" y1={cy} x2="95" y2={cy} stroke="currentColor" strokeWidth="0.8" opacity="0.3" strokeDasharray="3 2" />
         <line x1={cx} y1="5" x2={cx} y2="95" stroke="currentColor" strokeWidth="0.8" opacity="0.3" strokeDasharray="3 2" />
-        {/* Eye boundary */}
-        <ellipse cx={cx} cy={cy} rx="40" ry="26" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-slate-500" />
+        {/* Eye boundary (iris) — hoverable */}
+        <g
+          onMouseEnter={() => setIrisHover(true)}
+          onMouseLeave={() => setIrisHover(false)}
+          style={{ cursor: 'pointer' }}
+        >
+          <ellipse cx={cx} cy={cy} rx="40" ry="26" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-slate-500" />
+          <ellipse cx={cx} cy={cy} rx="40" ry="26" fill="none" stroke="transparent" strokeWidth="6" />
+        </g>
         {/* R vector — hoverable */}
         <g
           onMouseEnter={() => setRHover(true)}
@@ -156,18 +185,17 @@ function EyeSchematicSingle({
           onMouseEnter={() => setArcHover(true)}
           onMouseLeave={() => setArcHover(false)}
         />
-        {/* Pupil — hoverable for R callout + tooltip */}
+        {/* Pupil — hoverable for reference lines */}
         <g
-          onMouseEnter={() => setRHover(true)}
-          onMouseLeave={() => setRHover(false)}
-          style={{ cursor: 'help' }}
+          onMouseEnter={() => setPupilHover(true)}
+          onMouseLeave={() => setPupilHover(false)}
+          style={{ cursor: 'pointer' }}
         >
-          <title>Pupil (gaze point) — vị trí nhìn</title>
           <circle cx={px} cy={py} r="10" fill="#38bdf8" stroke="#0ea5e9" strokeWidth="1.5" />
         </g>
         {/* Axis labels */}
-        <text x={cx + 34} y={cy + 5} fontSize="6" fill="#64748b" fontWeight="500">X</text>
-        <text x={cx - 10} y={cy - 22} fontSize="6" fill="#64748b" fontWeight="500">Y</text>
+        <text x={cx + 44} y={cy + 5} fontSize="6" fill="#64748b" fontWeight="500">X</text>
+        <text x={cx - 4} y={cy - 30} fontSize="6" fill="#64748b" fontWeight="500">Y</text>
 
         {/* θ callout: dot on arc → leader → horizontal shelf → text */}
         {arcHover && (
@@ -188,6 +216,39 @@ function EyeSchematicSingle({
             <line x1={rLeaderEndX} y1={rLeaderEndY} x2={rShelfEndX} y2={rShelfEndY} stroke={calloutColor} strokeWidth="1" />
             <text x={rTextX} y={rShelfEndY} fontSize="7" fill={calloutColor} fontFamily="monospace" textAnchor={rTextAnchor} dominantBaseline="middle">
               R = {R.toFixed(2)}
+            </text>
+          </g>
+        )}
+        {/* Iris callout: dot on ellipse → leader → shelf → text */}
+        {irisHover && (
+          <g>
+            <ellipse cx={cx} cy={cy} rx="40" ry="26" fill="none" stroke={calloutColor} strokeWidth="2" opacity="0.6" />
+            <circle cx={irisTargetX} cy={irisTargetY} r="2.5" fill={calloutColor} />
+            <line x1={irisTargetX} y1={irisTargetY} x2={irisLeaderEndX} y2={irisLeaderEndY} stroke={calloutColor} strokeWidth="1" />
+            <line x1={irisLeaderEndX} y1={irisLeaderEndY} x2={irisShelfEndX} y2={irisShelfEndY} stroke={calloutColor} strokeWidth="1" />
+            <text x={irisShelfEndX + 2} y={irisShelfEndY} fontSize="7" fill={calloutColor} fontFamily="monospace" textAnchor="start" dominantBaseline="middle">
+              Iris
+            </text>
+          </g>
+        )}
+        {/* Pupil hover: reference lines to axes + coordinates + label */}
+        {pupilHover && (
+          <g>
+            {/* Vertical dashed line: pupil → X axis */}
+            <line x1={px} y1={py} x2={px} y2={cy} stroke="#f59e0b" strokeWidth="0.8" strokeDasharray="3 2" opacity="0.6" />
+            <circle cx={px} cy={cy} r="1.5" fill="#f59e0b" />
+            <text x={px} y={xProjY} fontSize="5" fill="#f59e0b" fontFamily="monospace" textAnchor="middle" dominantBaseline={xProjBaseline}>
+              {eyeX.toFixed(2)}
+            </text>
+            {/* Horizontal dashed line: pupil → Y axis */}
+            <line x1={px} y1={py} x2={cx} y2={py} stroke="#f59e0b" strokeWidth="0.8" strokeDasharray="3 2" opacity="0.6" />
+            <circle cx={cx} cy={py} r="1.5" fill="#f59e0b" />
+            <text x={yProjX} y={py} fontSize="5" fill="#f59e0b" fontFamily="monospace" textAnchor={yProjAnchor} dominantBaseline="middle">
+              {eyeY.toFixed(2)}
+            </text>
+            {/* "Pupil" label: simple text offset diagonally from pupil */}
+            <text x={px + pupilLabelDx} y={py + pupilLabelDy} fontSize="6" fill={calloutColor} fontFamily="monospace" textAnchor={pupilLabelAnchor} dominantBaseline="middle">
+              Pupil
             </text>
           </g>
         )}
