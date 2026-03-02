@@ -1683,8 +1683,8 @@ function App() {
         </>
       )}
 
-      {/* Diagnostics Panel (Now Draggable) */}
-      {status !== 'IDLE' && status !== 'HEAD_POSITIONING' && (
+      {/* Diagnostics Panel (Now Draggable) — only when calibrating or tracking, not during load */}
+      {(status === 'CALIBRATION' || status === 'TRACKING') && (
          <DiagnosticsPanel 
             showCamera={showCamera}
             setShowCamera={setShowCamera}
