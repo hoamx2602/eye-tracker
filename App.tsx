@@ -13,7 +13,9 @@ import {
   CalibrationMethod,
   EXERCISE_KINDS,
   DEFAULT_CONFIG,
-  TrackingMode
+  TrackingMode,
+  getPatternDisplayName,
+  type EyeMovementKind
 } from './types';
 import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
 import { HybridRegressor, GazeSmoother, DataCleaner } from './services/mathUtils';
@@ -877,7 +879,7 @@ function App() {
               features: avgVector,
               timestamp: Date.now(),
               head: toHeadSnapshot(headValidationRef.current),
-              patternName: `Grid point ${point.id}`,
+              patternName: `Calibration point ${point.id}`,
             };
             trainingSamplesRef.current.push(newSample);
             setTrainingData([...trainingSamplesRef.current]);
@@ -886,7 +888,17 @@ function App() {
             const prediction = hybridRegressorRef.current.predict(avgVector, configRef.current.regressionMethod);
             const err = Math.sqrt(Math.pow(prediction.x - screenX, 2) + Math.pow(prediction.y - screenY, 2));
             validationErrorsRef.current.push(err);
-            console.log(`Validation Point ${currentCalibIndex}: Error ${err.toFixed(1)}px`);
+            const validationSample: TrainingSample = {
+              screenX,
+              screenY,
+              features: avgVector,
+              timestamp: Date.now(),
+              head: toHeadSnapshot(headValidationRef.current),
+              patternName: `Validation point ${currentCalibIndex + 1}`,
+            };
+            trainingSamplesRef.current.push(validationSample);
+            setTrainingData([...trainingSamplesRef.current]);
+            console.log(`Validation Point ${currentCalibIndex + 1}: Error ${err.toFixed(1)}px`);
         }
 
         // Advance only if successful
@@ -930,6 +942,7 @@ function App() {
     const step = Math.max(1, Math.floor(trimmed.length / targetCount));
     let added = 0;
     const kindName = EXERCISE_KINDS[currentExerciseIndex] || 'unknown';
+    const patternLabel = getPatternDisplayName(kindName as EyeMovementKind);
 
     for (let i = 0; i < trimmed.length; i += step) {
       const windowEnd = Math.min(i + step, trimmed.length);
@@ -964,7 +977,7 @@ function App() {
         features: avgFeatures,
         timestamp: Date.now(),
         head: window[0].head,
-        patternName: kindName,
+        patternName: patternLabel,
         ...(blobForUpload && { blobForUpload }),
       });
       added++;

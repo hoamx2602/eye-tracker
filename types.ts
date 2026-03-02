@@ -129,6 +129,20 @@ export const EXERCISE_KINDS: EyeMovementKind[] = [
   'h_pattern',
 ];
 
+/** Human-readable labels for pattern names (Calibration grid uses "Grid point N" separately). */
+export const EXERCISE_KIND_LABELS: Record<EyeMovementKind, string> = {
+  wiggling: 'Wiggling',
+  horizontal: 'Horizontal',
+  vertical: 'Vertical',
+  forward_backward: 'Forward-Backward',
+  diagonal: 'Diagonal',
+  h_pattern: 'H-Pattern',
+};
+
+export function getPatternDisplayName(kind: EyeMovementKind): string {
+  return EXERCISE_KIND_LABELS[kind] ?? kind;
+}
+
 export interface AppConfig {
   regressionMethod: RegressionMethod;
   smoothingMethod: SmoothingMethod;
