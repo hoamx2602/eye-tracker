@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface CapturedImage {
   url: string;
@@ -72,7 +73,7 @@ const CapturedImageModal: React.FC<CapturedImageModalProps> = ({
     setTranslate({ x: 0, y: 0 });
   };
 
-  return (
+  const modalContent = (
     <div
       className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/80"
       role="dialog"
@@ -84,14 +85,14 @@ const CapturedImageModal: React.FC<CapturedImageModalProps> = ({
         onClick={(e) => e.target === e.currentTarget && onClose()}
         aria-hidden
       />
-      <div className="relative z-10 w-full max-w-4xl max-h-[90vh] flex flex-col rounded-xl bg-gray-800 border border-gray-600 shadow-2xl">
+      <div className="relative z-10 w-full max-w-4xl h-[90vh] max-h-[90vh] flex flex-col rounded-xl bg-gray-800 border border-gray-600 shadow-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-600 flex-shrink-0">
           <h2 className="text-lg font-semibold text-white">
             Face {index + 1} of {total}
             <span className="ml-3 text-sm font-normal text-gray-400">{image.timestamp}</span>
           </h2>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Scroll to zoom (max 10×) · Drag to pan</span>
+            <span className="text-xs text-gray-500 hidden sm:inline">Scroll to zoom (max 10×) · Drag to pan</span>
             <button
               type="button"
               onClick={resetZoom}
@@ -112,7 +113,7 @@ const CapturedImageModal: React.FC<CapturedImageModalProps> = ({
 
         <div
           ref={containerRef}
-          className="relative flex-1 min-h-0 overflow-hidden cursor-grab active:cursor-grabbing select-none bg-gray-900 rounded-b-xl"
+          className="relative flex-1 min-h-[300px] overflow-hidden cursor-grab active:cursor-grabbing select-none bg-gray-900 rounded-b-xl flex items-center justify-center"
           onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -157,6 +158,9 @@ const CapturedImageModal: React.FC<CapturedImageModalProps> = ({
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(modalContent, document.body);
 };
 
 export default CapturedImageModal;
