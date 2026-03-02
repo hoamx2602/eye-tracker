@@ -1130,13 +1130,6 @@ function App() {
     (async () => {
       setSessionSaveStatus('saving');
       setSessionSaveError(null);
-      const blobToBase64 = (b: Blob): Promise<string> =>
-        new Promise((res, rej) => {
-          const r = new FileReader();
-          r.onload = () => res((r.result as string).split(',')[1] || '');
-          r.onerror = rej;
-          r.readAsDataURL(b);
-        });
 
       /** Run up to `concurrency` promises at a time. */
       const runWithConcurrency = async <T, R>(
@@ -1178,17 +1171,14 @@ function App() {
 
         const [videoUrlResult, imageUrlsByOrder] = await Promise.all([
           videoBlob && videoBlob.size > 0
-            ? blobToBase64(videoBlob).then((data) =>
-                uploadApi.upload(data, `calibration-${timestamp}.webm`, 'video/webm')
-              )
+            ? uploadApi.uploadBlob(videoBlob, `calibration-${timestamp}.webm`, 'video/webm')
             : Promise.resolve(null),
           runWithConcurrency(
             imageUploads,
             IMAGE_CONCURRENCY,
             async ({ blob, sampleIndex }) => {
-              const data = await blobToBase64(blob);
-              const url = await uploadApi.upload(
-                data,
+              const url = await uploadApi.uploadBlob(
+                blob,
                 `calibration-sample-${timestamp}-${sampleIndex}.jpg`,
                 'image/jpeg'
               );
