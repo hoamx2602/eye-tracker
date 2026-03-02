@@ -23,6 +23,8 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
   status,
   lightLevel
 }) => {
+  const [expanded, setExpanded] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   // Initial position: same on server and client to avoid hydration mismatch; then sync from window after mount
   const [position, setPosition] = useState({ x: 16, y: 500 });
   const isDragging = useRef(false);
@@ -31,6 +33,18 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
   useEffect(() => {
     setPosition({ x: 16, y: window.innerHeight - 220 });
   }, []);
+
+  // Click outside to collapse when expanded
+  useEffect(() => {
+    if (!expanded) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setExpanded(false);
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [expanded]);
 
   useEffect(() => {
      // Handle window resize to keep it on screen roughly
@@ -68,6 +82,7 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
   }, []);
 
   const onMouseDown = (e: React.MouseEvent) => {
+    if (!expanded) return;
     isDragging.current = true;
     dragOffset.current = {
       x: e.clientX - position.x,
@@ -75,19 +90,47 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
     };
   };
 
+  if (!expanded) {
+    return (
+      <div
+        ref={panelRef}
+        role="button"
+        tabIndex={0}
+        onClick={() => setExpanded(true)}
+        onKeyDown={(e) => e.key === 'Enter' && setExpanded(true)}
+        className="fixed z-[200] px-3 py-1.5 rounded-full bg-black/80 border border-gray-800 shadow-lg backdrop-blur-sm cursor-pointer select-none flex items-center gap-2 hover:bg-gray-800/90 hover:border-gray-700 transition-colors"
+        style={{ left: position.x, top: position.y }}
+        title="Open diagnostics"
+      >
+        <span className="text-[10px] text-gray-400 uppercase tracking-wider font-medium">Diagnostics</span>
+        <svg className="w-3 h-3 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </div>
+    );
+  }
+
   return (
-    <div 
+    <div
+        ref={panelRef}
         className="fixed bg-black bg-opacity-80 p-3 rounded border border-gray-800 z-[200] cursor-move select-none shadow-lg backdrop-blur-sm min-w-[160px]"
         style={{ left: position.x, top: position.y }}
         onMouseDown={onMouseDown}
     >
         <h4 className="text-gray-500 text-[10px] uppercase tracking-wider mb-2 flex justify-between items-center group">
             <span>Diagnostics</span>
-            <div className="flex space-x-1">
-                <div className="w-1 h-1 bg-gray-600 rounded-full group-hover:bg-gray-400"></div>
-                <div className="w-1 h-1 bg-gray-600 rounded-full group-hover:bg-gray-400"></div>
-                <div className="w-1 h-1 bg-gray-600 rounded-full group-hover:bg-gray-400"></div>
-            </div>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="p-0.5 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-700/50 transition"
+              title="Collapse"
+              aria-label="Collapse diagnostics"
+            >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
         </h4>
         
         {/* Stop propagation on controls so clicking them doesn't start a drag */}
