@@ -53,6 +53,8 @@ export interface HeadSnapshot {
 
 export type AppState = 'IDLE' | 'LOADING_MODEL' | 'HEAD_POSITIONING' | 'CALIBRATION' | 'TRACKING';
 
+export type TrackingMode = 'free_gaze' | 'random_dots' | 'article_reading';
+
 export enum CalibrationPhase {
   INITIAL_MAPPING = 'INITIAL_MAPPING',
   EXERCISES = 'EXERCISES',

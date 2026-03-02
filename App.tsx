@@ -12,7 +12,8 @@ import {
   AppConfig,
   CalibrationMethod,
   EXERCISE_KINDS,
-  DEFAULT_CONFIG
+  DEFAULT_CONFIG,
+  TrackingMode
 } from './types';
 import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
 import { HybridRegressor, GazeSmoother, DataCleaner } from './services/mathUtils';
@@ -26,6 +27,8 @@ import HeadPositionGuide from './components/HeadPositionGuide';
 import DiagnosticsPanel from './components/DiagnosticsPanel';
 import ConsentModal from './components/ConsentModal';
 import DemographicsForm, { type DemographicsData } from './components/DemographicsForm';
+import RandomDotsOverlay from './components/RandomDotsOverlay';
+import ArticleReadingOverlay from './components/ArticleReadingOverlay';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -193,6 +196,7 @@ function App() {
   const [gazePos, setGazePos] = useState({ x: 0, y: 0 });
   const [rawFeatures, setRawFeatures] = useState<EyeFeatures | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [trackingMode, setTrackingMode] = useState<TrackingMode>('free_gaze');
   const [isBlinking, setIsBlinking] = useState(false);
   
   const [showCamera, setShowCamera] = useState(false);
@@ -1482,14 +1486,23 @@ function App() {
 
       {status === 'TRACKING' && (
         <>
-           {/* Only show tracking feedback if head is valid to prevent garbage data display */}
+           {/* Gaze cursor & heatmap — always visible when head is valid */}
            {headValidation && headValidation.valid && (
                <>
-                <HeatmapLayer ref={heatmapRef} x={gazePos.x} y={gazePos.y} enabled={showHeatmap} />
+                <HeatmapLayer ref={heatmapRef} x={gazePos.x} y={gazePos.y} enabled={showHeatmap && trackingMode === 'free_gaze'} />
                 <GazeCursor x={gazePos.x} y={gazePos.y} />
                </>
            )}
+
+           {/* Mode-specific overlays */}
+           {trackingMode === 'random_dots' && (
+             <RandomDotsOverlay gazeX={gazePos.x} gazeY={gazePos.y} />
+           )}
+           {trackingMode === 'article_reading' && (
+             <ArticleReadingOverlay gazeX={gazePos.x} gazeY={gazePos.y} />
+           )}
           
+          {/* TOOLBAR */}
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] flex items-center space-x-2 bg-gray-900 bg-opacity-90 p-2 rounded-lg border border-gray-700 shadow-xl">
              {/* REC INDICATOR */}
              {isRecording && (
@@ -1500,16 +1513,44 @@ function App() {
              )}
              <div className="w-px h-6 bg-gray-700 mx-1"></div>
 
-             <button
-               onClick={() => setShowHeatmap(!showHeatmap)}
-               className={`px-4 py-1.5 text-xs font-bold rounded-md transition-colors ${showHeatmap ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-             >
-               {showHeatmap ? 'Hide Heatmap' : 'Show Heatmap'}
-             </button>
-             {showHeatmap && (
-                <button onClick={() => heatmapRef.current?.reset()} className="px-4 py-1.5 text-xs font-bold rounded-md bg-gray-700 text-gray-300 hover:bg-red-900 hover:text-white transition-colors">Clear Map</button>
+             {/* MODE SELECTOR */}
+             <div className="flex items-center bg-gray-800 rounded-md p-0.5">
+               <button
+                 onClick={() => setTrackingMode('free_gaze')}
+                 className={`px-3 py-1 text-xs font-bold rounded transition-colors ${trackingMode === 'free_gaze' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
+               >
+                 Free Gaze
+               </button>
+               <button
+                 onClick={() => setTrackingMode('random_dots')}
+                 className={`px-3 py-1 text-xs font-bold rounded transition-colors ${trackingMode === 'random_dots' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
+               >
+                 Dot Test
+               </button>
+               <button
+                 onClick={() => setTrackingMode('article_reading')}
+                 className={`px-3 py-1 text-xs font-bold rounded transition-colors ${trackingMode === 'article_reading' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
+               >
+                 Article
+               </button>
+             </div>
+             <div className="w-px h-6 bg-gray-700 mx-1"></div>
+
+             {trackingMode === 'free_gaze' && (
+               <>
+                 <button
+                   onClick={() => setShowHeatmap(!showHeatmap)}
+                   className={`px-4 py-1.5 text-xs font-bold rounded-md transition-colors ${showHeatmap ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                 >
+                   {showHeatmap ? 'Hide Heatmap' : 'Show Heatmap'}
+                 </button>
+                 {showHeatmap && (
+                    <button onClick={() => heatmapRef.current?.reset()} className="px-4 py-1.5 text-xs font-bold rounded-md bg-gray-700 text-gray-300 hover:bg-red-900 hover:text-white transition-colors">Clear Map</button>
+                 )}
+                 <div className="w-px h-6 bg-gray-700 mx-2"></div>
+               </>
              )}
-             <div className="w-px h-6 bg-gray-700 mx-2"></div>
+
              <button onClick={handleDownloadCSV} className="px-4 py-1.5 text-xs font-bold rounded-md bg-green-700 text-white hover:bg-green-600 transition-colors shadow-sm">
                 Download CSV
              </button>
