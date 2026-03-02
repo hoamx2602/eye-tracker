@@ -35,10 +35,15 @@ type CalibrationSample = {
   };
 };
 
+type TestTrajectoryPoint = { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number };
+export type TestTrajectorySegment = { patternName: string; points: TestTrajectoryPoint[] };
+
 type Props = {
   samples: CalibrationSample[];
   validationErrors?: number[];
   meanErrorPx?: number | null;
+  /** From Test mode: target vs gaze recorded during exercises (config.testTrajectories) */
+  testTrajectories?: TestTrajectorySegment[] | null;
 };
 
 function DarkTooltip({
@@ -85,7 +90,7 @@ function StatBox({ label, value, unit, color }: { label: string; value: string; 
   );
 }
 
-export default function SessionAnalytics({ samples, validationErrors, meanErrorPx }: Props) {
+export default function SessionAnalytics({ samples, validationErrors, meanErrorPx, testTrajectories }: Props) {
   const samplesWithFeatures = useMemo(
     () => samples.filter((s) => Array.isArray(s.features) && s.features.length >= FEATURE_DIMENSION_NAMES.length),
     [samples],
@@ -213,6 +218,63 @@ export default function SessionAnalytics({ samples, validationErrors, meanErrorP
 
   return (
     <div className="space-y-6">
+      {/* Test mode: Target vs Gaze (from config.testTrajectories) */}
+      {testTrajectories && testTrajectories.length > 0 && (
+        <SectionCard
+          title="Test mode: Target vs Eye tracking"
+          subtitle="Vị trí target (%) và gaze dự đoán (%) theo thời gian — mỗi bước exercise ghi lại trong Test mode."
+        >
+          <div className="space-y-6">
+            {testTrajectories.map((seg, i) => (
+              <details key={i} className="rounded-lg border border-slate-700 bg-slate-900/40 overflow-hidden" open={i === 0}>
+                <summary className="cursor-pointer select-none px-3 py-2 flex items-center justify-between gap-3 hover:bg-slate-800/50">
+                  <span className="text-sm font-medium text-slate-200">{seg.patternName}</span>
+                  <span className="text-[10px] text-slate-500">{seg.points.length} points</span>
+                </summary>
+                <div className="px-3 pb-3 pt-1 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-[10px] text-slate-500 mb-1">X — Position (%)</div>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <LineChart data={seg.points} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                        <XAxis dataKey="t" tick={{ fill: '#64748b', fontSize: 10 }} name="Time (s)" />
+                        <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10 }} />
+                        <Tooltip content={<DarkTooltip />} />
+                        <ReferenceLine y={50} stroke="#334155" />
+                        <Line type="monotone" dataKey="targetX" stroke="#86efac" strokeWidth={2} dot={false} name="Target X" />
+                        <Line type="monotone" dataKey="gazeX" stroke="#a78bfa" strokeWidth={2} dot={false} name="Eye X" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <div className="flex gap-4 mt-1">
+                      <span className="text-[10px] text-slate-500 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-300" /> Target</span>
+                      <span className="text-[10px] text-slate-500 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400" /> Eye</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 mb-1">Y — Position (%)</div>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <LineChart data={seg.points} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                        <XAxis dataKey="t" tick={{ fill: '#64748b', fontSize: 10 }} name="Time (s)" />
+                        <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10 }} />
+                        <Tooltip content={<DarkTooltip />} />
+                        <ReferenceLine y={50} stroke="#334155" />
+                        <Line type="monotone" dataKey="targetY" stroke="#86efac" strokeWidth={2} dot={false} name="Target Y" />
+                        <Line type="monotone" dataKey="gazeY" stroke="#a78bfa" strokeWidth={2} dot={false} name="Eye Y" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <div className="flex gap-4 mt-1">
+                      <span className="text-[10px] text-slate-500 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-300" /> Target</span>
+                      <span className="text-[10px] text-slate-500 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400" /> Eye</span>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            ))}
+          </div>
+        </SectionCard>
+      )}
+
       {/* Summary stats */}
       {stats && (
         <SectionCard title="Summary" subtitle={`${stats.count} samples with features · ${samples.length} total samples`}>

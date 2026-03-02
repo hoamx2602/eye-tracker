@@ -194,6 +194,16 @@ function App() {
   const exerciseDataRef = useRef<{ screenX: number; screenY: number; features: number[]; head?: HeadSnapshot }[]>([]);
   const exerciseBlobsRef = useRef<Blob[]>([]);
   const exerciseActiveRef = useRef(false);
+  const exerciseKindRef = useRef<EyeMovementKind>('wiggling');
+
+  // Test mode: record target vs predicted gaze during exercises for deviation charts
+  const [runMode, setRunMode] = useState<'calibration' | 'test'>('calibration');
+  const runModeRef = useRef<'calibration' | 'test'>('calibration');
+  useEffect(() => { runModeRef.current = runMode; }, [runMode]);
+  const testTrajectoryRef = useRef<{ patternName: string; points: { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }[] }[]>([]);
+  const currentTestSegmentRef = useRef<{ t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }[]>([]);
+  const testSegmentStartTimeRef = useRef<number>(0);
+  const lastTestRecordTimeRef = useRef<number>(0);
 
   const [accuracyScore, setAccuracyScore] = useState<number | null>(null);
   
@@ -589,15 +599,29 @@ function App() {
                     const target = exerciseTargetRef.current;
                     if (target) {
                       const inputVector = eyeTrackingService.prepareFeatureVector(features);
-                      const len = exerciseDataRef.current.length;
-                      exerciseDataRef.current.push({
-                        screenX: target.x,
-                        screenY: target.y,
-                        features: inputVector,
-                        head: toHeadSnapshot(headValidationRef.current),
-                      });
-                      if (len % 5 === 0) {
-                        captureCurrentFrameAsBlob().then((b) => b && exerciseBlobsRef.current.push(b));
+                      if (runModeRef.current === 'test') {
+                        // Test mode: record target vs predicted gaze for deviation charts (throttle ~50ms)
+                        if (now - lastTestRecordTimeRef.current >= 50) {
+                          lastTestRecordTimeRef.current = now;
+                          const t = (now - testSegmentStartTimeRef.current) / 1000;
+                          const targetX = (target.x / window.innerWidth) * 100;
+                          const targetY = (target.y / window.innerHeight) * 100;
+                          const pred = hybridRegressorRef.current.predict(inputVector, configRef.current.regressionMethod);
+                          const gazeX = (pred.x / window.innerWidth) * 100;
+                          const gazeY = (pred.y / window.innerHeight) * 100;
+                          currentTestSegmentRef.current.push({ t, targetX, targetY, gazeX, gazeY });
+                        }
+                      } else {
+                        const len = exerciseDataRef.current.length;
+                        exerciseDataRef.current.push({
+                          screenX: target.x,
+                          screenY: target.y,
+                          features: inputVector,
+                          head: toHeadSnapshot(headValidationRef.current),
+                        });
+                        if (len % 5 === 0) {
+                          captureCurrentFrameAsBlob().then((b) => b && exerciseBlobsRef.current.push(b));
+                        }
                       }
                     }
                   }
@@ -994,10 +1018,18 @@ function App() {
       setCurrentExerciseIndex(nextIndex);
       exerciseDataRef.current = [];
       exerciseBlobsRef.current = [];
+      exerciseKindRef.current = EXERCISE_KINDS[nextIndex];
       exerciseActiveRef.current = true;
+      if (runModeRef.current === 'test') {
+        testSegmentStartTimeRef.current = performance.now();
+        currentTestSegmentRef.current = [];
+      }
     } else {
-      // All exercises done — train regressor with all data and proceed to validation
-      trainAndValidate();
+      if (runModeRef.current === 'test') {
+        completeCalibrationAndStartTracking([], testTrajectoryRef.current);
+      } else {
+        trainAndValidate();
+      }
     }
   };
 
@@ -1028,7 +1060,15 @@ function App() {
   };
 
   const handleExerciseComplete = useCallback(() => {
-    processExerciseData();
+    if (runModeRef.current === 'test') {
+      testTrajectoryRef.current.push({
+        patternName: getPatternDisplayName(exerciseKindRef.current),
+        points: [...currentTestSegmentRef.current],
+      });
+      advanceExercise();
+    } else {
+      processExerciseData();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentExerciseIndex]);
 
@@ -1062,7 +1102,12 @@ function App() {
             setCurrentExerciseIndex(0);
       exerciseDataRef.current = [];
       exerciseBlobsRef.current = [];
+      exerciseKindRef.current = EXERCISE_KINDS[0];
       exerciseActiveRef.current = true;
+      if (runModeRef.current === 'test') {
+        testSegmentStartTimeRef.current = performance.now();
+        currentTestSegmentRef.current = [];
+      }
         } else {
             setCalibPhase(CalibrationPhase.VALIDATION);
             setCalibPoints(VALIDATION_POINTS);
@@ -1075,7 +1120,7 @@ function App() {
     }
   };
 
-  const completeCalibrationAndStartTracking = (errors: number[]) => {
+  const completeCalibrationAndStartTracking = (errors: number[], testTrajectories?: { patternName: string; points: { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }[] }[]) => {
     const avgError = errors.length > 0 ? errors.reduce((a, b) => a + b, 0) / errors.length : 0;
     setAccuracyScore(avgError);
     const isAccuracyGood = avgError < 300;
@@ -1187,6 +1232,7 @@ function App() {
           config: {
             ...(configRef.current as unknown as Record<string, unknown>),
             ...(demographicsRef.current ? { demographics: demographicsRef.current } : {}),
+            ...(testTrajectories && testTrajectories.length > 0 ? { testTrajectories } : {}),
           } as unknown as Record<string, unknown>,
           demographics: demographicsRef.current
             ? { ...demographicsRef.current, age: demographicsRef.current.age === '' ? undefined : demographicsRef.current.age }
@@ -1293,7 +1339,8 @@ function App() {
     exerciseBlobsRef.current = [];
     exerciseActiveRef.current = false;
     exerciseTargetRef.current = null;
-    
+    testTrajectoryRef.current = [];
+
     setCalibPhase(CalibrationPhase.INITIAL_MAPPING);
     
     // Generate points based on config
@@ -1508,6 +1555,15 @@ function App() {
 
 
           <div className="flex space-x-4">
+            <label className="flex items-center gap-2 px-4 py-3 rounded-full border border-gray-600 bg-gray-800/50 cursor-pointer hover:border-gray-500 transition select-none">
+              <input
+                type="checkbox"
+                checked={runMode === 'test'}
+                onChange={() => setRunMode((r) => (r === 'test' ? 'calibration' : 'test'))}
+                className="rounded border-gray-500 text-blue-500 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-300 font-medium">Test</span>
+            </label>
             <button
                 onClick={handleStartCalibrationClick}
                 className="group relative px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-full transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(37,99,235,0.5)]"
@@ -1521,6 +1577,11 @@ function App() {
                 Settings
             </button>
           </div>
+          {runMode === 'test' && (
+            <p className="text-xs text-gray-500 max-w-md text-center mt-2">
+              Test mode: sau bước calibration lưới, các bước wiggling/horizontal/… sẽ ghi lại vị trí target và gaze dự đoán để vẽ biểu đồ sai lệch.
+            </p>
+          )}
         </div>
       )}
 

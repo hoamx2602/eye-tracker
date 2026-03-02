@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import SessionAnalytics from '@/components/SessionAnalytics';
+import type { TestTrajectorySegment } from '@/components/SessionAnalytics';
 
 type CalibrationSample = {
   screenX?: number;
@@ -351,6 +352,7 @@ export default function AdminSessionDetailPage() {
             samples={samples}
             validationErrors={session.validationErrors}
             meanErrorPx={session.meanErrorPx}
+            testTrajectories={(session.config && typeof session.config === 'object' && Array.isArray((session.config as Record<string, unknown>).testTrajectories)) ? (session.config as { testTrajectories: TestTrajectorySegment[] }).testTrajectories : undefined}
           />
         </div>
       )}
