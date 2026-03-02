@@ -1399,9 +1399,6 @@ function App() {
           <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
             EYE TRACKER
           </h1>
-          <p className="max-w-md text-center text-gray-400">
-            Precision Hybrid Calibration (TPS + Ridge).
-          </p>
 
           {/* RECORDED VIDEO DOWNLOAD LINK */}
           {recordedVideoUrl && (
