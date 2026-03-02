@@ -33,6 +33,18 @@ model Session {
 
   // Eye tracking data during calibration: array of { screenX, screenY, features?, timestamp? }
   calibrationGazeSamples Json?
+
+  // Test mode: target vs gaze time-series (one run per session)
+  testRun TestRun?
+}
+
+model TestRun {
+  id          String   @id @default(cuid())
+  sessionId   String   @unique
+  session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  // Array of { patternName, points: { t, targetX, targetY, gazeX, gazeY }[] }
+  trajectories Json
+  createdAt   DateTime @default(now())
 }
 
 model Admin {

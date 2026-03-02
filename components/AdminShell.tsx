@@ -24,15 +24,21 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           <nav className="flex items-center gap-6">
             <Link
               href="/admin"
-              className="text-slate-300 hover:text-white font-medium transition"
+              className={`font-medium transition ${pathname === '/admin' ? 'text-white' : 'text-slate-300 hover:text-white'}`}
             >
               Dashboard
             </Link>
             <Link
               href="/admin/sessions"
-              className="text-slate-300 hover:text-white font-medium transition"
+              className={`font-medium transition ${pathname?.startsWith('/admin/sessions') && !pathname?.startsWith('/admin/tests') ? 'text-white' : 'text-slate-300 hover:text-white'}`}
             >
               Sessions
+            </Link>
+            <Link
+              href="/admin/tests"
+              className={`font-medium transition ${pathname?.startsWith('/admin/tests') ? 'text-white' : 'text-slate-300 hover:text-white'}`}
+            >
+              Tests
             </Link>
           </nav>
           <button

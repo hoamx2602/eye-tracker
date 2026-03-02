@@ -1232,7 +1232,7 @@ function App() {
           config: {
             ...(configRef.current as unknown as Record<string, unknown>),
             ...(demographicsRef.current ? { demographics: demographicsRef.current } : {}),
-            ...(testTrajectories && testTrajectories.length > 0 ? { testTrajectories } : {}),
+            ...(testTrajectories && testTrajectories.length > 0 ? { testTrajectories, isTestSession: true } : {}),
           } as unknown as Record<string, unknown>,
           demographics: demographicsRef.current
             ? { ...demographicsRef.current, age: demographicsRef.current.age === '' ? undefined : demographicsRef.current.age }
@@ -1554,34 +1554,33 @@ function App() {
            )}
 
 
-          <div className="flex space-x-4">
-            <label className="flex items-center gap-2 px-4 py-3 rounded-full border border-gray-600 bg-gray-800/50 cursor-pointer hover:border-gray-500 transition select-none">
-              <input
-                type="checkbox"
-                checked={runMode === 'test'}
-                onChange={() => setRunMode((r) => (r === 'test' ? 'calibration' : 'test'))}
-                className="rounded border-gray-500 text-blue-500 focus:ring-blue-500"
-              />
-              <span className="text-sm text-gray-300 font-medium">Test</span>
-            </label>
-            <button
-                onClick={handleStartCalibrationClick}
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => { setRunMode('calibration'); setShowConsentModal(true); }}
                 className="group relative px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-full transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(37,99,235,0.5)]"
-            >
+              >
                 Start Calibration
-            </button>
-            <button 
-                onClick={() => setShowSettings(true)}
-                className="px-8 py-4 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold rounded-full transition-all hover:scale-105 border border-gray-600"
+              </button>
+              <button
+                onClick={() => { setRunMode('test'); setShowConsentModal(true); }}
+                className="px-8 py-4 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-full transition-all hover:scale-105 active:scale-95 border border-violet-500/50"
+              >
+                Start Test
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowSettings(true)}
+              className="p-2.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-gray-800 border border-gray-700 hover:border-gray-600 transition"
+              title="Settings"
             >
-                Settings
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
             </button>
           </div>
-          {runMode === 'test' && (
-            <p className="text-xs text-gray-500 max-w-md text-center mt-2">
-              Test mode: sau bước calibration lưới, các bước wiggling/horizontal/… sẽ ghi lại vị trí target và gaze dự đoán để vẽ biểu đồ sai lệch.
-            </p>
-          )}
         </div>
       )}
 
