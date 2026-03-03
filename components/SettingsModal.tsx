@@ -147,6 +147,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, onClose }
                         <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Distance to Screen (cm)</span><span className="font-mono">{localConfig.faceDistance} cm</span></div>
                         <input type="range" min="40" max="90" step="5" value={localConfig.faceDistance} onChange={(e) => handleChange('faceDistance', parseInt(e.target.value))} className="w-full accent-gray-500 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"/>
                      </div>
+                     <div>
+                        <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Camera FOV (face size)</span><span className="font-mono">{localConfig.faceWidthScale.toFixed(2)}</span></div>
+                        <input type="range" min="0.5" max="1" step="0.05" value={localConfig.faceWidthScale} onChange={(e) => handleChange('faceWidthScale', parseFloat(e.target.value))} className="w-full accent-gray-500 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"/>
+                        <p className="text-[9px] text-gray-500 mt-1">Use 1 for built-in camera. If an external webcam asks you to move ~1m back, lower this to ~0.65–0.75 so 60cm passes.</p>
+                     </div>
                  </div>
 
                 <div>

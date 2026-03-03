@@ -172,6 +172,8 @@ export interface AppConfig {
   
   // Head Positioning
   faceDistance: number; // Target distance in CM (e.g. 50, 60, 70)
+  /** Scale for face width from different camera FOV (1 = built-in, &lt;1 e.g. 0.7 for external webcam so 60cm passes) */
+  faceWidthScale: number;
 
   // Eye Movement Exercises (additional calibration patterns for better accuracy)
   enableExercises: boolean;
@@ -206,6 +208,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   
   // Distance
   faceDistance: 60, // Standard desktop distance (60cm)
+  faceWidthScale: 1, // 1 = built-in cam; use ~0.65–0.8 for external 1080p webcam
 
   // Exercises
   enableExercises: true,

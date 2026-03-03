@@ -39,22 +39,29 @@ export class EyeTrackingService {
   /**
    * Checks if the head is positioned correctly for high-quality tracking.
    * Uses faceDistanceCm from app config to enforce allowed distance (closer = larger face in frame).
+   * faceWidthScale compensates for camera FOV: use &lt;1 (e.g. 0.7) for external webcams that show face larger at same distance.
    * @param landmarks MediaPipe landmarks
    * @param faceDistanceCm Target distance in cm (40–90). Used to compute allowed face size in frame.
+   * @param faceWidthScale Scale applied to raw face width (1 = built-in; 0.65–0.8 typical for external 1080p webcam).
    */
-  validateHeadPosition(landmarks: NormalizedLandmark[], faceDistanceCm: number = 60): HeadValidationResult {
+  validateHeadPosition(
+    landmarks: NormalizedLandmark[],
+    faceDistanceCm: number = 60,
+    faceWidthScale: number = 1
+  ): HeadValidationResult {
     if (!landmarks) return { valid: false, message: "No Face Detected" };
 
     const nose = landmarks[EyeLandmarkIndices.NOSE_TIP];
     const leftEdge = landmarks[EyeLandmarkIndices.LEFT_FACE_EDGE];
     const rightEdge = landmarks[EyeLandmarkIndices.RIGHT_FACE_EDGE];
 
-    // Always compute distance debug so UI can show it in all states
-    const faceWidth = Math.sqrt(Math.pow(rightEdge.x - leftEdge.x, 2) + Math.pow(rightEdge.y - leftEdge.y, 2));
+    // Raw face width in normalized coords (fraction of frame). Different cameras = different FOV = different value at same distance.
+    const rawFaceWidth = Math.sqrt(Math.pow(rightEdge.x - leftEdge.x, 2) + Math.pow(rightEdge.y - leftEdge.y, 2));
+    const scale = Math.max(0.5, Math.min(1.5, faceWidthScale ?? 1));
+    const faceWidth = Math.max(0.01, Math.min(1, rawFaceWidth * scale));
     const D = Math.max(40, Math.min(90, faceDistanceCm));
     const minFaceWidth = 0.09 + (90 - D) * 0.0012;
-    // Pass at ~65cm (faceWidth ~0.14); at 55cm faceWidth ~0.158 must fail → max below that.
-    const maxFaceWidth = 0.17 - (D - 40) * 0.0007;  // 40cm→0.17, 65cm→0.152, 90cm→0.135
+    const maxFaceWidth = 0.17 - (D - 40) * 0.0007;
     const debug = { faceWidth, minFaceWidth, maxFaceWidth, targetDistanceCm: D };
 
     // 1. Center Check (Horizontal & Vertical)

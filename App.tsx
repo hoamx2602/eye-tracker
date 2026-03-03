@@ -259,11 +259,12 @@ function App() {
     const saved = localStorage.getItem('eye_tracker_config');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        setConfig(parsed);
-        configRef.current = parsed;
+        const parsed = JSON.parse(saved) as Partial<AppConfig>;
+        const merged = { ...DEFAULT_CONFIG, ...parsed };
+        setConfig(merged);
+        configRef.current = merged;
         // Apply to smoother immediately
-        smootherRef.current.updateConfig(parsed.smoothingMethod, parsed);
+        smootherRef.current.updateConfig(merged.smoothingMethod, merged);
       } catch (e) {
         console.error("Failed to parse config", e);
       }
@@ -488,7 +489,11 @@ function App() {
               currentFaceLandmarksRef.current = landmarks;
 
               // --- CONTINUOUS HEAD VALIDATION ---
-              const validation = eyeTrackingService.validateHeadPosition(landmarks, configRef.current.faceDistance);
+              const validation = eyeTrackingService.validateHeadPosition(
+                landmarks,
+                configRef.current.faceDistance,
+                configRef.current.faceWidthScale ?? 1
+              );
               setHeadValidation(validation);
               headValidationRef.current = validation;
               isHeadValidRef.current = validation.valid;
