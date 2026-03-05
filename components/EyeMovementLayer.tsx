@@ -13,14 +13,11 @@ const PAD = 4;
 const MIN = PAD;
 const MAX = 100 - PAD;
 const CENTER = 50;
-const RANGE = MAX - MIN; // 76
+const RANGE = MAX - MIN;
 
-// Target movement speed in percentage-units per second (when the dot is actually moving).
-// All exercises derive their duration from this so the perceived speed is identical.
 const TARGET_SPEED = 25;
 
 const H_PAUSE_MS = 1000;
-/** Pause at start/end (and midpoint) for horizontal/vertical so user can fixate. */
 const ENDPOINT_PAUSE_MS = 1000;
 
 function dist(a: { x: number; y: number }, b: { x: number; y: number }) {
@@ -35,7 +32,8 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<number | null>(null);
   const completedRef = useRef(false);
-  const [pos, setPos] = useState<{ x: number; y: number; scale: number }>({ x: 50, y: 50, scale: 1 });
+  const dotRef = useRef<HTMLDivElement>(null);
+  const lastCountdownRef = useRef(-1);
   const [countdown, setCountdown] = useState(Math.ceil(COUNTDOWN_MS / 1000));
 
   const { path, durationMs } = useMemo(() => {
@@ -238,28 +236,47 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
   useEffect(() => {
     startRef.current = null;
     completedRef.current = false;
+    lastCountdownRef.current = -1;
     setCountdown(Math.ceil(COUNTDOWN_MS / 1000));
     targetRef.current = null;
 
     const tick = (now: number) => {
       if (startRef.current == null) startRef.current = now;
       const totalElapsed = now - startRef.current;
+      const dot = dotRef.current;
 
       if (totalElapsed < COUNTDOWN_MS) {
         const remaining = Math.ceil((COUNTDOWN_MS - totalElapsed) / 1000);
-        setCountdown(remaining);
-        setPos({ x: 50, y: 50, scale: 1 });
+        if (remaining !== lastCountdownRef.current) {
+          lastCountdownRef.current = remaining;
+          setCountdown(remaining);
+        }
+        if (dot) {
+          const cx = window.innerWidth * 0.5;
+          const cy = window.innerHeight * 0.5;
+          dot.style.transform = `translate3d(${cx}px, ${cy}px, 0) translate(-50%, -50%) scale(1)`;
+          dot.style.opacity = '0.3';
+        }
         targetRef.current = null;
         rafRef.current = requestAnimationFrame(tick);
         return;
       }
 
-      setCountdown(0);
+      if (lastCountdownRef.current !== 0) {
+        lastCountdownRef.current = 0;
+        setCountdown(0);
+      }
 
       const animElapsed = totalElapsed - COUNTDOWN_MS;
       const t = Math.max(0, Math.min(1, animElapsed / durationMs));
       const p = path(t);
-      setPos(p);
+
+      if (dot) {
+        const px = (p.x / 100) * window.innerWidth;
+        const py = (p.y / 100) * window.innerHeight;
+        dot.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, -50%) scale(${p.scale})`;
+        dot.style.opacity = '1';
+      }
 
       targetRef.current = {
         x: (p.x / 100) * window.innerWidth,
@@ -304,16 +321,19 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
       )}
 
       <div
-        className="absolute rounded-full bg-red-500"
+        ref={dotRef}
+        className="rounded-full bg-red-500"
         style={{
-          left: `${pos.x}%`,
-          top: `${pos.y}%`,
+          position: 'absolute',
+          left: 0,
+          top: 0,
           width: '20px',
           height: '20px',
-          transform: `translate(-50%, -50%) scale(${pos.scale})`,
+          transform: 'translate3d(-50%, -50%, 0) scale(1)',
           boxShadow: '0 0 15px rgba(255, 0, 0, 0.7)',
-          opacity: countdown > 0 ? 0.3 : 1,
-          transition: countdown > 0 ? 'opacity 0.3s' : 'none',
+          opacity: 0,
+          willChange: 'transform, opacity',
+          contain: 'layout style paint',
         }}
       >
         <div className="absolute inset-0 rounded-full border-2 border-white opacity-50" />
