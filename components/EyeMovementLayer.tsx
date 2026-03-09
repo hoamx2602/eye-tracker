@@ -44,17 +44,24 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
     const midL = { x: MIN, y: CENTER };
     const midR = { x: MAX, y: CENTER };
 
-    // --- Horizontal: pause at start (left) 1s → move right → pause 1s → move left → pause at end (left) 1s ---
+    // --- Horizontal: 2 rounds — pause left → move right → pause → move left → (repeat) ---
     if (kind === 'horizontal') {
-      const moveTimeMs = (2 * RANGE / TARGET_SPEED) * 1000;
-      const totalPauseMs = 3 * ENDPOINT_PAUSE_MS;
-      const dur = moveTimeMs + totalPauseMs;
+      const oneMoveMs = (RANGE / TARGET_SPEED) * 1000;
+      const totalMoveMs = 4 * oneMoveMs; // 4 moves (2 rounds)
+      const totalPauseMs = 5 * ENDPOINT_PAUSE_MS; // 5 pauses
+      const dur = totalMoveMs + totalPauseMs;
+      const pauseFrac = ENDPOINT_PAUSE_MS / dur;
+      const moveFrac = oneMoveMs / dur;
       const segs: Array<{ type: 'pause'; pos: { x: number; y: number }; durFrac: number } | { type: 'move'; from: { x: number; y: number }; to: { x: number; y: number }; durFrac: number }> = [
-        { type: 'pause', pos: { x: MIN, y: CENTER }, durFrac: ENDPOINT_PAUSE_MS / dur },
-        { type: 'move', from: { x: MIN, y: CENTER }, to: { x: MAX, y: CENTER }, durFrac: (RANGE / TARGET_SPEED * 1000) / dur },
-        { type: 'pause', pos: { x: MAX, y: CENTER }, durFrac: ENDPOINT_PAUSE_MS / dur },
-        { type: 'move', from: { x: MAX, y: CENTER }, to: { x: MIN, y: CENTER }, durFrac: (RANGE / TARGET_SPEED * 1000) / dur },
-        { type: 'pause', pos: { x: MIN, y: CENTER }, durFrac: ENDPOINT_PAUSE_MS / dur },
+        { type: 'pause', pos: { x: MIN, y: CENTER }, durFrac: pauseFrac },
+        { type: 'move', from: { x: MIN, y: CENTER }, to: { x: MAX, y: CENTER }, durFrac: moveFrac },
+        { type: 'pause', pos: { x: MAX, y: CENTER }, durFrac: pauseFrac },
+        { type: 'move', from: { x: MAX, y: CENTER }, to: { x: MIN, y: CENTER }, durFrac: moveFrac },
+        { type: 'pause', pos: { x: MIN, y: CENTER }, durFrac: pauseFrac },
+        { type: 'move', from: { x: MIN, y: CENTER }, to: { x: MAX, y: CENTER }, durFrac: moveFrac },
+        { type: 'pause', pos: { x: MAX, y: CENTER }, durFrac: pauseFrac },
+        { type: 'move', from: { x: MAX, y: CENTER }, to: { x: MIN, y: CENTER }, durFrac: moveFrac },
+        { type: 'pause', pos: { x: MIN, y: CENTER }, durFrac: pauseFrac },
       ];
       const fn = (t: number) => {
         const lt = Math.max(0, Math.min(1, t));
@@ -72,17 +79,24 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
       return { path: fn, durationMs: dur };
     }
 
-    // --- Vertical: pause at start (top) 1s → move down → pause 1s → move up → pause at end (top) 1s ---
+    // --- Vertical: 2 rounds — pause top → move down → pause → move up → (repeat) ---
     if (kind === 'vertical') {
-      const moveTimeMs = (2 * RANGE / TARGET_SPEED) * 1000;
-      const totalPauseMs = 3 * ENDPOINT_PAUSE_MS;
-      const dur = moveTimeMs + totalPauseMs;
+      const oneMoveMs = (RANGE / TARGET_SPEED) * 1000;
+      const totalMoveMs = 4 * oneMoveMs; // 4 moves (2 rounds)
+      const totalPauseMs = 5 * ENDPOINT_PAUSE_MS; // 5 pauses
+      const dur = totalMoveMs + totalPauseMs;
+      const pauseFrac = ENDPOINT_PAUSE_MS / dur;
+      const moveFrac = oneMoveMs / dur;
       const segs: Array<{ type: 'pause'; pos: { x: number; y: number }; durFrac: number } | { type: 'move'; from: { x: number; y: number }; to: { x: number; y: number }; durFrac: number }> = [
-        { type: 'pause', pos: { x: CENTER, y: MIN }, durFrac: ENDPOINT_PAUSE_MS / dur },
-        { type: 'move', from: { x: CENTER, y: MIN }, to: { x: CENTER, y: MAX }, durFrac: (RANGE / TARGET_SPEED * 1000) / dur },
-        { type: 'pause', pos: { x: CENTER, y: MAX }, durFrac: ENDPOINT_PAUSE_MS / dur },
-        { type: 'move', from: { x: CENTER, y: MAX }, to: { x: CENTER, y: MIN }, durFrac: (RANGE / TARGET_SPEED * 1000) / dur },
-        { type: 'pause', pos: { x: CENTER, y: MIN }, durFrac: ENDPOINT_PAUSE_MS / dur },
+        { type: 'pause', pos: { x: CENTER, y: MIN }, durFrac: pauseFrac },
+        { type: 'move', from: { x: CENTER, y: MIN }, to: { x: CENTER, y: MAX }, durFrac: moveFrac },
+        { type: 'pause', pos: { x: CENTER, y: MAX }, durFrac: pauseFrac },
+        { type: 'move', from: { x: CENTER, y: MAX }, to: { x: CENTER, y: MIN }, durFrac: moveFrac },
+        { type: 'pause', pos: { x: CENTER, y: MIN }, durFrac: pauseFrac },
+        { type: 'move', from: { x: CENTER, y: MIN }, to: { x: CENTER, y: MAX }, durFrac: moveFrac },
+        { type: 'pause', pos: { x: CENTER, y: MAX }, durFrac: pauseFrac },
+        { type: 'move', from: { x: CENTER, y: MAX }, to: { x: CENTER, y: MIN }, durFrac: moveFrac },
+        { type: 'pause', pos: { x: CENTER, y: MIN }, durFrac: pauseFrac },
       ];
       const fn = (t: number) => {
         const lt = Math.max(0, Math.min(1, t));
