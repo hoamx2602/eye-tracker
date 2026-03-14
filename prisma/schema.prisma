@@ -36,6 +36,9 @@ model Session {
 
   // Test mode: target vs gaze time-series (one run per session)
   testRun TestRun?
+
+  // Neurological test run (one per session when user chooses Neurological test after calibration)
+  neurologicalRun NeurologicalRun?
 }
 
 model TestRun {
@@ -45,6 +48,54 @@ model TestRun {
   // Array of { patternName, points: { t, targetX, targetY, gazeX, gazeY }[] }
   trajectories Json
   createdAt   DateTime @default(now())
+}
+
+// --------------------------------------------
+// Neurological experiments: config (admin-editable) and run (per session)
+// --------------------------------------------
+model NeurologicalTestConfig {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Config name (e.g. "default", "v2")
+  name String @default("default") @unique
+
+  // Test order: ["head_orientation", "visual_search", "memory_cards", ...]
+  testOrder Json
+
+  // Parameters per test (key = testId). Admin UI edits; client reads to run.
+  testParameters Json
+
+  // Enable/disable per test (optional; if absent, all enabled)
+  testEnabled Json?
+}
+
+model NeurologicalRun {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessionId String   @unique
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  // Config snapshot at run time (for analysis independent of later config changes)
+  configSnapshot Json?
+
+  // Pre-test: 12 questions, score 0-4. { "Q1": 0, "Q2": 1, ... }
+  preSymptomScores Json?
+
+  // Post-test: 12 questions, score 0-4
+  postSymptomScores Json?
+
+  // Test order that was run (testId[])
+  testOrderSnapshot Json?
+
+  // Results per test: { "head_orientation": { ... }, "visual_search": { ... }, ... }
+  testResults Json?
+
+  // "in_progress" | "completed" | "abandoned"
+  status String @default("in_progress")
 }
 
 model Admin {
