@@ -1,11 +1,13 @@
 /**
  * GET  /api/admin/neurological-config — get config (default or ?name=...). Admin auth required.
- * PUT  /api/admin/neurological-config — update config (upsert). Admin auth required.
+ * PUT  /api/admin/neurological-config — update config (upsert). Admin auth required. Validates body.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminCookieName, verifyAdminToken } from '@/lib/admin-auth';
 import { prisma } from '@/lib/prisma';
-import { getDefaultConfigSnapshot } from '@/lib/neurologicalConfig';
+import { getDefaultConfigSnapshot, DEFAULT_TEST_ORDER } from '@/lib/neurologicalConfig';
+
+const VALID_TEST_IDS = new Set<string>([...DEFAULT_TEST_ORDER]);
 
 async function requireAdmin(request: NextRequest) {
   const cookieName = getAdminCookieName();
@@ -65,36 +67,63 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const name = typeof body.name === 'string' ? body.name : 'default';
-    const testOrder = Array.isArray(body.testOrder) ? body.testOrder : undefined;
-    const testParameters =
-      body.testParameters != null && typeof body.testParameters === 'object'
-        ? (body.testParameters as Record<string, unknown>)
-        : undefined;
-    const testEnabled =
-      body.testEnabled != null && typeof body.testEnabled === 'object'
-        ? (body.testEnabled as Record<string, boolean>)
-        : undefined;
 
-    const data: { name: string; testOrder?: unknown; testParameters?: unknown; testEnabled?: unknown } = {
+    let testOrder: string[] | undefined;
+    if (body.testOrder !== undefined) {
+      if (!Array.isArray(body.testOrder)) {
+        return NextResponse.json({ error: 'testOrder must be an array' }, { status: 400 });
+      }
+      const arr = body.testOrder as unknown[];
+      if (arr.some((x) => typeof x !== 'string')) {
+        return NextResponse.json({ error: 'testOrder must contain only strings' }, { status: 400 });
+      }
+      const ids = arr as string[];
+      if (ids.some((id) => !VALID_TEST_IDS.has(id))) {
+        return NextResponse.json(
+          { error: `testOrder may only contain valid test ids: ${[...VALID_TEST_IDS].join(', ')}` },
+          { status: 400 }
+        );
+      }
+      testOrder = ids;
+    }
+
+    let testParameters: Record<string, unknown> | undefined;
+    if (body.testParameters !== undefined) {
+      if (body.testParameters === null || typeof body.testParameters !== 'object' || Array.isArray(body.testParameters)) {
+        return NextResponse.json({ error: 'testParameters must be an object' }, { status: 400 });
+      }
+      testParameters = body.testParameters as Record<string, unknown>;
+    }
+
+    let testEnabled: Record<string, boolean> | undefined;
+    if (body.testEnabled !== undefined) {
+      if (body.testEnabled === null || typeof body.testEnabled !== 'object' || Array.isArray(body.testEnabled)) {
+        return NextResponse.json({ error: 'testEnabled must be an object' }, { status: 400 });
+      }
+      const en = body.testEnabled as Record<string, unknown>;
+      if (Object.values(en).some((v) => typeof v !== 'boolean')) {
+        return NextResponse.json({ error: 'testEnabled values must be boolean' }, { status: 400 });
+      }
+      testEnabled = en as Record<string, boolean>;
+    }
+
+    const defaultSnap = getDefaultConfigSnapshot();
+    const createPayload = {
       name,
+      testOrder: testOrder ?? defaultSnap.testOrder,
+      testParameters: (testParameters ?? defaultSnap.testParameters) as object,
+      testEnabled: (testEnabled ?? defaultSnap.testEnabled) as object,
     };
-    if (testOrder !== undefined) data.testOrder = testOrder;
-    if (testParameters !== undefined) data.testParameters = testParameters;
-    if (testEnabled !== undefined) data.testEnabled = testEnabled;
+
+    const updatePayload: { testOrder?: string[]; testParameters?: object; testEnabled?: object } = {};
+    if (testOrder !== undefined) updatePayload.testOrder = testOrder;
+    if (testParameters !== undefined) updatePayload.testParameters = testParameters;
+    if (testEnabled !== undefined) updatePayload.testEnabled = testEnabled;
 
     const row = await prisma.neurologicalTestConfig.upsert({
       where: { name },
-      create: {
-        name,
-        testOrder: data.testOrder ?? getDefaultConfigSnapshot().testOrder,
-        testParameters: data.testParameters ?? getDefaultConfigSnapshot().testParameters,
-        testEnabled: data.testEnabled ?? getDefaultConfigSnapshot().testEnabled,
-      },
-      update: {
-        ...(data.testOrder !== undefined && { testOrder: data.testOrder }),
-        ...(data.testParameters !== undefined && { testParameters: data.testParameters }),
-        ...(data.testEnabled !== undefined && { testEnabled: data.testEnabled }),
-      },
+      create: createPayload,
+      update: Object.keys(updatePayload).length > 0 ? updatePayload : { updatedAt: new Date() },
     });
 
     return NextResponse.json({
