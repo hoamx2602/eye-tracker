@@ -27,3 +27,6 @@ export type {
 
 export { NeuroHeadPoseProvider, useNeuroHeadPose } from './NeuroHeadPoseContext';
 export type { NeuroHeadPoseContextValue } from './NeuroHeadPoseContext';
+
+export { NeuroGazeProvider, useNeuroGaze } from './NeuroGazeContext';
+export type { NeuroGazeContextValue } from './NeuroGazeContext';

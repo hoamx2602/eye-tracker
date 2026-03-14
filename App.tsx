@@ -41,10 +41,19 @@ import type { SymptomScores } from '@/lib/symptomAssessment';
 import {
   GuidePracticeTestFlow,
   NeuroHeadPoseProvider,
+  NeuroGazeProvider,
   type TestResultPayload,
 } from '@/components/neurological';
 import HeadOrientationTest from '@/components/neurological/tests/headOrientation/HeadOrientationTest';
 import { HEAD_ORIENTATION_GUIDE_STEPS } from '@/components/neurological/tests/headOrientation/constants';
+import VisualSearchTest from '@/components/neurological/tests/visualSearch/VisualSearchTest';
+import VisualSearchPractice from '@/components/neurological/tests/visualSearch/VisualSearchPractice';
+import {
+  VISUAL_SEARCH_GUIDE_STEPS,
+  DEFAULT_NUMBER_COUNT,
+  DEFAULT_AOI_RADIUS_PX,
+  PRACTICE_COUNT,
+} from '@/components/neurological/tests/visualSearch/constants';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -663,8 +672,8 @@ function App() {
                     }
                   }
                   
-                  // 2. Real-time Prediction
-                  if (currentStatus === 'TRACKING') {
+                  // 2. Real-time Prediction (TRACKING and NEURO_FLOW for gaze during neuro tests)
+                  if (currentStatus === 'TRACKING' || currentStatus === 'NEURO_FLOW') {
                     predictGaze(features, now);
                   }
                 }
@@ -1703,13 +1712,34 @@ function App() {
           />
         </NeuroHeadPoseProvider>
       )}
+      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'visual_search' && (
+        <NeuroGazeProvider gaze={gazePos}>
+          <GuidePracticeTestFlow
+            testId="visual_search"
+            guideSteps={VISUAL_SEARCH_GUIDE_STEPS}
+            enablePractice={true}
+            practiceContent={<VisualSearchPractice />}
+            practiceTitle="Practice: Visual Search"
+            testContent={<VisualSearchTest />}
+            config={{
+              numberCount: DEFAULT_NUMBER_COUNT,
+              practiceCount: PRACTICE_COUNT,
+              aoiRadiusPx: DEFAULT_AOI_RADIUS_PX,
+            }}
+            onTestComplete={(payload) => {
+              setNeuroTestResults((prev) => ({ ...prev, visual_search: payload }));
+              setCurrentNeuroTestId(null);
+            }}
+          />
+        </NeuroGazeProvider>
+      )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === null && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
-          <h2 className="text-xl font-bold text-white">Neurological test</h2>
+          <h2 className="text-xl font-bold text-white">Neurological tests</h2>
           <p className="text-gray-400 text-sm text-center max-w-md">
             {Object.keys(neuroTestResults).length > 0
-              ? 'Test 1 (Head Orientation) complete. More tests coming (ticket 06–11).'
-              : 'Pre-test completed. Experiments will run here.'}
+              ? 'Run the next test or go back to real-time tracking.'
+              : 'Pre-test completed. Start Test 1 (Head Orientation) or go back.'}
           </p>
           {preSymptomScores && (
             <p className="text-slate-500 text-xs">
@@ -1718,16 +1748,41 @@ function App() {
           )}
           {neuroTestResults.head_orientation && (
             <p className="text-green-500 text-xs">
-              Head orientation: {Array.isArray(neuroTestResults.head_orientation.phases) ? neuroTestResults.head_orientation.phases.length : 0} phases recorded.
+              Test 1 (Head orientation): {Array.isArray(neuroTestResults.head_orientation.phases) ? neuroTestResults.head_orientation.phases.length : 0} phases recorded.
             </p>
           )}
-          <button
-            type="button"
-            onClick={startRealTimeTracking}
-            className="px-6 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-medium transition"
-          >
-            Back to real-time tracking
-          </button>
+          {neuroTestResults.visual_search && (
+            <p className="text-green-500 text-xs">
+              Test 2 (Visual search): {Array.isArray(neuroTestResults.visual_search.sequence) ? neuroTestResults.visual_search.sequence.length : 0} fixations, {typeof neuroTestResults.visual_search.completionTimeMs === 'number' ? Math.round(neuroTestResults.visual_search.completionTimeMs / 1000) : '—'}s.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-3 justify-center">
+            {!neuroTestResults.head_orientation && (
+              <button
+                type="button"
+                onClick={() => setCurrentNeuroTestId('head_orientation')}
+                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+              >
+                Start Test 1: Head orientation
+              </button>
+            )}
+            {neuroTestResults.head_orientation && !neuroTestResults.visual_search && (
+              <button
+                type="button"
+                onClick={() => setCurrentNeuroTestId('visual_search')}
+                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+              >
+                Start Test 2: Visual search
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={startRealTimeTracking}
+              className="px-6 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-medium transition"
+            >
+              Back to real-time tracking
+            </button>
+          </div>
         </div>
       )}
 
