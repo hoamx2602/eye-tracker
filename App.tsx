@@ -36,6 +36,8 @@ import CapturedImageModal from './components/CapturedImageModal';
 import TrackingToolbar from './components/TrackingToolbar';
 import HeadPositioningScreen from './components/HeadPositioningScreen';
 import PostCalibrationChoiceScreen from './components/PostCalibrationChoiceScreen';
+import SymptomAssessment from './components/SymptomAssessment';
+import type { SymptomScores } from '@/lib/symptomAssessment';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -155,6 +157,9 @@ function App() {
   const [lastSavedCounts, setLastSavedCounts] = useState<{ samples: number; images: number } | null>(null);
   /** Session id after calibration save; used for post-calibration choice and neurological run. */
   const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
+  /** Neurological flow: pre → tests → post. Ticket 12 will drive tests. */
+  const [neuroPhase, setNeuroPhase] = useState<'pre' | 'tests'>('pre');
+  const [preSymptomScores, setPreSymptomScores] = useState<SymptomScores | null>(null);
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [showDemographicsForm, setShowDemographicsForm] = useState(false);
   const demographicsRef = useRef<DemographicsData | null>(null);
@@ -1447,6 +1452,8 @@ function App() {
     stopVideoRecording();
     setStatus('IDLE');
     setCreatedSessionId(null);
+    setNeuroPhase('pre');
+    setPreSymptomScores(null);
     demographicsRef.current = null;
     setTrainingData([]);
     trainingSamplesRef.current = [];
@@ -1637,20 +1644,34 @@ function App() {
           onChooseNeurological={() => {
             setStatus('NEURO_FLOW');
             statusRef.current = 'NEURO_FLOW';
+            setNeuroPhase('pre');
+            setPreSymptomScores(null);
           }}
         />
       )}
 
-      {/* Neurological test flow placeholder — ticket 03/12 will replace with Pre-test → Tests → Post */}
-      {status === 'NEURO_FLOW' && (
+      {/* Neurological test flow: Pre-test (SymptomAssessment) → Tests placeholder (ticket 12) */}
+      {status === 'NEURO_FLOW' && neuroPhase === 'pre' && (
+        <SymptomAssessment
+          variant="pre"
+          onSubmit={(scores) => {
+            setPreSymptomScores(scores);
+            setNeuroPhase('tests');
+          }}
+          onBack={startRealTimeTracking}
+        />
+      )}
+      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
           <h2 className="text-xl font-bold text-white">Neurological test</h2>
           <p className="text-gray-400 text-sm text-center max-w-md">
-            Pre-test questions and experiments will appear here. (Ticket 03/12)
+            Pre-test completed. Experiments will run here. (Ticket 04/12)
           </p>
-          <p className="text-slate-500 text-xs">
-            Session ID: <span className="font-mono text-slate-400">{createdSessionId ?? '—'}</span>
-          </p>
+          {preSymptomScores && (
+            <p className="text-slate-500 text-xs">
+              Pre-test scores saved ({Object.keys(preSymptomScores).length} questions). Session: <span className="font-mono text-slate-400">{createdSessionId ?? '—'}</span>
+            </p>
+          )}
           <button
             type="button"
             onClick={startRealTimeTracking}
