@@ -38,6 +38,13 @@ import HeadPositioningScreen from './components/HeadPositioningScreen';
 import PostCalibrationChoiceScreen from './components/PostCalibrationChoiceScreen';
 import SymptomAssessment from './components/SymptomAssessment';
 import type { SymptomScores } from '@/lib/symptomAssessment';
+import {
+  GuidePracticeTestFlow,
+  NeuroHeadPoseProvider,
+  type TestResultPayload,
+} from '@/components/neurological';
+import HeadOrientationTest from '@/components/neurological/tests/headOrientation/HeadOrientationTest';
+import { HEAD_ORIENTATION_GUIDE_STEPS } from '@/components/neurological/tests/headOrientation/constants';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -160,6 +167,12 @@ function App() {
   /** Neurological flow: pre → tests → post. Ticket 12 will drive tests. */
   const [neuroPhase, setNeuroPhase] = useState<'pre' | 'tests'>('pre');
   const [preSymptomScores, setPreSymptomScores] = useState<SymptomScores | null>(null);
+  /** Which neurological test is running; null = show placeholder after tests. */
+  const [currentNeuroTestId, setCurrentNeuroTestId] = useState<string | null>(null);
+  const [neuroTestResults, setNeuroTestResults] = useState<Record<string, TestResultPayload>>({});
+  /** Head pose during NEURO_FLOW for tests that need it (e.g. Head Orientation). Throttled ~15 Hz. */
+  const [neuroHeadPose, setNeuroHeadPose] = useState<{ pitch: number; yaw: number; roll: number } | null>(null);
+  const lastNeuroHeadPoseTimeRef = useRef<number>(0);
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [showDemographicsForm, setShowDemographicsForm] = useState(false);
   const demographicsRef = useRef<DemographicsData | null>(null);
@@ -187,6 +200,9 @@ function App() {
   }, [status]);
   useEffect(() => {
     if (status !== 'HEAD_POSITIONING') setStableFrameCount(0);
+  }, [status]);
+  useEffect(() => {
+    if (status !== 'NEURO_FLOW') setNeuroHeadPose(null);
   }, [status]);
 
   const [calibPoints, setCalibPoints] = useState<CalibrationPoint[]>([]);
@@ -512,6 +528,12 @@ function App() {
               if (statusRef.current === 'HEAD_POSITIONING' && validation.debug && now - lastHeadDebugLogRef.current > 500) {
                 lastHeadDebugLogRef.current = now;
                 console.log('[Head Position]', validation.valid ? 'OK' : validation.message, '| faceWidth:', validation.debug.faceWidth.toFixed(3), 'min:', validation.debug.minFaceWidth.toFixed(3), 'max:', validation.debug.maxFaceWidth.toFixed(3), 'target:', validation.debug.targetDistanceCm + 'cm');
+              }
+
+              // --- HEAD POSE FOR NEURO TESTS (throttled ~15 Hz) ---
+              if (statusRef.current === 'NEURO_FLOW' && now - lastNeuroHeadPoseTimeRef.current > 66) {
+                lastNeuroHeadPoseTimeRef.current = now;
+                setNeuroHeadPose(eyeTrackingService.calculateGeometricHeadPose(landmarks));
               }
 
               // --- PERIODIC FACE CAPTURE (Only during Tracking) ---
@@ -1454,6 +1476,8 @@ function App() {
     setCreatedSessionId(null);
     setNeuroPhase('pre');
     setPreSymptomScores(null);
+    setCurrentNeuroTestId(null);
+    setNeuroTestResults({});
     demographicsRef.current = null;
     setTrainingData([]);
     trainingSamplesRef.current = [];
@@ -1646,6 +1670,8 @@ function App() {
             statusRef.current = 'NEURO_FLOW';
             setNeuroPhase('pre');
             setPreSymptomScores(null);
+            setCurrentNeuroTestId(null);
+            setNeuroTestResults({});
           }}
         />
       )}
@@ -1657,19 +1683,42 @@ function App() {
           onSubmit={(scores) => {
             setPreSymptomScores(scores);
             setNeuroPhase('tests');
+            setCurrentNeuroTestId('head_orientation');
           }}
           onBack={startRealTimeTracking}
         />
       )}
-      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && (
+      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'head_orientation' && (
+        <NeuroHeadPoseProvider headPose={neuroHeadPose}>
+          <GuidePracticeTestFlow
+            testId="head_orientation"
+            guideSteps={HEAD_ORIENTATION_GUIDE_STEPS}
+            enablePractice={false}
+            testContent={<HeadOrientationTest />}
+            config={{ durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] }}
+            onTestComplete={(payload) => {
+              setNeuroTestResults((prev) => ({ ...prev, head_orientation: payload }));
+              setCurrentNeuroTestId(null);
+            }}
+          />
+        </NeuroHeadPoseProvider>
+      )}
+      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === null && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
           <h2 className="text-xl font-bold text-white">Neurological test</h2>
           <p className="text-gray-400 text-sm text-center max-w-md">
-            Pre-test completed. Experiments will run here. (Ticket 04/12)
+            {Object.keys(neuroTestResults).length > 0
+              ? 'Test 1 (Head Orientation) complete. More tests coming (ticket 06–11).'
+              : 'Pre-test completed. Experiments will run here.'}
           </p>
           {preSymptomScores && (
             <p className="text-slate-500 text-xs">
               Pre-test scores saved ({Object.keys(preSymptomScores).length} questions). Session: <span className="font-mono text-slate-400">{createdSessionId ?? '—'}</span>
+            </p>
+          )}
+          {neuroTestResults.head_orientation && (
+            <p className="text-green-500 text-xs">
+              Head orientation: {Array.isArray(neuroTestResults.head_orientation.phases) ? neuroTestResults.head_orientation.phases.length : 0} phases recorded.
             </p>
           )}
           <button

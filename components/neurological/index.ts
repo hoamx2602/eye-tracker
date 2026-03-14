@@ -24,3 +24,6 @@ export type {
   GazeSample,
   TestResultPayload,
 } from './types';
+
+export { NeuroHeadPoseProvider, useNeuroHeadPose } from './NeuroHeadPoseContext';
+export type { NeuroHeadPoseContextValue } from './NeuroHeadPoseContext';
