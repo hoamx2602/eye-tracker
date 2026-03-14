@@ -33,6 +33,8 @@ import RandomDotsOverlay from './components/RandomDotsOverlay';
 import ArticleReadingOverlay from './components/ArticleReadingOverlay';
 import StopSaveModal from './components/StopSaveModal';
 import CapturedImageModal from './components/CapturedImageModal';
+import TrackingToolbar from './components/TrackingToolbar';
+import HeadPositioningScreen from './components/HeadPositioningScreen';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -1609,38 +1611,12 @@ function App() {
       
       {/* HEAD_POSITIONING: Contained camera view (like frontend HeadPoseStep) */}
       {status === 'HEAD_POSITIONING' && (
-        <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col items-center justify-center gap-6 p-8">
-          <div className="text-center">
-            <h2 className="text-xl font-bold text-white uppercase tracking-widest">Head Positioning</h2>
-            <p className="text-sm text-gray-500 mt-1">Center your face inside the box</p>
-          </div>
-
-          <div className="relative w-full max-w-3xl aspect-video rounded-2xl overflow-hidden border-2 border-gray-700 bg-black shadow-2xl">
-            <canvas ref={headPosCanvasRef} className="w-full h-full" />
-            
-            {positionHoldTime != null && positionHoldTime > 0 && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-                <div className="text-8xl font-black text-white drop-shadow-lg animate-pulse">
-                  {Math.ceil(positionHoldTime / 1000)}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="text-center bg-gray-900 bg-opacity-90 px-6 py-3 rounded-xl border border-gray-800 max-w-lg mx-auto">
-            <p className={`text-xl font-bold transition-colors duration-300 ${headValidation?.valid ? 'text-green-400' : 'text-red-400'}`}>
-              {headValidation?.message || 'Detecting face...'}
-            </p>
-            <p className="text-cyan-300 text-sm mt-2 font-mono">
-              {headValidation?.debug
-                ? `faceWidth: ${headValidation.debug.faceWidth.toFixed(3)} (min: ${headValidation.debug.minFaceWidth.toFixed(3)}, max: ${headValidation.debug.maxFaceWidth.toFixed(3)}) · target ${headValidation.debug.targetDistanceCm}cm`
-                : 'Debug: center face in frame to see values (or check Console)'}
-            </p>
-            <p className="text-gray-300 text-sm mt-1.5 font-mono">
-              Stable frames: <span className={headValidation?.valid ? 'text-green-400 font-semibold' : 'text-gray-500'}>{stableFrameCount}</span> / 60
-            </p>
-          </div>
-        </div>
+        <HeadPositioningScreen
+          headPosCanvasRef={headPosCanvasRef}
+          headValidation={headValidation}
+          positionHoldTime={positionHoldTime}
+          stableFrameCount={stableFrameCount}
+        />
       )}
 
       {/* Head invalid warning during CALIBRATION / TRACKING */}
@@ -1699,72 +1675,17 @@ function App() {
            )}
           
           {/* TOOLBAR — fixed layout, no jump when switching modes */}
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-2 bg-gray-900 bg-opacity-90 p-2 rounded-lg border border-gray-700 shadow-xl">
-             {/* REC INDICATOR */}
-             {isRecording && (
-                <div className="flex items-center space-x-1.5 px-2 flex-shrink-0">
-                    <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse shadow-[0_0_8px_red]"></div>
-                    <span className="text-[10px] font-bold text-red-200">REC</span>
-                </div>
-             )}
-             <div className="w-px h-6 bg-gray-700 flex-shrink-0" />
-
-             {/* MODE SELECTOR — fixed width buttons to prevent text jump */}
-             <div className="flex items-center bg-gray-800 rounded-md p-0.5 flex-shrink-0">
-               <button
-                 onClick={() => setTrackingMode('free_gaze')}
-                 className={`w-[4.75rem] py-1.5 text-xs font-bold rounded transition-colors ${trackingMode === 'free_gaze' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
-               >
-                 Free Gaze
-               </button>
-               <button
-                 onClick={() => setTrackingMode('random_dots')}
-                 className={`w-[4.25rem] py-1.5 text-xs font-bold rounded transition-colors ${trackingMode === 'random_dots' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
-               >
-                 Dot Test
-               </button>
-               <button
-                 onClick={() => setTrackingMode('article_reading')}
-                 className={`w-[4rem] py-1.5 text-xs font-bold rounded transition-colors ${trackingMode === 'article_reading' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
-               >
-                 Article
-               </button>
-             </div>
-             <div className="w-px h-6 bg-gray-700 flex-shrink-0" />
-
-             {/* HEATMAP SWITCHER — always visible; enabled only when Free Gaze */}
-             <div className="flex items-center gap-2 min-w-[11rem] flex-shrink-0">
-               <span className={`text-xs font-medium whitespace-nowrap ${trackingMode === 'free_gaze' ? 'text-gray-300' : 'text-gray-500'}`}>
-                 Heatmap
-               </span>
-               <button
-                 role="switch"
-                 aria-checked={showHeatmap}
-                 onClick={() => trackingMode === 'free_gaze' && setShowHeatmap(!showHeatmap)}
-                 disabled={trackingMode !== 'free_gaze'}
-                 className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900
-                   ${trackingMode !== 'free_gaze' ? 'cursor-not-allowed bg-gray-700 opacity-50' : showHeatmap ? 'bg-orange-600' : 'bg-gray-600 hover:bg-gray-500'}`}
-               >
-                 <span
-                   className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${showHeatmap ? 'translate-x-4' : 'translate-x-0'}`}
-                 />
-               </button>
-               <button
-                 onClick={() => heatmapRef.current?.reset()}
-                 disabled={trackingMode !== 'free_gaze' || !showHeatmap}
-                 className={`px-3 py-1 text-xs font-bold rounded-md flex-shrink-0 transition-colors ${
-                   trackingMode === 'free_gaze' && showHeatmap
-                     ? 'bg-gray-700 text-gray-300 hover:bg-red-900 hover:text-white cursor-pointer'
-                     : 'bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed'
-                 }`}
-               >
-                 Clear
-               </button>
-             </div>
-             <div className="w-px h-6 bg-gray-700 flex-shrink-0" />
-
-             <button onClick={() => setShowStopSaveModal(true)} className="px-4 py-1.5 text-xs font-bold rounded-md bg-gray-800 border border-gray-600 hover:bg-gray-700 transition text-red-300 flex-shrink-0">Stop & Save</button>
-          </div>
+          <TrackingToolbar
+            isRecording={isRecording}
+            trackingMode={trackingMode}
+            onTrackingModeChange={setTrackingMode}
+            showHeatmap={showHeatmap}
+            onToggleHeatmap={() => setShowHeatmap(!showHeatmap)}
+            canToggleHeatmap={trackingMode === 'free_gaze'}
+            onClearHeatmap={() => heatmapRef.current?.reset()}
+            canClearHeatmap={trackingMode === 'free_gaze' && showHeatmap}
+            onStopSave={() => setShowStopSaveModal(true)}
+          />
 
           {/* Stop & Save modal: choose what to download */}
           {showStopSaveModal && (

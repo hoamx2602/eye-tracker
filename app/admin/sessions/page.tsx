@@ -2,23 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-
-function EyeIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-    </svg>
-  );
-}
-
-function TrashIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-    </svg>
-  );
-}
+import { EyeIcon, TrashIcon } from '@/components/admin/AdminIcons';
+import DeleteConfirmDialog from '@/components/admin/DeleteConfirmDialog';
 
 type SessionRow = {
   id: string;
@@ -190,32 +175,15 @@ export default function AdminSessionsPage() {
         )}
       </div>
 
-      {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title">
-          <div className="rounded-xl bg-slate-800 border border-slate-600 shadow-xl max-w-sm w-full p-5">
-            <h2 id="delete-confirm-title" className="text-lg font-semibold text-white mb-2">Delete session?</h2>
-            <p className="text-slate-400 text-sm mb-4">This cannot be undone. The session and its data will be removed.</p>
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmId(null)}
-                disabled={deleting}
-                className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}
-                disabled={deleting}
-                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition disabled:opacity-50"
-              >
-                {deleting ? 'Deleting…' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteConfirmDialog
+        open={deleteConfirmId !== null}
+        title="Delete session?"
+        description="This cannot be undone. The session and its data will be removed."
+        confirmLabel="Delete"
+        confirming={deleting}
+        onCancel={() => setDeleteConfirmId(null)}
+        onConfirm={() => deleteConfirmId && handleDelete(deleteConfirmId)}
+      />
     </div>
   );
 }

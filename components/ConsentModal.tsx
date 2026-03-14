@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Modal from './ui/Modal';
 
 type ConsentModalProps = {
   open: boolean;
@@ -18,10 +19,8 @@ const CONSENT_TEXT = `
 `;
 
 export default function ConsentModal({ open, onAgree, onDecline }: ConsentModalProps) {
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <Modal open={open} size="md" zIndexClassName="z-[100]">
       <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col">
         <div className="p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-white">I understand that Eye Tracker:</h2>
@@ -53,6 +52,6 @@ export default function ConsentModal({ open, onAgree, onDecline }: ConsentModalP
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

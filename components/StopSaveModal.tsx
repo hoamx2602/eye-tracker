@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Modal from './ui/Modal';
 
 interface StopSaveModalProps {
   hasCsvData: boolean;
@@ -32,7 +33,7 @@ const StopSaveModal: React.FC<StopSaveModalProps> = ({
   const anyOption = hasCsvData || hasVideo || hasImages;
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60">
+    <Modal open zIndexClassName="z-[300]" size="sm" disableBackdropClose>
       <div className="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4">
         <h2 className="text-lg font-bold text-white mb-1">Stop & Save</h2>
         <p className="text-gray-400 text-sm mb-4">Download before leaving?</p>
@@ -91,7 +92,7 @@ const StopSaveModal: React.FC<StopSaveModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

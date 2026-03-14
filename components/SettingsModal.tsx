@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import Modal from './ui/Modal';
 import { AppConfig, RegressionMethod, SmoothingMethod, OutlierMethod, CalibrationMethod, DEFAULT_CONFIG } from '../types';
 
 interface SettingsModalProps {
@@ -21,7 +22,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, onClose }
   };
 
   return (
-    <div className="fixed inset-0 z-[300] bg-black bg-opacity-80 flex items-center justify-center backdrop-blur-sm">
+    <Modal open zIndexClassName="z-[300]" size="md">
       <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         
         {/* Header */}
@@ -352,7 +353,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, onClose }
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

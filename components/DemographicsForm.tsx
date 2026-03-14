@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Modal from './ui/Modal';
 
 export type DemographicsData = {
   age: number | '';
@@ -76,7 +77,7 @@ export default function DemographicsForm({ onSubmit, onBack }: DemographicsFormP
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm overflow-y-auto">
+    <Modal open zIndexClassName="z-[100]" size="md" className="overflow-y-auto">
       <form onSubmit={handleSubmit} className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl max-w-lg w-full my-8">
         <div className="p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-white">Your information</h2>
@@ -161,6 +162,6 @@ export default function DemographicsForm({ onSubmit, onBack }: DemographicsFormP
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }
