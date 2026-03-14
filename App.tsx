@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { PATHS, parsePathname } from '@/lib/paths';
 import { 
   AppState, 
   CalibrationPhase,
@@ -249,7 +251,14 @@ function App() {
   const [calibPhase, setCalibPhase] = useState<CalibrationPhase>(CalibrationPhase.INITIAL_MAPPING);
 
   const statusRef = useRef<AppState>('IDLE');
-  const configRef = useRef<AppConfig>(DEFAULT_CONFIG); 
+  const configRef = useRef<AppConfig>(DEFAULT_CONFIG);
+
+  const pathname = usePathname();
+  const router = useRouter();
+  const pathnameRef = useRef<string>(typeof pathname === 'string' ? pathname : '/');
+  pathnameRef.current = typeof pathname === 'string' ? pathname : '/';
+  /** When we push a path from internal transition we skip one pathname sync to avoid overwriting state. */
+  const pathSyncSourceRef = useRef<'url' | 'internal'>('url');
 
   useEffect(() => { statusRef.current = status; }, [status]);
   useEffect(() => {
@@ -365,19 +374,115 @@ function App() {
 
   useEffect(() => {
     const init = async () => {
-      setStatus('LOADING_MODEL');
+      // Only show loading on home so /choice, /tracking etc. don't get overwritten
+      const initialPath = pathnameRef.current;
+      if (parsePathname(initialPath).screen === 'home') {
+        setStatus('LOADING_MODEL');
+      }
       setLoadingMsg('Initializing Computer Vision Models...');
       try {
         await eyeTrackingService.initialize();
         setLoadingMsg('Models Ready.');
-        setStatus('IDLE');
+        // Don't overwrite path-driven state: only set IDLE when we're on home
+        const currentPath = pathnameRef.current;
+        const parsed = parsePathname(currentPath);
+        if (parsed.screen === 'home') {
+          setStatus('IDLE');
+        } else {
+          // Keep current path's screen so /tracking etc. don't flash back to home
+          if (parsed.screen === 'tracking') {
+            setStatus('TRACKING');
+            statusRef.current = 'TRACKING';
+            smootherRef.current.reset();
+            if (heatmapRef.current) heatmapRef.current.reset();
+            trackingHistoryRef.current = [];
+          } else if (parsed.screen === 'choice') {
+            setStatus('POST_CALIBRATION_CHOICE');
+          } else if (parsed.screen === 'neuro_pre' || parsed.screen === 'neuro_post' || parsed.screen === 'neuro_done' || parsed.screen === 'neuro_test') {
+            setStatus('NEURO_FLOW');
+            statusRef.current = 'NEURO_FLOW';
+            if (parsed.screen === 'neuro_pre') {
+              setNeuroPhase('pre');
+              setCurrentNeuroTestId(null);
+            } else if (parsed.screen === 'neuro_post') {
+              setNeuroPhase('post');
+              setCurrentNeuroTestId(null);
+            } else if (parsed.screen === 'neuro_done') {
+              setNeuroPhase('done');
+              setCurrentNeuroTestId(null);
+            } else {
+              setNeuroPhase('tests');
+              setCurrentNeuroTestId(parsed.testId);
+              const order = neuroTestOrder.length > 0 ? neuroTestOrder : ['head_orientation', 'visual_search', 'memory_cards', 'anti_saccade', 'saccadic', 'fixation_stability', 'peripheral_vision'];
+              setCurrentNeuroTestIndex(Math.max(0, order.indexOf(parsed.testId)));
+            }
+          }
+        }
       } catch (err) {
         console.error(err);
         setLoadingMsg('Failed to load models. Check console.');
+        const parsed = parsePathname(pathnameRef.current);
+        if (parsed.screen === 'home') setStatus('IDLE');
       }
     };
     init();
   }, []);
+
+  // Sync URL path → state so direct navigation / refresh shows the right screen
+  useEffect(() => {
+    if (pathSyncSourceRef.current === 'internal') {
+      pathSyncSourceRef.current = 'url';
+      return;
+    }
+    const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
+    switch (parsed.screen) {
+      case 'home':
+        // Don't override status when at / (could be IDLE, HEAD_POSITIONING, CALIBRATION, or CHOICE)
+        break;
+      case 'choice':
+        if (status !== 'POST_CALIBRATION_CHOICE') setStatus('POST_CALIBRATION_CHOICE');
+        break;
+      case 'tracking':
+        if (status !== 'TRACKING') {
+          setStatus('TRACKING');
+          statusRef.current = 'TRACKING';
+          smootherRef.current.reset();
+          if (heatmapRef.current) heatmapRef.current.reset();
+          trackingHistoryRef.current = [];
+        }
+        break;
+      case 'neuro_pre':
+        if (status !== 'NEURO_FLOW') setStatus('NEURO_FLOW');
+        statusRef.current = 'NEURO_FLOW';
+        setNeuroPhase('pre');
+        setCurrentNeuroTestId(null);
+        // Allow direct-open for testing: show pre form even without a run (patch will no-op if no runId)
+        if (neuroRunStatus === 'idle') setNeuroRunStatus('ready');
+        break;
+      case 'neuro_test':
+        if (status !== 'NEURO_FLOW') setStatus('NEURO_FLOW');
+        statusRef.current = 'NEURO_FLOW';
+        setNeuroPhase('tests');
+        setCurrentNeuroTestId(parsed.testId);
+        const order = neuroTestOrder.length > 0 ? neuroTestOrder : ['head_orientation', 'visual_search', 'memory_cards', 'anti_saccade', 'saccadic', 'fixation_stability', 'peripheral_vision'];
+        const idx = order.indexOf(parsed.testId);
+        setCurrentNeuroTestIndex(idx >= 0 ? idx : 0);
+        break;
+      case 'neuro_post':
+        if (status !== 'NEURO_FLOW') setStatus('NEURO_FLOW');
+        statusRef.current = 'NEURO_FLOW';
+        setNeuroPhase('post');
+        setCurrentNeuroTestId(null);
+        if (neuroRunStatus === 'idle') setNeuroRunStatus('ready');
+        break;
+      case 'neuro_done':
+        if (status !== 'NEURO_FLOW') setStatus('NEURO_FLOW');
+        statusRef.current = 'NEURO_FLOW';
+        setNeuroPhase('done');
+        setCurrentNeuroTestId(null);
+        break;
+    }
+  }, [pathname]);
 
   const startCamera = async () => {
     if (!videoRef.current) return;
@@ -1341,6 +1446,8 @@ function App() {
           setCreatedSessionId(created.id);
           setStatus('POST_CALIBRATION_CHOICE');
           statusRef.current = 'POST_CALIBRATION_CHOICE';
+          pathSyncSourceRef.current = 'internal';
+          router.push(PATHS.CHOICE);
         }, 1200);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -1353,6 +1460,8 @@ function App() {
   };
 
   const startRealTimeTracking = useCallback(() => {
+    pathSyncSourceRef.current = 'internal';
+    router.push(PATHS.TRACKING);
     setStatus('TRACKING');
     statusRef.current = 'TRACKING';
     smootherRef.current.reset();
@@ -1361,7 +1470,7 @@ function App() {
     if (configRef.current.enableVideoRecording) {
       startVideoRecording();
     }
-  }, []);
+  }, [router]);
 
   const handleNeuroTestComplete = useCallback(
     async (testId: string, payload: TestResultPayload) => {
@@ -1387,12 +1496,16 @@ function App() {
       if (nextIdx >= 0) {
         setCurrentNeuroTestIndex(nextIdx);
         setCurrentNeuroTestId(order[nextIdx]);
+        pathSyncSourceRef.current = 'internal';
+        router.push(PATHS.NEURO_TEST(order[nextIdx]));
       } else {
         setNeuroPhase('post');
         setCurrentNeuroTestId(null);
+        pathSyncSourceRef.current = 'internal';
+        router.push(PATHS.NEURO_POST);
       }
     },
-    [neuroRunId, neuroTestOrder, neuroConfigSnapshot?.testEnabled, currentNeuroTestIndex]
+    [neuroRunId, neuroTestOrder, neuroConfigSnapshot?.testEnabled, currentNeuroTestIndex, router]
   );
 
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
@@ -1772,12 +1885,29 @@ function App() {
               const snap = run.configSnapshot as { testOrder: string[]; testParameters: Record<string, Record<string, unknown>>; testEnabled: Record<string, boolean> } | undefined;
               setNeuroConfigSnapshot(snap ?? { testOrder: order, testParameters: {}, testEnabled: {} });
               setNeuroRunStatus('ready');
+              pathSyncSourceRef.current = 'internal';
+              router.push(PATHS.NEURO_PRE);
             } catch (e) {
               console.error('Create neuro run failed', e);
               setNeuroRunStatus('error');
             }
           }}
         />
+      )}
+      {/* /choice without session (e.g. direct open for testing): show message */}
+      {status === 'POST_CALIBRATION_CHOICE' && !createdSessionId && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950 p-6">
+          <p className="text-gray-400 text-center max-w-md">
+            No session yet. Complete calibration first to choose Real-time tracking or Neurological tests.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push(PATHS.HOME)}
+            className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+          >
+            Go to home
+          </button>
+        </div>
       )}
 
       {/* Neurological run: creating run (loading/error) */}
@@ -1820,10 +1950,14 @@ function App() {
             if (idx < 0) {
               setNeuroPhase('post');
               setCurrentNeuroTestId(null);
+              pathSyncSourceRef.current = 'internal';
+              router.push(PATHS.NEURO_POST);
             } else {
               setNeuroPhase('tests');
               setCurrentNeuroTestIndex(idx);
               setCurrentNeuroTestId(order[idx]);
+              pathSyncSourceRef.current = 'internal';
+              router.push(PATHS.NEURO_TEST(order[idx]));
             }
           }}
           onBack={async () => {
@@ -1972,6 +2106,8 @@ function App() {
               }
             }
             setNeuroPhase('done');
+            pathSyncSourceRef.current = 'internal';
+            router.push(PATHS.NEURO_DONE);
           }}
           onBack={async () => {
             if (neuroRunId) {
