@@ -51,7 +51,7 @@ export interface HeadSnapshot {
   targetDistanceCm?: number;
 }
 
-export type AppState = 'IDLE' | 'LOADING_MODEL' | 'HEAD_POSITIONING' | 'CALIBRATION' | 'TRACKING';
+export type AppState = 'IDLE' | 'LOADING_MODEL' | 'HEAD_POSITIONING' | 'CALIBRATION' | 'TRACKING' | 'POST_CALIBRATION_CHOICE' | 'NEURO_FLOW';
 
 export type TrackingMode = 'free_gaze' | 'random_dots' | 'article_reading';
 

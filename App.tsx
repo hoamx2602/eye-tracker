@@ -35,6 +35,7 @@ import StopSaveModal from './components/StopSaveModal';
 import CapturedImageModal from './components/CapturedImageModal';
 import TrackingToolbar from './components/TrackingToolbar';
 import HeadPositioningScreen from './components/HeadPositioningScreen';
+import PostCalibrationChoiceScreen from './components/PostCalibrationChoiceScreen';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -152,6 +153,8 @@ function App() {
   const [sessionSaveStatus, setSessionSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [sessionSaveError, setSessionSaveError] = useState<string | null>(null);
   const [lastSavedCounts, setLastSavedCounts] = useState<{ samples: number; images: number } | null>(null);
+  /** Session id after calibration save; used for post-calibration choice and neurological run. */
+  const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [showDemographicsForm, setShowDemographicsForm] = useState(false);
   const demographicsRef = useRef<DemographicsData | null>(null);
@@ -1251,14 +1254,9 @@ function App() {
           : errors.length > 0 ? `Calibration Complete (Accuracy: ${Math.round(avgError)}px)` : 'Calibration complete (test mode)';
         setLoadingMsg(statusMsg);
         setTimeout(() => {
-          setStatus('TRACKING');
-          statusRef.current = 'TRACKING';
-          smootherRef.current.reset();
-          if (heatmapRef.current) heatmapRef.current.reset();
-          trackingHistoryRef.current = [];
-          if (configRef.current.enableVideoRecording) {
-            startVideoRecording();
-          }
+          setCreatedSessionId(created.id);
+          setStatus('POST_CALIBRATION_CHOICE');
+          statusRef.current = 'POST_CALIBRATION_CHOICE';
         }, 1200);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -1269,6 +1267,17 @@ function App() {
       }
     })();
   };
+
+  const startRealTimeTracking = useCallback(() => {
+    setStatus('TRACKING');
+    statusRef.current = 'TRACKING';
+    smootherRef.current.reset();
+    if (heatmapRef.current) heatmapRef.current.reset();
+    trackingHistoryRef.current = [];
+    if (configRef.current.enableVideoRecording) {
+      startVideoRecording();
+    }
+  }, []);
 
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
     const inputVector = eyeTrackingService.prepareFeatureVector(features);
@@ -1437,6 +1446,7 @@ function App() {
   const reset = () => {
     stopVideoRecording();
     setStatus('IDLE');
+    setCreatedSessionId(null);
     demographicsRef.current = null;
     setTrainingData([]);
     trainingSamplesRef.current = [];
@@ -1617,6 +1627,38 @@ function App() {
           positionHoldTime={positionHoldTime}
           stableFrameCount={stableFrameCount}
         />
+      )}
+
+      {/* Post-calibration: choose Real-time tracking or Neurological test */}
+      {status === 'POST_CALIBRATION_CHOICE' && createdSessionId && (
+        <PostCalibrationChoiceScreen
+          sessionId={createdSessionId}
+          onChooseRealTime={startRealTimeTracking}
+          onChooseNeurological={() => {
+            setStatus('NEURO_FLOW');
+            statusRef.current = 'NEURO_FLOW';
+          }}
+        />
+      )}
+
+      {/* Neurological test flow placeholder — ticket 03/12 will replace with Pre-test → Tests → Post */}
+      {status === 'NEURO_FLOW' && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
+          <h2 className="text-xl font-bold text-white">Neurological test</h2>
+          <p className="text-gray-400 text-sm text-center max-w-md">
+            Pre-test questions and experiments will appear here. (Ticket 03/12)
+          </p>
+          <p className="text-slate-500 text-xs">
+            Session ID: <span className="font-mono text-slate-400">{createdSessionId ?? '—'}</span>
+          </p>
+          <button
+            type="button"
+            onClick={startRealTimeTracking}
+            className="px-6 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-medium transition"
+          >
+            Back to real-time tracking
+          </button>
+        </div>
       )}
 
       {/* Head invalid warning during CALIBRATION / TRACKING */}
