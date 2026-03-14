@@ -69,6 +69,13 @@ import {
   DEFAULT_MOVEMENT_DURATION_MS,
   DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
 } from '@/components/neurological/tests/antiSaccade/constants';
+import SaccadicTest from '@/components/neurological/tests/saccadic/SaccadicTest';
+import SaccadicPractice from '@/components/neurological/tests/saccadic/SaccadicPractice';
+import {
+  SACCADIC_GUIDE_STEPS,
+  DEFAULT_TARGET_DURATION_MS,
+  DEFAULT_TOTAL_CYCLES,
+} from '@/components/neurological/tests/saccadic/constants';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -1789,6 +1796,26 @@ function App() {
           />
         </NeuroGazeProvider>
       )}
+      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'saccadic' && (
+        <NeuroGazeProvider gaze={gazePos}>
+          <GuidePracticeTestFlow
+            testId="saccadic"
+            guideSteps={SACCADIC_GUIDE_STEPS}
+            enablePractice={true}
+            practiceContent={<SaccadicPractice />}
+            practiceTitle="Practice: Saccadic"
+            testContent={<SaccadicTest />}
+            config={{
+              targetDurationMs: DEFAULT_TARGET_DURATION_MS,
+              totalCycles: DEFAULT_TOTAL_CYCLES,
+            }}
+            onTestComplete={(payload) => {
+              setNeuroTestResults((prev) => ({ ...prev, saccadic: payload }));
+              setCurrentNeuroTestId(null);
+            }}
+          />
+        </NeuroGazeProvider>
+      )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === null && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
           <h2 className="text-xl font-bold text-white">Neurological tests</h2>
@@ -1827,6 +1854,18 @@ function App() {
               </p>
             );
           })()}
+          {neuroTestResults.saccadic && (() => {
+            const s = neuroTestResults.saccadic as { cycles?: unknown[]; metrics?: { avgLatency?: number; fixationAccuracy?: number; correctiveSaccadeCount?: number } };
+            const m = s.metrics;
+            const avgLat = m?.avgLatency;
+            const acc = m?.fixationAccuracy;
+            const corrective = m?.correctiveSaccadeCount;
+            return (
+              <p className="text-green-500 text-xs">
+                Test 5 (Saccadic): {Array.isArray(s.cycles) ? s.cycles.length : 0} cycles, avg latency {typeof avgLat === 'number' ? Math.round(avgLat) + ' ms' : '—'}, accuracy {typeof acc === 'number' ? Math.round(acc) + '%' : '—'}, corrective {typeof corrective === 'number' ? corrective : '—'}.
+              </p>
+            );
+          })()}
           <div className="flex flex-wrap gap-3 justify-center">
             {!neuroTestResults.head_orientation && (
               <button
@@ -1862,6 +1901,15 @@ function App() {
                 className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
               >
                 Start Test 4: Anti-saccade
+              </button>
+            )}
+            {neuroTestResults.anti_saccade && !neuroTestResults.saccadic && (
+              <button
+                type="button"
+                onClick={() => setCurrentNeuroTestId('saccadic')}
+                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+              >
+                Start Test 5: Saccadic
               </button>
             )}
             <button
