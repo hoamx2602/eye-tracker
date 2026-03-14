@@ -19,7 +19,7 @@ import {
 } from './types';
 import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
 import { HybridRegressor, GazeSmoother, DataCleaner } from './services/mathUtils';
-import { sessionsApi, uploadApi } from './services/api';
+import { sessionsApi, uploadApi, neurologicalRunsApi } from './services/api';
 import CalibrationLayer from './components/CalibrationLayer';
 import EyeMovementLayer from './components/EyeMovementLayer';
 import GazeCursor from './components/GazeCursor';
@@ -211,10 +211,20 @@ function App() {
   const [lastSavedCounts, setLastSavedCounts] = useState<{ samples: number; images: number } | null>(null);
   /** Session id after calibration save; used for post-calibration choice and neurological run. */
   const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
-  /** Neurological flow: pre → tests → post. Ticket 12 will drive tests. */
-  const [neuroPhase, setNeuroPhase] = useState<'pre' | 'tests'>('pre');
+  /** Orchestrator (ticket 12): pre → tests → post → done. */
+  const [neuroPhase, setNeuroPhase] = useState<'pre' | 'tests' | 'post' | 'done'>('pre');
+  const [neuroRunId, setNeuroRunId] = useState<string | null>(null);
+  const [neuroRunStatus, setNeuroRunStatus] = useState<'idle' | 'creating' | 'ready' | 'error'>('idle');
+  const [neuroTestOrder, setNeuroTestOrder] = useState<string[]>([]);
+  const [neuroConfigSnapshot, setNeuroConfigSnapshot] = useState<{
+    testOrder: string[];
+    testParameters: Record<string, Record<string, unknown>>;
+    testEnabled: Record<string, boolean>;
+  } | null>(null);
+  const [currentNeuroTestIndex, setCurrentNeuroTestIndex] = useState(0);
   const [preSymptomScores, setPreSymptomScores] = useState<SymptomScores | null>(null);
-  /** Which neurological test is running; null = show placeholder after tests. */
+  const [postSymptomScores, setPostSymptomScores] = useState<SymptomScores | null>(null);
+  /** Which neurological test is running; null when between tests or in post/done. */
   const [currentNeuroTestId, setCurrentNeuroTestId] = useState<string | null>(null);
   const [neuroTestResults, setNeuroTestResults] = useState<Record<string, TestResultPayload>>({});
   /** Head pose during NEURO_FLOW for tests that need it (e.g. Head Orientation). Throttled ~15 Hz. */
@@ -1353,6 +1363,38 @@ function App() {
     }
   }, []);
 
+  const handleNeuroTestComplete = useCallback(
+    async (testId: string, payload: TestResultPayload) => {
+      setNeuroTestResults((prev) => ({ ...prev, [testId]: payload }));
+      if (neuroRunId) {
+        try {
+          await neurologicalRunsApi.patch(neuroRunId, {
+            testResults: { [testId]: payload },
+          });
+        } catch (e) {
+          console.error('Patch test result failed', e);
+        }
+      }
+      const order = neuroTestOrder.length > 0 ? neuroTestOrder : ['head_orientation', 'visual_search', 'memory_cards', 'anti_saccade', 'saccadic', 'fixation_stability', 'peripheral_vision'];
+      const enabled = neuroConfigSnapshot?.testEnabled ?? {};
+      let nextIdx = -1;
+      for (let i = currentNeuroTestIndex + 1; i < order.length; i++) {
+        if (enabled[order[i]] !== false) {
+          nextIdx = i;
+          break;
+        }
+      }
+      if (nextIdx >= 0) {
+        setCurrentNeuroTestIndex(nextIdx);
+        setCurrentNeuroTestId(order[nextIdx]);
+      } else {
+        setNeuroPhase('post');
+        setCurrentNeuroTestId(null);
+      }
+    },
+    [neuroRunId, neuroTestOrder, neuroConfigSnapshot?.testEnabled, currentNeuroTestIndex]
+  );
+
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
     const inputVector = eyeTrackingService.prepareFeatureVector(features);
     
@@ -1712,27 +1754,86 @@ function App() {
         <PostCalibrationChoiceScreen
           sessionId={createdSessionId}
           onChooseRealTime={startRealTimeTracking}
-          onChooseNeurological={() => {
+          onChooseNeurological={async () => {
             setStatus('NEURO_FLOW');
             statusRef.current = 'NEURO_FLOW';
+            setNeuroRunStatus('creating');
             setNeuroPhase('pre');
             setPreSymptomScores(null);
-            setCurrentNeuroTestId(null);
+            setPostSymptomScores(null);
             setNeuroTestResults({});
+            setCurrentNeuroTestId(null);
+            setCurrentNeuroTestIndex(0);
+            try {
+              const run = await neurologicalRunsApi.create(createdSessionId!);
+              setNeuroRunId(run.id);
+              const order = Array.isArray(run.testOrderSnapshot) ? run.testOrderSnapshot : [];
+              setNeuroTestOrder(order);
+              const snap = run.configSnapshot as { testOrder: string[]; testParameters: Record<string, Record<string, unknown>>; testEnabled: Record<string, boolean> } | undefined;
+              setNeuroConfigSnapshot(snap ?? { testOrder: order, testParameters: {}, testEnabled: {} });
+              setNeuroRunStatus('ready');
+            } catch (e) {
+              console.error('Create neuro run failed', e);
+              setNeuroRunStatus('error');
+            }
           }}
         />
       )}
 
-      {/* Neurological test flow: Pre-test (SymptomAssessment) → Tests placeholder (ticket 12) */}
-      {status === 'NEURO_FLOW' && neuroPhase === 'pre' && (
+      {/* Neurological run: creating run (loading/error) */}
+      {status === 'NEURO_FLOW' && neuroRunStatus === 'creating' && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950">
+          <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-gray-400">Starting neurological run…</p>
+        </div>
+      )}
+      {status === 'NEURO_FLOW' && neuroRunStatus === 'error' && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 p-6 bg-gray-950">
+          <p className="text-red-400 text-center">Could not start run. Check connection and try again.</p>
+          <button type="button" onClick={startRealTimeTracking} className="px-6 py-3 rounded-xl bg-gray-700 text-white">
+            Back to real-time tracking
+          </button>
+        </div>
+      )}
+      {/* Pre-test */}
+      {status === 'NEURO_FLOW' && neuroRunStatus === 'ready' && neuroPhase === 'pre' && (
         <SymptomAssessment
           variant="pre"
-          onSubmit={(scores) => {
+          onSubmit={async (scores) => {
             setPreSymptomScores(scores);
-            setNeuroPhase('tests');
-            setCurrentNeuroTestId('head_orientation');
+            if (neuroRunId) {
+              try {
+                await neurologicalRunsApi.patch(neuroRunId, { preSymptomScores: scores });
+              } catch (e) {
+                console.error('Patch pre scores failed', e);
+              }
+            }
+            const order = neuroTestOrder.length > 0 ? neuroTestOrder : ['head_orientation', 'visual_search', 'memory_cards', 'anti_saccade', 'saccadic', 'fixation_stability', 'peripheral_vision'];
+            const enabled = neuroConfigSnapshot?.testEnabled ?? {};
+            let idx = -1;
+            for (let i = 0; i < order.length; i++) {
+              if (enabled[order[i]] !== false) {
+                idx = i;
+                break;
+              }
+            }
+            if (idx < 0) {
+              setNeuroPhase('post');
+              setCurrentNeuroTestId(null);
+            } else {
+              setNeuroPhase('tests');
+              setCurrentNeuroTestIndex(idx);
+              setCurrentNeuroTestId(order[idx]);
+            }
           }}
-          onBack={startRealTimeTracking}
+          onBack={async () => {
+            if (neuroRunId) {
+              try {
+                await neurologicalRunsApi.patch(neuroRunId, { status: 'abandoned' });
+              } catch (_) {}
+            }
+            startRealTimeTracking();
+          }}
         />
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'head_orientation' && (
@@ -1742,11 +1843,8 @@ function App() {
             guideSteps={HEAD_ORIENTATION_GUIDE_STEPS}
             enablePractice={false}
             testContent={<HeadOrientationTest />}
-            config={{ durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] }}
-            onTestComplete={(payload) => {
-              setNeuroTestResults((prev) => ({ ...prev, head_orientation: payload }));
-              setCurrentNeuroTestId(null);
-            }}
+            config={(neuroConfigSnapshot?.testParameters?.head_orientation as Record<string, unknown>) ?? { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] }}
+            onTestComplete={(payload) => handleNeuroTestComplete('head_orientation', payload)}
           />
         </NeuroHeadPoseProvider>
       )}
@@ -1759,15 +1857,8 @@ function App() {
             practiceContent={<VisualSearchPractice />}
             practiceTitle="Practice: Visual Search"
             testContent={<VisualSearchTest />}
-            config={{
-              numberCount: DEFAULT_NUMBER_COUNT,
-              practiceCount: PRACTICE_COUNT,
-              aoiRadiusPx: DEFAULT_AOI_RADIUS_PX,
-            }}
-            onTestComplete={(payload) => {
-              setNeuroTestResults((prev) => ({ ...prev, visual_search: payload }));
-              setCurrentNeuroTestId(null);
-            }}
+            config={(neuroConfigSnapshot?.testParameters?.visual_search as Record<string, unknown>) ?? { numberCount: DEFAULT_NUMBER_COUNT, practiceCount: PRACTICE_COUNT, aoiRadiusPx: DEFAULT_AOI_RADIUS_PX }}
+            onTestComplete={(payload) => handleNeuroTestComplete('visual_search', payload)}
           />
         </NeuroGazeProvider>
       )}
@@ -1780,14 +1871,8 @@ function App() {
             practiceContent={<MemoryCardsPractice />}
             practiceTitle="Practice: Memory Cards (2×2)"
             testContent={<MemoryCardsTest />}
-            config={{
-              gridSize: DEFAULT_GRID_SIZE,
-              dwellMs: DEFAULT_DWELL_MS,
-            }}
-            onTestComplete={(payload) => {
-              setNeuroTestResults((prev) => ({ ...prev, memory_cards: payload }));
-              setCurrentNeuroTestId(null);
-            }}
+            config={(neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { gridSize: DEFAULT_GRID_SIZE, dwellMs: DEFAULT_DWELL_MS }}
+            onTestComplete={(payload) => handleNeuroTestComplete('memory_cards', payload)}
           />
         </NeuroGazeProvider>
       )}
@@ -1800,15 +1885,8 @@ function App() {
             practiceContent={<AntiSaccadePractice />}
             practiceTitle="Practice: Anti-Saccade"
             testContent={<AntiSaccadeTest />}
-            config={{
-              trialCount: DEFAULT_TRIAL_COUNT,
-              movementDurationMs: DEFAULT_MOVEMENT_DURATION_MS,
-              intervalBetweenTrialsMs: DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
-            }}
-            onTestComplete={(payload) => {
-              setNeuroTestResults((prev) => ({ ...prev, anti_saccade: payload }));
-              setCurrentNeuroTestId(null);
-            }}
+            config={(neuroConfigSnapshot?.testParameters?.anti_saccade as Record<string, unknown>) ?? { trialCount: DEFAULT_TRIAL_COUNT, movementDurationMs: DEFAULT_MOVEMENT_DURATION_MS, intervalBetweenTrialsMs: DEFAULT_INTERVAL_BETWEEN_TRIALS_MS }}
+            onTestComplete={(payload) => handleNeuroTestComplete('anti_saccade', payload)}
           />
         </NeuroGazeProvider>
       )}
@@ -1821,14 +1899,8 @@ function App() {
             practiceContent={<SaccadicPractice />}
             practiceTitle="Practice: Saccadic"
             testContent={<SaccadicTest />}
-            config={{
-              targetDurationMs: DEFAULT_TARGET_DURATION_MS,
-              totalCycles: DEFAULT_TOTAL_CYCLES,
-            }}
-            onTestComplete={(payload) => {
-              setNeuroTestResults((prev) => ({ ...prev, saccadic: payload }));
-              setCurrentNeuroTestId(null);
-            }}
+            config={(neuroConfigSnapshot?.testParameters?.saccadic as Record<string, unknown>) ?? { targetDurationMs: DEFAULT_TARGET_DURATION_MS, totalCycles: DEFAULT_TOTAL_CYCLES }}
+            onTestComplete={(payload) => handleNeuroTestComplete('saccadic', payload)}
           />
         </NeuroGazeProvider>
       )}
@@ -1841,14 +1913,8 @@ function App() {
             practiceContent={<FixationStabilityPractice />}
             practiceTitle="Practice: Fixation Stability"
             testContent={<FixationStabilityTest />}
-            config={{
-              durationSec: DEFAULT_DURATION_SEC,
-              blinkIntervalMs: DEFAULT_BLINK_INTERVAL_MS,
-            }}
-            onTestComplete={(payload) => {
-              setNeuroTestResults((prev) => ({ ...prev, fixation_stability: payload }));
-              setCurrentNeuroTestId(null);
-            }}
+            config={(neuroConfigSnapshot?.testParameters?.fixation_stability as Record<string, unknown>) ?? { durationSec: DEFAULT_DURATION_SEC, blinkIntervalMs: DEFAULT_BLINK_INTERVAL_MS }}
+            onTestComplete={(payload) => handleNeuroTestComplete('fixation_stability', payload)}
           />
         </NeuroGazeProvider>
       )}
@@ -1861,165 +1927,82 @@ function App() {
             practiceContent={<PeripheralVisionPractice />}
             practiceTitle="Practice: Peripheral Vision"
             testContent={<PeripheralVisionTest />}
-            config={{
-              trialCount: PERIPHERAL_DEFAULT_TRIAL_COUNT,
-              stimulusDurationMs: DEFAULT_STIMULUS_DURATION_MS,
-              minDelayMs: DEFAULT_MIN_DELAY_MS,
-              maxDelayMs: DEFAULT_MAX_DELAY_MS,
-            }}
-            onTestComplete={(payload) => {
-              setNeuroTestResults((prev) => ({ ...prev, peripheral_vision: payload }));
-              setCurrentNeuroTestId(null);
-            }}
+            config={(neuroConfigSnapshot?.testParameters?.peripheral_vision as Record<string, unknown>) ?? { trialCount: PERIPHERAL_DEFAULT_TRIAL_COUNT, stimulusDurationMs: DEFAULT_STIMULUS_DURATION_MS, minDelayMs: DEFAULT_MIN_DELAY_MS, maxDelayMs: DEFAULT_MAX_DELAY_MS }}
+            onTestComplete={(payload) => handleNeuroTestComplete('peripheral_vision', payload)}
           />
         </NeuroGazeProvider>
       )}
+      {/* Exit run (abandon) — visible during pre or tests */}
+      {status === 'NEURO_FLOW' && (neuroPhase === 'pre' || neuroPhase === 'tests') && (
+        <button
+          type="button"
+          onClick={async () => {
+            if (neuroRunId) {
+              try {
+                await neurologicalRunsApi.patch(neuroRunId, { status: 'abandoned' });
+              } catch (_) {}
+            }
+            startRealTimeTracking();
+          }}
+          className="fixed top-4 right-4 z-[60] px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-sm transition"
+        >
+          Exit run
+        </button>
+      )}
+      {/* Transition: tests done, moving to post (brief) */}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === null && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950">
+          <p className="text-gray-400">All tests complete. Preparing post-test…</p>
+        </div>
+      )}
+      {/* Post-test */}
+      {status === 'NEURO_FLOW' && neuroPhase === 'post' && (
+        <SymptomAssessment
+          variant="post"
+          onSubmit={async (scores) => {
+            setPostSymptomScores(scores);
+            if (neuroRunId) {
+              try {
+                await neurologicalRunsApi.patch(neuroRunId, {
+                  postSymptomScores: scores,
+                  status: 'completed',
+                });
+              } catch (e) {
+                console.error('Patch post scores failed', e);
+              }
+            }
+            setNeuroPhase('done');
+          }}
+          onBack={async () => {
+            if (neuroRunId) {
+              try {
+                await neurologicalRunsApi.patch(neuroRunId, { status: 'abandoned' });
+              } catch (_) {}
+            }
+            startRealTimeTracking();
+          }}
+        />
+      )}
+      {/* Done: summary */}
+      {status === 'NEURO_FLOW' && neuroPhase === 'done' && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
-          <h2 className="text-xl font-bold text-white">Neurological tests</h2>
+          <h2 className="text-xl font-bold text-white">Neurological run complete</h2>
           <p className="text-gray-400 text-sm text-center max-w-md">
-            {Object.keys(neuroTestResults).length > 0
-              ? 'Run the next test or go back to real-time tracking.'
-              : 'Pre-test completed. Start Test 1 (Head Orientation) or go back.'}
+            Pre-test and post-test scores and all test results have been saved.
           </p>
-          {preSymptomScores && (
-            <p className="text-slate-500 text-xs">
-              Pre-test scores saved ({Object.keys(preSymptomScores).length} questions). Session: <span className="font-mono text-slate-400">{createdSessionId ?? '—'}</span>
-            </p>
+          {neuroRunId && (
+            <p className="text-slate-500 text-xs font-mono">Run ID: {neuroRunId}</p>
           )}
-          {neuroTestResults.head_orientation && (
-            <p className="text-green-500 text-xs">
-              Test 1 (Head orientation): {Array.isArray(neuroTestResults.head_orientation.phases) ? neuroTestResults.head_orientation.phases.length : 0} phases recorded.
-            </p>
-          )}
-          {neuroTestResults.visual_search && (
-            <p className="text-green-500 text-xs">
-              Test 2 (Visual search): {Array.isArray(neuroTestResults.visual_search.sequence) ? neuroTestResults.visual_search.sequence.length : 0} fixations, {typeof neuroTestResults.visual_search.completionTimeMs === 'number' ? Math.round(neuroTestResults.visual_search.completionTimeMs / 1000) : '—'}s.
-            </p>
-          )}
-          {neuroTestResults.memory_cards && (
-            <p className="text-green-500 text-xs">
-              Test 3 (Memory cards): {Array.isArray(neuroTestResults.memory_cards.moves) ? neuroTestResults.memory_cards.moves.length : 0} moves, {typeof neuroTestResults.memory_cards.correctPairsCount === 'number' ? neuroTestResults.memory_cards.correctPairsCount : '—'} pairs, {typeof neuroTestResults.memory_cards.completionTimeMs === 'number' ? Math.round(neuroTestResults.memory_cards.completionTimeMs / 1000) : '—'}s.
-            </p>
-          )}
-          {neuroTestResults.anti_saccade && (() => {
-            const m = (neuroTestResults.anti_saccade as { metrics?: { avgLatency?: number; directionAccuracy?: number } }).metrics;
-            const avgLat = m?.avgLatency;
-            const acc = m?.directionAccuracy;
-            return (
-              <p className="text-green-500 text-xs">
-                Test 4 (Anti-saccade): {Array.isArray(neuroTestResults.anti_saccade.trials) ? neuroTestResults.anti_saccade.trials.length : 0} trials, avg latency {typeof avgLat === 'number' ? Math.round(avgLat) + ' ms' : '—'}, accuracy {typeof acc === 'number' ? Math.round(acc) + '%' : '—'}.
-              </p>
-            );
-          })()}
-          {neuroTestResults.saccadic && (() => {
-            const s = neuroTestResults.saccadic as { cycles?: unknown[]; metrics?: { avgLatency?: number; fixationAccuracy?: number; correctiveSaccadeCount?: number } };
-            const m = s.metrics;
-            const avgLat = m?.avgLatency;
-            const acc = m?.fixationAccuracy;
-            const corrective = m?.correctiveSaccadeCount;
-            return (
-              <p className="text-green-500 text-xs">
-                Test 5 (Saccadic): {Array.isArray(s.cycles) ? s.cycles.length : 0} cycles, avg latency {typeof avgLat === 'number' ? Math.round(avgLat) + ' ms' : '—'}, accuracy {typeof acc === 'number' ? Math.round(acc) + '%' : '—'}, corrective {typeof corrective === 'number' ? corrective : '—'}.
-              </p>
-            );
-          })()}
-          {neuroTestResults.fixation_stability && (() => {
-            const f = neuroTestResults.fixation_stability as { durationMs?: number; gazeSamples?: unknown[]; metrics?: { meanDeviationPx?: number; dispersionPx?: number; microSaccadeCount?: number } };
-            const m = f.metrics;
-            const dev = m?.meanDeviationPx;
-            const disp = m?.dispersionPx;
-            const micro = m?.microSaccadeCount;
-            return (
-              <p className="text-green-500 text-xs">
-                Test 6 (Fixation stability): {typeof f.durationMs === 'number' ? Math.round(f.durationMs / 1000) : '—'}s, {Array.isArray(f.gazeSamples) ? f.gazeSamples.length : 0} samples, deviation {typeof dev === 'number' ? Math.round(dev) + ' px' : '—'}, dispersion {typeof disp === 'number' ? Math.round(disp) + ' px' : '—'}, micro-saccades {typeof micro === 'number' ? micro : '—'}.
-              </p>
-            );
-          })()}
-          {neuroTestResults.peripheral_vision && (() => {
-            const p = neuroTestResults.peripheral_vision as { trials?: unknown[]; metrics?: { avgRT?: number; accuracy?: number; centerStability?: number } };
-            const m = p.metrics;
-            const avgRT = m?.avgRT;
-            const acc = m?.accuracy;
-            const stability = m?.centerStability;
-            return (
-              <p className="text-green-500 text-xs">
-                Test 7 (Peripheral vision): {Array.isArray(p.trials) ? p.trials.length : 0} trials, avg RT {typeof avgRT === 'number' ? Math.round(avgRT) + ' ms' : '—'}, accuracy {typeof acc === 'number' ? Math.round(acc) + '%' : '—'}, center stability {typeof stability === 'number' ? Math.round(stability) + ' px' : '—'}.
-              </p>
-            );
-          })()}
-          <div className="flex flex-wrap gap-3 justify-center">
-            {!neuroTestResults.head_orientation && (
-              <button
-                type="button"
-                onClick={() => setCurrentNeuroTestId('head_orientation')}
-                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-              >
-                Start Test 1: Head orientation
-              </button>
-            )}
-            {neuroTestResults.head_orientation && !neuroTestResults.visual_search && (
-              <button
-                type="button"
-                onClick={() => setCurrentNeuroTestId('visual_search')}
-                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-              >
-                Start Test 2: Visual search
-              </button>
-            )}
-            {neuroTestResults.visual_search && !neuroTestResults.memory_cards && (
-              <button
-                type="button"
-                onClick={() => setCurrentNeuroTestId('memory_cards')}
-                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-              >
-                Start Test 3: Memory cards
-              </button>
-            )}
-            {neuroTestResults.memory_cards && !neuroTestResults.anti_saccade && (
-              <button
-                type="button"
-                onClick={() => setCurrentNeuroTestId('anti_saccade')}
-                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-              >
-                Start Test 4: Anti-saccade
-              </button>
-            )}
-            {neuroTestResults.anti_saccade && !neuroTestResults.saccadic && (
-              <button
-                type="button"
-                onClick={() => setCurrentNeuroTestId('saccadic')}
-                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-              >
-                Start Test 5: Saccadic
-              </button>
-            )}
-            {neuroTestResults.saccadic && !neuroTestResults.fixation_stability && (
-              <button
-                type="button"
-                onClick={() => setCurrentNeuroTestId('fixation_stability')}
-                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-              >
-                Start Test 6: Fixation stability
-              </button>
-            )}
-            {neuroTestResults.fixation_stability && !neuroTestResults.peripheral_vision && (
-              <button
-                type="button"
-                onClick={() => setCurrentNeuroTestId('peripheral_vision')}
-                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-              >
-                Start Test 7: Peripheral vision
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={startRealTimeTracking}
-              className="px-6 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-medium transition"
-            >
-              Back to real-time tracking
-            </button>
-          </div>
+          <p className="text-green-500 text-xs">
+            Tests completed: {Object.keys(neuroTestResults).length}
+          </p>
+          <button
+            type="button"
+            onClick={startRealTimeTracking}
+            className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+          >
+            Back to real-time tracking
+          </button>
         </div>
       )}
 

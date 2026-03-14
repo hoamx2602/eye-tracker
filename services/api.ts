@@ -45,6 +45,53 @@ export interface Session {
   calibrationGazeSamples: unknown;
 }
 
+/** Neurological run (ticket 14 / 12). */
+export interface NeurologicalRun {
+  id: string;
+  sessionId: string;
+  configSnapshot?: { testOrder: string[]; testParameters: Record<string, unknown>; testEnabled: Record<string, boolean> } | null;
+  testOrderSnapshot?: string[] | null;
+  preSymptomScores?: Record<string, number> | null;
+  postSymptomScores?: Record<string, number> | null;
+  testResults?: Record<string, unknown> | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const neurologicalRunsApi = {
+  async create(sessionId: string): Promise<NeurologicalRun> {
+    const res = await fetch(`${getBaseUrl()}/api/neurological-runs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(typeof err.error === 'string' ? err.error : `Create run failed: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async patch(
+    id: string,
+    data: Partial<{
+      preSymptomScores: Record<string, number>;
+      postSymptomScores: Record<string, number>;
+      testResults: Record<string, unknown>;
+      status: string;
+    }>
+  ): Promise<NeurologicalRun> {
+    const res = await fetch(`${getBaseUrl()}/api/neurological-runs/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`Patch run failed: ${res.status}`);
+    return res.json();
+  },
+};
+
 export const sessionsApi = {
   async list(limit = 50, cursor?: string): Promise<{ sessions: Session[]; nextCursor: string | null }> {
     const url = new URL(`${getBaseUrl()}/api/sessions`);
