@@ -83,6 +83,15 @@ import {
   DEFAULT_DURATION_SEC,
   DEFAULT_BLINK_INTERVAL_MS,
 } from '@/components/neurological/tests/fixationStability/constants';
+import PeripheralVisionTest from '@/components/neurological/tests/peripheralVision/PeripheralVisionTest';
+import PeripheralVisionPractice from '@/components/neurological/tests/peripheralVision/PeripheralVisionPractice';
+import {
+  PERIPHERAL_VISION_GUIDE_STEPS,
+  DEFAULT_TRIAL_COUNT as PERIPHERAL_DEFAULT_TRIAL_COUNT,
+  DEFAULT_STIMULUS_DURATION_MS,
+  DEFAULT_MIN_DELAY_MS,
+  DEFAULT_MAX_DELAY_MS,
+} from '@/components/neurological/tests/peripheralVision/constants';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -1843,6 +1852,28 @@ function App() {
           />
         </NeuroGazeProvider>
       )}
+      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'peripheral_vision' && (
+        <NeuroGazeProvider gaze={gazePos}>
+          <GuidePracticeTestFlow
+            testId="peripheral_vision"
+            guideSteps={PERIPHERAL_VISION_GUIDE_STEPS}
+            enablePractice={true}
+            practiceContent={<PeripheralVisionPractice />}
+            practiceTitle="Practice: Peripheral Vision"
+            testContent={<PeripheralVisionTest />}
+            config={{
+              trialCount: PERIPHERAL_DEFAULT_TRIAL_COUNT,
+              stimulusDurationMs: DEFAULT_STIMULUS_DURATION_MS,
+              minDelayMs: DEFAULT_MIN_DELAY_MS,
+              maxDelayMs: DEFAULT_MAX_DELAY_MS,
+            }}
+            onTestComplete={(payload) => {
+              setNeuroTestResults((prev) => ({ ...prev, peripheral_vision: payload }));
+              setCurrentNeuroTestId(null);
+            }}
+          />
+        </NeuroGazeProvider>
+      )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === null && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
           <h2 className="text-xl font-bold text-white">Neurological tests</h2>
@@ -1905,6 +1936,18 @@ function App() {
               </p>
             );
           })()}
+          {neuroTestResults.peripheral_vision && (() => {
+            const p = neuroTestResults.peripheral_vision as { trials?: unknown[]; metrics?: { avgRT?: number; accuracy?: number; centerStability?: number } };
+            const m = p.metrics;
+            const avgRT = m?.avgRT;
+            const acc = m?.accuracy;
+            const stability = m?.centerStability;
+            return (
+              <p className="text-green-500 text-xs">
+                Test 7 (Peripheral vision): {Array.isArray(p.trials) ? p.trials.length : 0} trials, avg RT {typeof avgRT === 'number' ? Math.round(avgRT) + ' ms' : '—'}, accuracy {typeof acc === 'number' ? Math.round(acc) + '%' : '—'}, center stability {typeof stability === 'number' ? Math.round(stability) + ' px' : '—'}.
+              </p>
+            );
+          })()}
           <div className="flex flex-wrap gap-3 justify-center">
             {!neuroTestResults.head_orientation && (
               <button
@@ -1958,6 +2001,15 @@ function App() {
                 className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
               >
                 Start Test 6: Fixation stability
+              </button>
+            )}
+            {neuroTestResults.fixation_stability && !neuroTestResults.peripheral_vision && (
+              <button
+                type="button"
+                onClick={() => setCurrentNeuroTestId('peripheral_vision')}
+                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+              >
+                Start Test 7: Peripheral vision
               </button>
             )}
             <button
