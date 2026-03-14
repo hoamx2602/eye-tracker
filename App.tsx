@@ -54,6 +54,13 @@ import {
   DEFAULT_AOI_RADIUS_PX,
   PRACTICE_COUNT,
 } from '@/components/neurological/tests/visualSearch/constants';
+import MemoryCardsTest from '@/components/neurological/tests/memoryCards/MemoryCardsTest';
+import MemoryCardsPractice from '@/components/neurological/tests/memoryCards/MemoryCardsPractice';
+import {
+  MEMORY_CARDS_GUIDE_STEPS,
+  DEFAULT_GRID_SIZE,
+  DEFAULT_DWELL_MS,
+} from '@/components/neurological/tests/memoryCards/constants';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -1733,6 +1740,26 @@ function App() {
           />
         </NeuroGazeProvider>
       )}
+      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'memory_cards' && (
+        <NeuroGazeProvider gaze={gazePos}>
+          <GuidePracticeTestFlow
+            testId="memory_cards"
+            guideSteps={MEMORY_CARDS_GUIDE_STEPS}
+            enablePractice={true}
+            practiceContent={<MemoryCardsPractice />}
+            practiceTitle="Practice: Memory Cards (2×2)"
+            testContent={<MemoryCardsTest />}
+            config={{
+              gridSize: DEFAULT_GRID_SIZE,
+              dwellMs: DEFAULT_DWELL_MS,
+            }}
+            onTestComplete={(payload) => {
+              setNeuroTestResults((prev) => ({ ...prev, memory_cards: payload }));
+              setCurrentNeuroTestId(null);
+            }}
+          />
+        </NeuroGazeProvider>
+      )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === null && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
           <h2 className="text-xl font-bold text-white">Neurological tests</h2>
@@ -1756,6 +1783,11 @@ function App() {
               Test 2 (Visual search): {Array.isArray(neuroTestResults.visual_search.sequence) ? neuroTestResults.visual_search.sequence.length : 0} fixations, {typeof neuroTestResults.visual_search.completionTimeMs === 'number' ? Math.round(neuroTestResults.visual_search.completionTimeMs / 1000) : '—'}s.
             </p>
           )}
+          {neuroTestResults.memory_cards && (
+            <p className="text-green-500 text-xs">
+              Test 3 (Memory cards): {Array.isArray(neuroTestResults.memory_cards.moves) ? neuroTestResults.memory_cards.moves.length : 0} moves, {typeof neuroTestResults.memory_cards.correctPairsCount === 'number' ? neuroTestResults.memory_cards.correctPairsCount : '—'} pairs, {typeof neuroTestResults.memory_cards.completionTimeMs === 'number' ? Math.round(neuroTestResults.memory_cards.completionTimeMs / 1000) : '—'}s.
+            </p>
+          )}
           <div className="flex flex-wrap gap-3 justify-center">
             {!neuroTestResults.head_orientation && (
               <button
@@ -1773,6 +1805,15 @@ function App() {
                 className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
               >
                 Start Test 2: Visual search
+              </button>
+            )}
+            {neuroTestResults.visual_search && !neuroTestResults.memory_cards && (
+              <button
+                type="button"
+                onClick={() => setCurrentNeuroTestId('memory_cards')}
+                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+              >
+                Start Test 3: Memory cards
               </button>
             )}
             <button
