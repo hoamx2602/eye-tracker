@@ -61,6 +61,14 @@ import {
   DEFAULT_GRID_SIZE,
   DEFAULT_DWELL_MS,
 } from '@/components/neurological/tests/memoryCards/constants';
+import AntiSaccadeTest from '@/components/neurological/tests/antiSaccade/AntiSaccadeTest';
+import AntiSaccadePractice from '@/components/neurological/tests/antiSaccade/AntiSaccadePractice';
+import {
+  ANTI_SACCADE_GUIDE_STEPS,
+  DEFAULT_TRIAL_COUNT,
+  DEFAULT_MOVEMENT_DURATION_MS,
+  DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
+} from '@/components/neurological/tests/antiSaccade/constants';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -1760,6 +1768,27 @@ function App() {
           />
         </NeuroGazeProvider>
       )}
+      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'anti_saccade' && (
+        <NeuroGazeProvider gaze={gazePos}>
+          <GuidePracticeTestFlow
+            testId="anti_saccade"
+            guideSteps={ANTI_SACCADE_GUIDE_STEPS}
+            enablePractice={true}
+            practiceContent={<AntiSaccadePractice />}
+            practiceTitle="Practice: Anti-Saccade"
+            testContent={<AntiSaccadeTest />}
+            config={{
+              trialCount: DEFAULT_TRIAL_COUNT,
+              movementDurationMs: DEFAULT_MOVEMENT_DURATION_MS,
+              intervalBetweenTrialsMs: DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
+            }}
+            onTestComplete={(payload) => {
+              setNeuroTestResults((prev) => ({ ...prev, anti_saccade: payload }));
+              setCurrentNeuroTestId(null);
+            }}
+          />
+        </NeuroGazeProvider>
+      )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === null && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
           <h2 className="text-xl font-bold text-white">Neurological tests</h2>
@@ -1788,6 +1817,16 @@ function App() {
               Test 3 (Memory cards): {Array.isArray(neuroTestResults.memory_cards.moves) ? neuroTestResults.memory_cards.moves.length : 0} moves, {typeof neuroTestResults.memory_cards.correctPairsCount === 'number' ? neuroTestResults.memory_cards.correctPairsCount : '—'} pairs, {typeof neuroTestResults.memory_cards.completionTimeMs === 'number' ? Math.round(neuroTestResults.memory_cards.completionTimeMs / 1000) : '—'}s.
             </p>
           )}
+          {neuroTestResults.anti_saccade && (() => {
+            const m = (neuroTestResults.anti_saccade as { metrics?: { avgLatency?: number; directionAccuracy?: number } }).metrics;
+            const avgLat = m?.avgLatency;
+            const acc = m?.directionAccuracy;
+            return (
+              <p className="text-green-500 text-xs">
+                Test 4 (Anti-saccade): {Array.isArray(neuroTestResults.anti_saccade.trials) ? neuroTestResults.anti_saccade.trials.length : 0} trials, avg latency {typeof avgLat === 'number' ? Math.round(avgLat) + ' ms' : '—'}, accuracy {typeof acc === 'number' ? Math.round(acc) + '%' : '—'}.
+              </p>
+            );
+          })()}
           <div className="flex flex-wrap gap-3 justify-center">
             {!neuroTestResults.head_orientation && (
               <button
@@ -1814,6 +1853,15 @@ function App() {
                 className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
               >
                 Start Test 3: Memory cards
+              </button>
+            )}
+            {neuroTestResults.memory_cards && !neuroTestResults.anti_saccade && (
+              <button
+                type="button"
+                onClick={() => setCurrentNeuroTestId('anti_saccade')}
+                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+              >
+                Start Test 4: Anti-saccade
               </button>
             )}
             <button
