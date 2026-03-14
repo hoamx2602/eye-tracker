@@ -76,6 +76,13 @@ import {
   DEFAULT_TARGET_DURATION_MS,
   DEFAULT_TOTAL_CYCLES,
 } from '@/components/neurological/tests/saccadic/constants';
+import FixationStabilityTest from '@/components/neurological/tests/fixationStability/FixationStabilityTest';
+import FixationStabilityPractice from '@/components/neurological/tests/fixationStability/FixationStabilityPractice';
+import {
+  FIXATION_STABILITY_GUIDE_STEPS,
+  DEFAULT_DURATION_SEC,
+  DEFAULT_BLINK_INTERVAL_MS,
+} from '@/components/neurological/tests/fixationStability/constants';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // --- CONFIGURATION ---
@@ -1816,6 +1823,26 @@ function App() {
           />
         </NeuroGazeProvider>
       )}
+      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'fixation_stability' && (
+        <NeuroGazeProvider gaze={gazePos}>
+          <GuidePracticeTestFlow
+            testId="fixation_stability"
+            guideSteps={FIXATION_STABILITY_GUIDE_STEPS}
+            enablePractice={true}
+            practiceContent={<FixationStabilityPractice />}
+            practiceTitle="Practice: Fixation Stability"
+            testContent={<FixationStabilityTest />}
+            config={{
+              durationSec: DEFAULT_DURATION_SEC,
+              blinkIntervalMs: DEFAULT_BLINK_INTERVAL_MS,
+            }}
+            onTestComplete={(payload) => {
+              setNeuroTestResults((prev) => ({ ...prev, fixation_stability: payload }));
+              setCurrentNeuroTestId(null);
+            }}
+          />
+        </NeuroGazeProvider>
+      )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === null && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
           <h2 className="text-xl font-bold text-white">Neurological tests</h2>
@@ -1866,6 +1893,18 @@ function App() {
               </p>
             );
           })()}
+          {neuroTestResults.fixation_stability && (() => {
+            const f = neuroTestResults.fixation_stability as { durationMs?: number; gazeSamples?: unknown[]; metrics?: { meanDeviationPx?: number; dispersionPx?: number; microSaccadeCount?: number } };
+            const m = f.metrics;
+            const dev = m?.meanDeviationPx;
+            const disp = m?.dispersionPx;
+            const micro = m?.microSaccadeCount;
+            return (
+              <p className="text-green-500 text-xs">
+                Test 6 (Fixation stability): {typeof f.durationMs === 'number' ? Math.round(f.durationMs / 1000) : '—'}s, {Array.isArray(f.gazeSamples) ? f.gazeSamples.length : 0} samples, deviation {typeof dev === 'number' ? Math.round(dev) + ' px' : '—'}, dispersion {typeof disp === 'number' ? Math.round(disp) + ' px' : '—'}, micro-saccades {typeof micro === 'number' ? micro : '—'}.
+              </p>
+            );
+          })()}
           <div className="flex flex-wrap gap-3 justify-center">
             {!neuroTestResults.head_orientation && (
               <button
@@ -1910,6 +1949,15 @@ function App() {
                 className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
               >
                 Start Test 5: Saccadic
+              </button>
+            )}
+            {neuroTestResults.saccadic && !neuroTestResults.fixation_stability && (
+              <button
+                type="button"
+                onClick={() => setCurrentNeuroTestId('fixation_stability')}
+                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+              >
+                Start Test 6: Fixation stability
               </button>
             )}
             <button
