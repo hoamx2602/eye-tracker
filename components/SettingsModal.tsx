@@ -153,6 +153,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, onClose }
                         <input type="range" min="0.5" max="1" step="0.05" value={localConfig.faceWidthScale} onChange={(e) => handleChange('faceWidthScale', parseFloat(e.target.value))} className="w-full accent-gray-500 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"/>
                         <p className="text-[9px] text-gray-500 mt-1">Use 1 for built-in camera. If an external webcam asks you to move ~1m back, lower this to ~0.65–0.75 so 60cm passes.</p>
                      </div>
+                     <div>
+                        <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Distance tolerance (vs auto-zoom)</span><span className="font-mono">×{(localConfig.headDistanceTolerance ?? 2).toFixed(1)}</span></div>
+                        <input type="range" min="1" max="3" step="0.25" value={localConfig.headDistanceTolerance ?? 2} onChange={(e) => handleChange('headDistanceTolerance', parseFloat(e.target.value))} className="w-full accent-gray-500 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"/>
+                        <p className="text-[9px] text-gray-500 mt-1">Wider = easier to pass when camera auto-zooms (Center Stage, Studio Effects). Default 2×. Use 1 for strict distance.</p>
+                     </div>
                  </div>
 
                 <div>

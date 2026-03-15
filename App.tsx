@@ -100,7 +100,7 @@ import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-visio
 // --- CONFIGURATION ---
 const EDGE_PAD = 4;
 
-/** When true (NEXT_PUBLIC_CALIBRATION_TEST_MODE=1): after first calibration phase (grid) only, save session and go to Tracking. For testing save/storage. */
+/** When true (NEXT_PUBLIC_CALIBRATION_TEST_MODE=1): after first calibration phase (grid) only, save session and show choice screen (Real-time vs Neurological). Choice is always required. */
 const CALIBRATION_TEST_MODE =
   typeof process !== 'undefined' && process.env.NEXT_PUBLIC_CALIBRATION_TEST_MODE === '1';
 
@@ -740,7 +740,8 @@ function App() {
               const validation = eyeTrackingService.validateHeadPosition(
                 landmarks,
                 configRef.current.faceDistance,
-                configRef.current.faceWidthScale ?? 1
+                configRef.current.faceWidthScale ?? 1,
+                configRef.current.headDistanceTolerance ?? 2
               );
               setHeadValidation(validation);
               headValidationRef.current = validation;
@@ -1509,14 +1510,7 @@ function App() {
             setStatus('POST_CALIBRATION_CHOICE');
             statusRef.current = 'POST_CALIBRATION_CHOICE';
           });
-          if (CALIBRATION_TEST_MODE) {
-            startRealTimeTracking();
-          } else {
-            // Update URL without Next.js navigation to avoid remount (which resets createdSessionId and hides the two buttons)
-            if (typeof window !== 'undefined') {
-              window.history.pushState(null, '', PATHS.CHOICE);
-            }
-          }
+          // Always show choice screen; user must pick Real-time or Neurological (even when CALIBRATION_TEST_MODE=1)
         }, 1200);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

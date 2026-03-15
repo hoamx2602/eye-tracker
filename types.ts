@@ -174,6 +174,8 @@ export interface AppConfig {
   faceDistance: number; // Target distance in CM (e.g. 50, 60, 70)
   /** Scale for face width from different camera FOV (1 = built-in, &lt;1 e.g. 0.7 for external webcam so 60cm passes) */
   faceWidthScale: number;
+  /** Widen acceptable distance band (1 = strict, 2 = 2x band for cameras that auto-zoom). Default 2 to cope with Center Stage / Studio Effects. */
+  headDistanceTolerance: number;
 
   // Eye Movement Exercises (additional calibration patterns for better accuracy)
   enableExercises: boolean;
@@ -209,6 +211,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   // Distance
   faceDistance: 60, // Standard desktop distance (60cm)
   faceWidthScale: 1, // 1 = built-in cam; use ~0.65–0.8 for external 1080p webcam
+  headDistanceTolerance: 2, // 2 = wider band so auto-zoom cameras (Center Stage etc.) don't block
 
   // Exercises
   enableExercises: true,

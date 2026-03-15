@@ -17,7 +17,7 @@ Web-based eye tracking (MediaPipe Face Mesh, calibration, TPS/hybrid regression)
    - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET`
 4. Run migrations (first time or after schema change): `npm run db:migrate:dev` (or `npm run db:migrate` for production).
 5. **Chạy app:** `npm run dev` — chạy cả frontend và API (Next.js) tại http://localhost:3000. Không cần Vercel CLI; `/api/upload` và `/api/sessions` chạy ngay trên máy.
-6. **Test lưu trữ nhanh:** Set `NEXT_PUBLIC_CALIBRATION_TEST_MODE=1` trong `.env.local` → chỉ cần hoàn thành phase calibration đầu tiên (grid) là app lưu session và chuyển sang Eye Tracking (bỏ qua Exercises + Validation).
+6. **Test lưu trữ nhanh:** Set `NEXT_PUBLIC_CALIBRATION_TEST_MODE=1` trong `.env.local` → chỉ cần hoàn thành phase calibration đầu tiên (grid) là app lưu session và hiện màn chọn (Real-time tracking hoặc Neurological test). Vẫn bắt buộc chọn một trong hai; chỉ bỏ qua Exercises + Validation.
 
 ## API
 

@@ -16,7 +16,7 @@ export default function PostCalibrationChoiceScreen({
 }: PostCalibrationChoiceScreenProps) {
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-8 p-6 bg-gray-950"
+      className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-8 p-6 bg-gray-950"
       role="region"
       aria-labelledby="post-calibration-choice-title"
     >

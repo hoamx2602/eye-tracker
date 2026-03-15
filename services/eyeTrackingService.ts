@@ -39,15 +39,17 @@ export class EyeTrackingService {
   /**
    * Checks if the head is positioned correctly for high-quality tracking.
    * Uses faceDistanceCm from app config to enforce allowed distance (closer = larger face in frame).
-   * faceWidthScale compensates for camera FOV: use &lt;1 (e.g. 0.7) for external webcams that show face larger at same distance.
+   * faceWidthScale compensates for camera FOV; headDistanceTolerance widens the band for cameras that auto-zoom.
    * @param landmarks MediaPipe landmarks
    * @param faceDistanceCm Target distance in cm (40–90). Used to compute allowed face size in frame.
    * @param faceWidthScale Scale applied to raw face width (1 = built-in; 0.65–0.8 typical for external 1080p webcam).
+   * @param headDistanceTolerance Widen band (1 = strict, 2 = 2x band). Use 2+ when camera auto-zooms (Center Stage, etc.).
    */
   validateHeadPosition(
     landmarks: NormalizedLandmark[],
     faceDistanceCm: number = 60,
-    faceWidthScale: number = 1
+    faceWidthScale: number = 1,
+    headDistanceTolerance: number = 1
   ): HeadValidationResult {
     if (!landmarks) return { valid: false, message: "No Face Detected" };
 
@@ -60,8 +62,16 @@ export class EyeTrackingService {
     const scale = Math.max(0.5, Math.min(1.5, faceWidthScale ?? 1));
     const faceWidth = Math.max(0.01, Math.min(1, rawFaceWidth * scale));
     const D = Math.max(40, Math.min(90, faceDistanceCm));
-    const minFaceWidth = 0.09 + (90 - D) * 0.0012;
-    const maxFaceWidth = 0.17 - (D - 40) * 0.0007;
+    let minFaceWidth = 0.09 + (90 - D) * 0.0012;
+    let maxFaceWidth = 0.17 - (D - 40) * 0.0007;
+    // Widen band when camera auto-zooms (Center Stage, Studio Effects) so user can still pass
+    const tol = Math.max(1, Math.min(3, headDistanceTolerance ?? 1));
+    if (tol > 1) {
+      const center = (minFaceWidth + maxFaceWidth) / 2;
+      const halfBand = ((maxFaceWidth - minFaceWidth) / 2) * tol;
+      minFaceWidth = Math.max(0.05, center - halfBand);
+      maxFaceWidth = Math.min(0.35, center + halfBand);
+    }
     const debug = { faceWidth, minFaceWidth, maxFaceWidth, targetDistanceCm: D };
 
     // 1. Center Check (Horizontal & Vertical)
