@@ -2107,7 +2107,7 @@ function App() {
             practiceContent={<MemoryCardsPractice />}
             practiceTitle="Practice: Memory Cards (2×2)"
             testContent={<MemoryCardsTest />}
-            config={(neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { gridSize: DEFAULT_GRID_SIZE, dwellMs: DEFAULT_DWELL_MS }}
+            config={(neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { gridSize: DEFAULT_GRID_SIZE, dwellMs: DEFAULT_DWELL_MS, symbolSize: 'lg', symbolScale: 1.5 }}
             onTestComplete={(payload) => handleNeuroTestComplete('memory_cards', payload)}
           />
         </NeuroGazeProvider>

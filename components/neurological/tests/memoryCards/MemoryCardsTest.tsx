@@ -5,9 +5,14 @@ import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroGaze } from '../../NeuroGazeContext';
 import {
   DEFAULT_DWELL_MS,
+  DEFAULT_SYMBOL_SCALE,
+  DEFAULT_SYMBOL_SIZE,
   FLIP_BACK_DELAY_MS,
   GAZE_PATH_INTERVAL_MS,
+  MAX_SYMBOL_SCALE,
+  MIN_SYMBOL_SCALE,
   type MemoryCardsGridSize,
+  type MemoryCardsSymbolSize,
 } from './constants';
 import { createBoard } from './utils';
 
@@ -29,6 +34,13 @@ export interface MemoryCardsResult {
 }
 
 const GRID_SIZES: MemoryCardsGridSize[] = [4, 6, 9];
+/** Base rem for symbol; scale is applied from config. */
+const SYMBOL_BASE_REM = 1.25;
+const SYMBOL_SIZE_CLASS: Record<MemoryCardsSymbolSize, string> = {
+  md: 'text-2xl',
+  lg: 'text-4xl',
+  xl: 'text-5xl',
+};
 const SYMBOLS = '◆●▲■★♦♥♣✓✗○◇☆▪▫①②③④⑤⑥⑦⑧⑨⑩'.split('');
 
 function getSymbol(id: number): string {
@@ -47,6 +59,15 @@ export default function MemoryCardsTest() {
     ? (Number(config.gridSize) as MemoryCardsGridSize)
     : 4;
   const dwellMs = Math.max(300, Number(config.dwellMs) ?? DEFAULT_DWELL_MS);
+  const symbolScaleNum = Number(config.symbolScale);
+  const symbolScale = Number.isFinite(symbolScaleNum) && symbolScaleNum >= MIN_SYMBOL_SCALE && symbolScaleNum <= MAX_SYMBOL_SCALE
+    ? symbolScaleNum
+    : DEFAULT_SYMBOL_SCALE;
+  const symbolSize = (['md', 'lg', 'xl'] as MemoryCardsSymbolSize[]).includes(config.symbolSize as MemoryCardsSymbolSize)
+    ? (config.symbolSize as MemoryCardsSymbolSize)
+    : DEFAULT_SYMBOL_SIZE;
+  const symbolClass = Number.isFinite(Number(config.symbolScale)) ? '' : SYMBOL_SIZE_CLASS[symbolSize];
+  const symbolStyle = Number.isFinite(Number(config.symbolScale)) ? { fontSize: `${SYMBOL_BASE_REM * symbolScale}rem` } : undefined;
 
   const [board] = useState(() => createBoard(gridSize));
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
@@ -190,21 +211,21 @@ export default function MemoryCardsTest() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-gray-950 p-4"
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-950 p-4"
       role="region"
       aria-label="Memory cards: find matching pairs"
     >
-      <p className="text-center text-gray-400 text-sm mb-2">
+      <p className="text-center text-gray-400 text-sm mb-3">
         Click a card (or look at it) to flip. Find all {pairCount} pairs.
       </p>
       <div
         ref={gridContainerRef}
-        className="flex-1 min-h-0 grid gap-1 place-content-center place-items-center"
+        className="grid gap-1.5 place-items-center shrink-0"
         style={{
           gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
           gridTemplateRows: `repeat(${gridSize}, minmax(0, 1fr))`,
-          maxWidth: 'min(90vw, 90vh)',
-          maxHeight: 'min(90vw, 90vh)',
+          width: 'min(92vw, 85vh)',
+          height: 'min(92vw, 85vh)',
           aspectRatio: '1',
         }}
       >
@@ -215,7 +236,7 @@ export default function MemoryCardsTest() {
             disabled={value < 0 || matched.has(index) || secondSelected !== null}
             onClick={() => selectCard(index)}
             className={`
-              w-full h-full min-w-[32px] min-h-[32px] rounded-lg border-2 flex items-center justify-center text-2xl font-bold
+              w-full h-full min-w-[28px] min-h-[28px] rounded-lg border-2 flex items-center justify-center font-bold ${symbolClass}
               transition-all duration-200
               ${value < 0 ? 'invisible' : ''}
               ${matched.has(index) ? 'bg-emerald-700 border-emerald-500 text-white' : ''}
@@ -225,12 +246,13 @@ export default function MemoryCardsTest() {
             `}
             aria-pressed={isRevealed(index)}
             aria-label={isRevealed(index) ? `Card ${getSymbol(value)}` : 'Face-down card'}
+            style={symbolStyle}
           >
             {isRevealed(index) ? getSymbol(value) : '?'}
           </button>
         ))}
       </div>
-      <p className="text-center text-slate-500 text-xs mt-2">
+      <p className="text-center text-slate-500 text-xs mt-3">
         Pairs found: {matched.size / 2} / {pairCount}
       </p>
     </div>

@@ -57,12 +57,12 @@ export default function MemoryCardsPractice() {
   const gridSize = PRACTICE_GRID_SIZE;
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[240px]">
+    <div className="flex flex-col items-center justify-center min-h-[280px]">
       <p className="text-gray-400 text-sm mb-4">
         Try flipping two cards to find the pair. When ready, click &quot;Start real test&quot; below.
       </p>
       <div
-        className="grid gap-2 w-40 h-40"
+        className="grid gap-2 w-44 h-44"
         style={{
           gridTemplateColumns: `repeat(${gridSize}, 1fr)`,
           gridTemplateRows: `repeat(${gridSize}, 1fr)`,
@@ -75,7 +75,7 @@ export default function MemoryCardsPractice() {
             disabled={value < 0 || matched.has(index) || secondSelected !== null}
             onClick={() => selectCard(index)}
             className={`
-              rounded-lg border-2 flex items-center justify-center text-2xl font-bold
+              rounded-lg border-2 flex items-center justify-center text-4xl font-bold
               ${value < 0 ? 'invisible' : ''}
               ${matched.has(index) ? 'bg-emerald-700 border-emerald-500 text-white' : ''}
               ${revealed.has(index) && !matched.has(index) ? 'bg-blue-600 border-blue-400 text-white' : ''}

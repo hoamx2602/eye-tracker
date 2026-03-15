@@ -32,7 +32,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
   const defaults: Record<string, Record<string, unknown>> = {
     head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
     visual_search: { numberCount: 8, practiceCount: 4, aoiRadiusPx: 80 },
-    memory_cards: { gridSize: 4, dwellMs: 800 },
+    memory_cards: { gridSize: 4, dwellMs: 800, symbolSize: 'lg', symbolScale: 1.5 },
     anti_saccade: { trialCount: 12, movementDurationMs: 1500, intervalBetweenTrialsMs: 800 },
     saccadic: { targetDurationMs: 1000, totalCycles: 18 },
     fixation_stability: { durationSec: 12, blinkIntervalMs: 600 },
@@ -247,6 +247,27 @@ export default function NeurologicalConfigForm() {
                         min={200}
                         max={2000}
                       />
+                      <LabelInput
+                        label="Symbol scale (size of shapes in cards)"
+                        value={Number(params.symbolScale) ?? 1.5}
+                        onChange={(v) => setParam(id, 'symbolScale', v)}
+                        min={0.8}
+                        max={2.5}
+                        step={0.1}
+                      />
+                      <p className="text-xs text-slate-500 -mt-2">0.8 = smaller, 1.5 = default, 2.5 = larger. Adjusts the star/shape size inside each card.</p>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1">Symbol size (preset, if scale not used)</label>
+                        <select
+                          value={String(params.symbolSize ?? 'lg')}
+                          onChange={(e) => setParam(id, 'symbolSize', e.target.value)}
+                          className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-slate-200 text-sm"
+                        >
+                          <option value="md">Medium</option>
+                          <option value="lg">Large</option>
+                          <option value="xl">Extra large</option>
+                        </select>
+                      </div>
                     </>
                   )}
                   {id === 'anti_saccade' && (
@@ -369,12 +390,14 @@ function LabelInput({
   onChange,
   min,
   max,
+  step,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
   min?: number;
   max?: number;
+  step?: number;
 }) {
   return (
     <div>
@@ -385,6 +408,7 @@ function LabelInput({
         onChange={(e) => onChange(Number(e.target.value))}
         min={min}
         max={max}
+        step={step}
         className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white"
       />
     </div>
