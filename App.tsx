@@ -325,6 +325,7 @@ function App() {
   const validationErrorsRef = useRef<number[]>([]); 
   const timerRef = useRef<(number | ReturnType<typeof setTimeout>)[]>([]);
   const trackingHistoryRef = useRef<GazeRecord[]>([]);
+  const zoomLockIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Refs for click hold logic
   const holdStartTimeRef = useRef<number>(0);
@@ -509,26 +510,48 @@ function App() {
 
   const startCamera = async () => {
     if (!videoRef.current) return;
+    if (zoomLockIntervalRef.current) {
+      clearInterval(zoomLockIntervalRef.current);
+      zoomLockIntervalRef.current = null;
+    }
     try {
-      // Prefer 720p for performance; avoid 4K on weak devices. Face landmarker works well at 720p.
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'user',
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
-      // Lock zoom to minimum if the camera exposes PTZ — prevents hardware auto-zoom when user moves.
-      // If the camera still zooms (e.g. Mac Center Stage / Windows Studio Effects), that's software framing; disable it in OS settings.
+      const supports = typeof navigator !== 'undefined' && navigator.mediaDevices?.getSupportedConstraints?.();
+      const wantsZoom = supports && (supports as { zoom?: boolean }).zoom === true;
+      // Prefer 720p; request PTZ so we can lock zoom (reduces auto-zoom when user moves).
+      const videoConstraints: MediaTrackConstraints & { zoom?: boolean } = {
+        facingMode: 'user',
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        ...(wantsZoom ? { zoom: true } : {}),
+      };
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
         const caps = videoTrack.getCapabilities() as { zoom?: { min?: number; max?: number } };
-        if (typeof caps?.zoom?.min === 'number') {
+        const minZoom = typeof caps?.zoom?.min === 'number' ? caps.zoom.min : null;
+        if (minZoom !== null) {
           try {
-            await videoTrack.applyConstraints({ advanced: [{ zoom: caps.zoom!.min }] });
-          } catch (_) {
-            // Ignore if applyConstraints fails (e.g. permission or unsupported)
-          }
+            await videoTrack.applyConstraints({ advanced: [{ zoom: minZoom }] as unknown as MediaTrackConstraintSet[] });
+          } catch (_) {}
+          // Re-apply min zoom periodically — some drivers (e.g. face framing) keep overriding it.
+          zoomLockIntervalRef.current = setInterval(() => {
+            const v = videoRef.current?.srcObject as MediaStream | undefined;
+            const track = v?.getVideoTracks?.()?.[0];
+            if (!track) {
+              if (zoomLockIntervalRef.current) {
+                clearInterval(zoomLockIntervalRef.current);
+                zoomLockIntervalRef.current = null;
+              }
+              return;
+            }
+            const c = track.getCapabilities() as { zoom?: { min?: number } };
+            const min = typeof c?.zoom?.min === 'number' ? c.zoom.min : null;
+            if (min === null) return;
+            const cur = (track.getSettings() as { zoom?: number }).zoom;
+            if (typeof cur === 'number' && cur !== min) {
+              track.applyConstraints({ advanced: [{ zoom: min }] as unknown as MediaTrackConstraintSet[] }).catch(() => {});
+            }
+          }, 2000);
         }
       }
       videoRef.current.srcObject = stream;
@@ -1489,7 +1512,10 @@ function App() {
           if (CALIBRATION_TEST_MODE) {
             startRealTimeTracking();
           } else {
-            router.push(PATHS.CHOICE);
+            // Update URL without Next.js navigation to avoid remount (which resets createdSessionId and hides the two buttons)
+            if (typeof window !== 'undefined') {
+              window.history.pushState(null, '', PATHS.CHOICE);
+            }
           }
         }, 1200);
       } catch (e) {

@@ -54,6 +54,9 @@ const HeadPositionGuide: React.FC<HeadPositionGuideProps> = ({ validation, count
             faceWidth: {validation.debug.faceWidth.toFixed(3)} (min: {validation.debug.minFaceWidth.toFixed(3)}, max: {validation.debug.maxFaceWidth.toFixed(3)}) · target {validation.debug.targetDistanceCm}cm
           </p>
         )}
+        <p className="text-gray-500 text-xs mt-3 max-w-md">
+          Nếu hình tự zoom khi bạn di chuyển, tắt Center Stage (Mac) hoặc Studio Effects (Windows) để đo khoảng cách chính xác.
+        </p>
       </div>
 
       <style>{`

@@ -59,6 +59,9 @@ function HeadPositioningScreen({
           </span>{' '}
           / 60
         </p>
+        <p className="text-gray-500 text-xs mt-3 max-w-md mx-auto">
+          Nếu hình tự zoom khi bạn đẩy người ra xa/gần, việc tính khoảng cách sẽ sai. Hãy tắt <strong>Center Stage</strong> (Mac) hoặc <strong>Studio Effects / Automatic framing</strong> (Windows) trong cài đặt hệ thống.
+        </p>
       </div>
     </div>
   );
