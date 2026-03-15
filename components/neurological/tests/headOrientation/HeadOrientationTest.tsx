@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroHeadPose } from '../../NeuroHeadPoseContext';
+import { useNeuroPanelLayout } from '../../NeuroPanelLayoutContext';
 import {
   DEFAULT_DURATION_PER_DIRECTION_SEC,
   DEFAULT_HEAD_ORIENTATION_ORDER,
@@ -14,6 +15,8 @@ const SAMPLE_INTERVAL_MS = 50; // ~20 Hz head samples
 
 export default function HeadOrientationTest() {
   const { config, completeTest } = useTestRunner();
+  const completeTestRef = useRef(completeTest);
+  completeTestRef.current = completeTest;
   const { headPose } = useNeuroHeadPose();
   const headPoseRef = useRef(headPose);
   headPoseRef.current = headPose;
@@ -57,12 +60,11 @@ export default function HeadOrientationTest() {
     };
   }, []);
 
-  // Per-phase timer: after durationSec, advance to next direction or finish
+  // Per-phase timer: after durationSec, advance to next direction or finish (do not depend on config to avoid timer reset on parent re-render)
   useEffect(() => {
     if (directionIndex >= order.length) return;
 
     const phaseStart = phaseStartTimeRef.current;
-    const endAt = phaseStart + durationSec * 1000;
 
     const tick = () => {
       const now = performance.now();
@@ -86,7 +88,7 @@ export default function HeadOrientationTest() {
           clearInterval(intervalRef.current);
           intervalRef.current = null;
         }
-        completeTest({
+        completeTestRef.current({
           startTime: startTimeRef.current,
           endTime: performance.now(),
           phases: phasesRef.current,
@@ -106,11 +108,13 @@ export default function HeadOrientationTest() {
         timerRef.current = null;
       }
     };
-  }, [directionIndex, order, durationSec, completeTest, config]);
+  }, [directionIndex, order.length, durationSec]); // use completeTestRef.current in timeout; omit config/completeTest so parent re-render doesn't reset timer
+
+  const inPanel = useNeuroPanelLayout();
 
   if (directionIndex >= order.length) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950">
+      <div className={`fixed inset-0 z-50 flex items-center justify-center ${inPanel ? 'bg-transparent' : 'bg-gray-950'}`}>
         <p className="text-gray-400">Test complete. Saving…</p>
       </div>
     );
@@ -119,6 +123,21 @@ export default function HeadOrientationTest() {
   const direction = order[directionIndex];
   const label = DIRECTION_LABELS[direction] ?? direction;
   const remaining = Math.max(0, Math.ceil(durationSec - phaseElapsedSec));
+
+  if (inPanel) {
+    return (
+      <div className="fixed inset-0 z-50 pointer-events-none flex flex-col justify-end" role="region" aria-live="polite" aria-label={`Head orientation: ${label}`}>
+        <div className="pointer-events-auto py-6 px-4 bg-gray-950/95 border-t border-white/10 flex flex-col items-center justify-center gap-2">
+          <p className="text-xl font-bold text-white">{label}</p>
+          <p className="text-4xl font-black text-blue-400 tabular-nums">{remaining}</p>
+          <p className="text-gray-500 text-sm">seconds</p>
+          {!headPose && (
+            <p className="text-amber-400 text-sm mt-1">Position your face in the camera view.</p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

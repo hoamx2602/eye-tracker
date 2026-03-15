@@ -45,6 +45,7 @@ import {
   GuidePracticeTestFlow,
   NeuroHeadPoseProvider,
   NeuroGazeProvider,
+  NeuroPanelLayoutContext,
   type TestResultPayload,
 } from '@/components/neurological';
 import HeadOrientationTest from '@/components/neurological/tests/headOrientation/HeadOrientationTest';
@@ -507,6 +508,18 @@ function App() {
     hasTriedRestartCameraRef.current = true;
     startCamera();
   }, [status, createdSessionId, hasCameraStream]);
+
+  // Neurological flow needs camera for Head Orientation (and other tests). Start camera when entering NEURO_FLOW if not already running.
+  const hasTriedStartCameraNeuroRef = useRef(false);
+  useEffect(() => {
+    if (status !== 'NEURO_FLOW' || hasCameraStream) {
+      if (status !== 'NEURO_FLOW') hasTriedStartCameraNeuroRef.current = false;
+      return;
+    }
+    if (hasTriedStartCameraNeuroRef.current) return;
+    hasTriedStartCameraNeuroRef.current = true;
+    startCamera();
+  }, [status, hasCameraStream]);
 
   const startCamera = async () => {
     if (!videoRef.current) return;
@@ -1773,20 +1786,38 @@ function App() {
         3. CALIBRATION/TRACKING: Video hidden (unless showCamera), Canvas VISIBLE if invalid head.
         4. MODE: 'object-contain' is used to ensure NO CROP (Full Camera), even if it results in black bars.
       */}
-      <video 
-        ref={videoRef} 
-        className={`fixed top-0 left-0 w-full h-full object-contain transition-opacity duration-300 scale-x-[-1] 
-          ${showCamera && status !== 'HEAD_POSITIONING' ? 'opacity-30' : 'opacity-0 pointer-events-none'}
-        `} 
-        playsInline 
-        muted 
-      />
-      <canvas
-        ref={debugCanvasRef}
-        className={`fixed top-0 left-0 w-full h-full object-contain transition-opacity duration-300 pointer-events-none scale-x-[-1] 
-           ${(showCamera || (headValidation && !headValidation.valid && status !== 'IDLE' && status !== 'HEAD_POSITIONING')) ? 'opacity-100' : 'opacity-0'}
-        `}
-      />
+      {/* Camera + face landmarks: full screen by default; large centered frame during Head Orientation */}
+      {(() => {
+        const isHeadOrientation = status === 'NEURO_FLOW' && currentNeuroTestId === 'head_orientation';
+        const videoVisible = isHeadOrientation || (showCamera && status !== 'HEAD_POSITIONING');
+        const canvasVisible = isHeadOrientation || showCamera || (headValidation && !headValidation.valid && status !== 'IDLE' && status !== 'HEAD_POSITIONING');
+        return (
+          <div
+            className={
+              isHeadOrientation
+                ? 'fixed inset-0 flex items-center justify-center z-40 bg-gray-950'
+                : 'fixed inset-0'
+            }
+          >
+            <div className={isHeadOrientation ? 'w-full max-w-5xl aspect-video rounded-2xl overflow-hidden border-2 border-white/30 shadow-2xl bg-black relative mx-4' : 'absolute inset-0'}>
+              <video
+                ref={videoRef}
+                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 scale-x-[-1]
+                  ${videoVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}
+                `}
+                playsInline
+                muted
+              />
+              <canvas
+                ref={debugCanvasRef}
+                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 pointer-events-none scale-x-[-1]
+                  ${canvasVisible ? 'opacity-100' : 'opacity-0'}
+                `}
+              />
+            </div>
+          </div>
+        );
+      })()}
 
       {showSettings && (
         <SettingsModal 
@@ -2040,16 +2071,18 @@ function App() {
         />
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'head_orientation' && (
-        <NeuroHeadPoseProvider headPose={neuroHeadPose}>
-          <GuidePracticeTestFlow
-            testId="head_orientation"
-            guideSteps={HEAD_ORIENTATION_GUIDE_STEPS}
-            enablePractice={false}
-            testContent={<HeadOrientationTest />}
-            config={(neuroConfigSnapshot?.testParameters?.head_orientation as Record<string, unknown>) ?? { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] }}
-            onTestComplete={(payload) => handleNeuroTestComplete('head_orientation', payload)}
-          />
-        </NeuroHeadPoseProvider>
+        <NeuroPanelLayoutContext.Provider value={{ inPanel: true }}>
+          <NeuroHeadPoseProvider headPose={neuroHeadPose}>
+            <GuidePracticeTestFlow
+              testId="head_orientation"
+              guideSteps={HEAD_ORIENTATION_GUIDE_STEPS}
+              enablePractice={false}
+              testContent={<HeadOrientationTest />}
+              config={(neuroConfigSnapshot?.testParameters?.head_orientation as Record<string, unknown>) ?? { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] }}
+              onTestComplete={(payload) => handleNeuroTestComplete('head_orientation', payload)}
+            />
+          </NeuroHeadPoseProvider>
+        </NeuroPanelLayoutContext.Provider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'visual_search' && (
         <NeuroGazeProvider gaze={gazePos}>
