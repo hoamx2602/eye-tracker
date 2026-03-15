@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { usePathname, useRouter } from 'next/navigation';
 import { PATHS, parsePathname } from '@/lib/paths';
 import { 
@@ -309,6 +310,8 @@ function App() {
   const [showCamera, setShowCamera] = useState(false);
   const showCameraRef = useRef(false);
   useEffect(() => { showCameraRef.current = showCamera; }, [showCamera]);
+  /** True after startCamera() has run (so /tracking opened via flow has video; direct open does not). */
+  const [hasCameraStream, setHasCameraStream] = useState(false);
   
   // Initialize with Defaults
   const smootherRef = useRef(new GazeSmoother(DEFAULT_CONFIG.minCutoff, DEFAULT_CONFIG.beta)); 
@@ -444,6 +447,7 @@ function App() {
         break;
       case 'tracking':
         if (status !== 'TRACKING') {
+          if (process.env.NODE_ENV === 'development') console.log('[App] pathname sync → setting TRACKING');
           setStatus('TRACKING');
           statusRef.current = 'TRACKING';
           smootherRef.current.reset();
@@ -484,6 +488,25 @@ function App() {
     }
   }, [pathname]);
 
+  // Debug: log status & pathname when they change (helps when tracking screen is blank)
+  useEffect(() => {
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'development') {
+      console.log('[App] status=', status, 'pathname=', typeof pathname === 'string' ? pathname : pathname);
+    }
+  }, [status, pathname]);
+
+  // After nav to /tracking Next may remount App → hasCameraStream resets. If we have a session (came from calibration), re-start camera.
+  const hasTriedRestartCameraRef = useRef(false);
+  useEffect(() => {
+    if (status !== 'TRACKING' || !createdSessionId || hasCameraStream) {
+      if (status !== 'TRACKING') hasTriedRestartCameraRef.current = false;
+      return;
+    }
+    if (hasTriedRestartCameraRef.current) return;
+    hasTriedRestartCameraRef.current = true;
+    startCamera();
+  }, [status, createdSessionId, hasCameraStream]);
+
   const startCamera = async () => {
     if (!videoRef.current) return;
     try {
@@ -496,6 +519,7 @@ function App() {
         } 
       });
       videoRef.current.srcObject = stream;
+      setHasCameraStream(true);
       await new Promise((resolve) => {
         if(videoRef.current) videoRef.current.onloadedmetadata = resolve;
       });
@@ -1443,11 +1467,17 @@ function App() {
           : errors.length > 0 ? `Calibration Complete (Accuracy: ${Math.round(avgError)}px)` : 'Calibration complete (test mode)';
         setLoadingMsg(statusMsg);
         setTimeout(() => {
-          setCreatedSessionId(created.id);
-          setStatus('POST_CALIBRATION_CHOICE');
-          statusRef.current = 'POST_CALIBRATION_CHOICE';
           pathSyncSourceRef.current = 'internal';
-          router.push(PATHS.CHOICE);
+          flushSync(() => {
+            setCreatedSessionId(created.id);
+            setStatus('POST_CALIBRATION_CHOICE');
+            statusRef.current = 'POST_CALIBRATION_CHOICE';
+          });
+          if (CALIBRATION_TEST_MODE) {
+            startRealTimeTracking();
+          } else {
+            router.push(PATHS.CHOICE);
+          }
         }, 1200);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -1460,15 +1490,21 @@ function App() {
   };
 
   const startRealTimeTracking = useCallback(() => {
+    if (process.env.NODE_ENV === 'development') console.log('[App] startRealTimeTracking called');
     pathSyncSourceRef.current = 'internal';
-    router.push(PATHS.TRACKING);
-    setStatus('TRACKING');
-    statusRef.current = 'TRACKING';
+    flushSync(() => {
+      setStatus('TRACKING');
+      statusRef.current = 'TRACKING';
+    });
     smootherRef.current.reset();
     if (heatmapRef.current) heatmapRef.current.reset();
     trackingHistoryRef.current = [];
     if (configRef.current.enableVideoRecording) {
       startVideoRecording();
+    }
+    // Update URL without Next.js navigation to avoid remount (which resets hasCameraStream/createdSessionId and breaks tracking)
+    if (typeof window !== 'undefined') {
+      window.history.pushState(null, '', PATHS.TRACKING);
     }
   }, [router]);
 
@@ -2181,6 +2217,21 @@ function App() {
 
       {status === 'TRACKING' && (
         <>
+           {/* When opened /tracking directly: no camera was started — show message and link to start */}
+           {!hasCameraStream && (
+             <div className="fixed inset-0 z-[250] flex flex-col items-center justify-center gap-4 bg-gray-950/95 p-6">
+               <p className="text-gray-300 text-center max-w-md">
+                 Camera chưa bật. Bạn cần hoàn thành bước calibration trước khi dùng real-time tracking.
+               </p>
+               <button
+                 type="button"
+                 onClick={() => router.push(PATHS.HOME)}
+                 className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+               >
+                 Về trang chủ để bắt đầu
+               </button>
+             </div>
+           )}
            {/* Gaze cursor & heatmap — always visible when head is valid */}
            {headValidation && headValidation.valid && (
                <>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   SYMPTOM_QUESTIONS,
   SYMPTOM_SCALE_LABELS,
@@ -60,9 +60,18 @@ export default function SymptomAssessment({
     onSubmit(out);
   };
 
+  // Lock body scroll so only the inner list scrolls (prevents page jump/cut-off)
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-gray-950 overflow-hidden"
+      className="fixed inset-0 z-50 flex flex-col bg-gray-950 overflow-hidden isolate"
       role="region"
       aria-labelledby="symptom-assessment-title"
       aria-describedby="symptom-assessment-instruction"
@@ -82,8 +91,8 @@ export default function SymptomAssessment({
           <p className="text-gray-500 text-xs mt-1">{SYMPTOM_SCALE_LEGEND}</p>
         </div>
 
-        {/* Scrollable list */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Scrollable list: contain scroll so wheel doesn't move the page; overflow-anchor-none prevents jump when content reflows */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain overflow-anchor-none p-6 space-y-6">
           {error && (
             <p
               role="alert"
@@ -114,6 +123,10 @@ export default function SymptomAssessment({
                         ? 'border-blue-500 bg-blue-600/30 text-white'
                         : 'border-gray-600 bg-gray-800 text-gray-300 hover:border-gray-500'
                     }`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setScore(q.id, value as SymptomScoreValue);
+                    }}
                   >
                     <input
                       type="radio"
