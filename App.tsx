@@ -511,17 +511,30 @@ function App() {
     if (!videoRef.current) return;
     try {
       // Prefer 720p for performance; avoid 4K on weak devices. Face landmarker works well at 720p.
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
           facingMode: 'user',
           width: { ideal: 1280 },
-          height: { ideal: 720 }
-        } 
+          height: { ideal: 720 },
+        },
       });
+      // Lock zoom to minimum if the camera exposes PTZ — prevents hardware auto-zoom when user moves.
+      // If the camera still zooms (e.g. Mac Center Stage / Windows Studio Effects), that's software framing; disable it in OS settings.
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        const caps = videoTrack.getCapabilities() as { zoom?: { min?: number; max?: number } };
+        if (typeof caps?.zoom?.min === 'number') {
+          try {
+            await videoTrack.applyConstraints({ advanced: [{ zoom: caps.zoom!.min }] });
+          } catch (_) {
+            // Ignore if applyConstraints fails (e.g. permission or unsupported)
+          }
+        }
+      }
       videoRef.current.srcObject = stream;
       setHasCameraStream(true);
       await new Promise((resolve) => {
-        if(videoRef.current) videoRef.current.onloadedmetadata = resolve;
+        if (videoRef.current) videoRef.current.onloadedmetadata = resolve;
       });
       videoRef.current.play();
       processVideo();
