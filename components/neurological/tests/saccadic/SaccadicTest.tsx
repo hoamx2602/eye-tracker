@@ -64,6 +64,8 @@ export default function SaccadicTest() {
 
   const totalCycles = Math.max(8, Math.min(40, Number(config.totalCycles) ?? DEFAULT_TOTAL_CYCLES));
   const targetDurationMs = Math.max(400, Number(config.targetDurationMs) ?? DEFAULT_TARGET_DURATION_MS);
+  const targetDotSizePx = Math.max(16, Math.min(64, Number(config.targetDotSizePx) ?? 64));
+  const targetDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.targetDotColor ?? '')) ? String(config.targetDotColor) : '#f59e0b';
 
   const viewport = getViewport();
   const startTimeRef = useRef(0);
@@ -186,10 +188,13 @@ export default function SaccadicTest() {
         Look at the target.
       </p>
       <div
-        className="absolute w-16 h-16 rounded-full bg-amber-400 border-4 border-amber-300 shadow-lg"
+        className="absolute rounded-full shadow-lg border-4 border-amber-300"
         style={{
-          left: targetPos.x - 32,
-          top: targetPos.y - 32,
+          left: targetPos.x - targetDotSizePx / 2,
+          top: targetPos.y - targetDotSizePx / 2,
+          width: targetDotSizePx,
+          height: targetDotSizePx,
+          backgroundColor: targetDotColor,
         }}
         aria-hidden
       />

@@ -27,13 +27,27 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     showDimRect: true,
     stimulusShape: 'rectangle',
   },
-  saccadic: { targetDurationMs: 1000, totalCycles: 18 },
-  fixation_stability: { durationSec: 5, blinkIntervalMs: 600 },
+  saccadic: {
+    targetDurationMs: 1000,
+    totalCycles: 18,
+    targetDotSizePx: 64,
+    targetDotColor: '#f59e0b',
+  },
+  fixation_stability: {
+    durationSec: 5,
+    blinkIntervalMs: 600,
+    centerDotSizePx: 12,
+    centerDotColor: '#f59e0b',
+  },
   peripheral_vision: {
     trialCount: 16,
     stimulusDurationMs: 300,
     minDelayMs: 800,
     maxDelayMs: 2000,
+    centerDotSizePx: 8,
+    centerDotColor: '#f59e0b',
+    stimulusDotSizePx: 16,
+    stimulusDotColor: '#ffffff',
   },
 };
 

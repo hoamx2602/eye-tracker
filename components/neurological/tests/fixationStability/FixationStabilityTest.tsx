@@ -67,7 +67,10 @@ export default function FixationStabilityTest() {
     Math.min(MAX_DURATION_SEC, Number(config.durationSec) ?? DEFAULT_DURATION_SEC)
   );
   const blinkIntervalMs = Math.max(0, Number(config.blinkIntervalMs) ?? DEFAULT_BLINK_INTERVAL_MS);
+  const centerDotSizePx = Math.max(6, Math.min(64, Number(config.centerDotSizePx) ?? 12));
+  const centerDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.centerDotColor ?? '')) ? String(config.centerDotColor) : '#f59e0b';
 
+  const center = getCenter();
   const startTimeRef = useRef(0);
   const gazeSamplesRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -137,8 +140,13 @@ export default function FixationStabilityTest() {
         Keep your gaze on the dot.
       </p>
       <div
-        className="w-3 h-3 rounded-full bg-amber-400 shadow-lg"
+        className="absolute rounded-full shadow-lg"
         style={{
+          left: center.x - centerDotSizePx / 2,
+          top: center.y - centerDotSizePx / 2,
+          width: centerDotSizePx,
+          height: centerDotSizePx,
+          backgroundColor: centerDotColor,
           opacity: blinkVisible ? 1 : 0.35,
           transition: 'opacity 0.1s ease',
         }}

@@ -56,6 +56,10 @@ export default function PeripheralVisionTest() {
   const stimulusDurationMs = Math.max(100, Number(config.stimulusDurationMs) ?? DEFAULT_STIMULUS_DURATION_MS);
   const minDelayMs = Math.max(0, Number(config.minDelayMs) ?? DEFAULT_MIN_DELAY_MS);
   const maxDelayMs = Math.max(minDelayMs, Number(config.maxDelayMs) ?? DEFAULT_MAX_DELAY_MS);
+  const centerDotSizePx = Math.max(4, Math.min(64, Number(config.centerDotSizePx) ?? 8));
+  const centerDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.centerDotColor ?? '')) ? String(config.centerDotColor) : '#f59e0b';
+  const stimulusDotSizePx = Math.max(8, Math.min(64, Number(config.stimulusDotSizePx) ?? 16));
+  const stimulusDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.stimulusDotColor ?? '')) ? String(config.stimulusDotColor) : '#ffffff';
 
   const zones = useMemo(() => generateTrialZones(trialCount), [trialCount]);
   const startTimeRef = useRef(0);
@@ -207,24 +211,30 @@ export default function PeripheralVisionTest() {
       aria-label="Peripheral vision: press SPACE when you see the flash"
     >
       <p className="text-center text-gray-400 text-sm pt-4 pb-2">
-        Keep gaze on center. Press SPACE when you see the flash. Trial {trialIndex + 1} of {trialCount}.
+        Keep gaze on center. Press SPACE when you see the flash.
       </p>
       {/* Center fixation dot */}
       <div
-        className="absolute w-2 h-2 rounded-full bg-amber-400"
+        className="absolute rounded-full"
         style={{
-          left: center.x - 4,
-          top: center.y - 4,
+          left: center.x - centerDotSizePx / 2,
+          top: center.y - centerDotSizePx / 2,
+          width: centerDotSizePx,
+          height: centerDotSizePx,
+          backgroundColor: centerDotColor,
         }}
         aria-hidden
       />
       {/* Peripheral stimulus */}
       {showStimulus && (
         <div
-          className="absolute w-4 h-4 rounded-full bg-white shadow-lg border border-gray-300"
+          className="absolute rounded-full shadow-lg border border-gray-300"
           style={{
-            left: stimulusPos.x - 8,
-            top: stimulusPos.y - 8,
+            left: stimulusPos.x - stimulusDotSizePx / 2,
+            top: stimulusPos.y - stimulusDotSizePx / 2,
+            width: stimulusDotSizePx,
+            height: stimulusDotSizePx,
+            backgroundColor: stimulusDotColor,
           }}
           aria-hidden
         />

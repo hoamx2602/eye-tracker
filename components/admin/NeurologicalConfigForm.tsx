@@ -35,9 +35,9 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
     visual_search: { numberCount: 8, practiceCount: 4, aoiRadiusPx: 80 },
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
     anti_saccade: { trialCount: 12, movementSpeedPxPerSec: 120, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3, dimRectOpacity: 0.1, showDimRect: true, stimulusShape: 'rectangle' },
-    saccadic: { targetDurationMs: 1000, totalCycles: 18 },
-    fixation_stability: { durationSec: 5, blinkIntervalMs: 600 },
-    peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000 },
+    saccadic: { targetDurationMs: 1000, totalCycles: 18, targetDotSizePx: 64, targetDotColor: '#f59e0b' },
+    fixation_stability: { durationSec: 5, blinkIntervalMs: 600, centerDotSizePx: 12, centerDotColor: '#f59e0b' },
+    peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000, centerDotSizePx: 8, centerDotColor: '#f59e0b', stimulusDotSizePx: 16, stimulusDotColor: '#ffffff' },
   };
   return { ...defaults[id], ...(params[id] ?? {}) };
 }
@@ -354,6 +354,22 @@ export default function NeurologicalConfigForm() {
                         onChange={(v) => setParam(id, 'totalCycles', v)}
                         options={[10, 12, 15, 18, 20, 24, 30, 36, 40].map((n) => ({ value: n, label: String(n) }))}
                       />
+                      <SelectNumber
+                        label="Kích thước chấm đích (px)"
+                        value={Number(params.targetDotSizePx) ?? 64}
+                        onChange={(v) => setParam(id, 'targetDotSizePx', v)}
+                        options={[32, 40, 48, 56, 64].map((n) => ({ value: n, label: `${n} px` }))}
+                      />
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Màu chấm đích (hex)</label>
+                        <input
+                          type="text"
+                          value={String(params.targetDotColor ?? '#f59e0b')}
+                          onChange={(e) => setParam(id, 'targetDotColor', e.target.value)}
+                          placeholder="#f59e0b"
+                          className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                        />
+                      </div>
                     </>
                   )}
                   {id === 'fixation_stability' && (
@@ -370,6 +386,22 @@ export default function NeurologicalConfigForm() {
                         onChange={(v) => setParam(id, 'blinkIntervalMs', v)}
                         options={[0, 300, 500, 600, 800, 1000, 1500, 2000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
+                      <SelectNumber
+                        label="Kích thước chấm giữa (px)"
+                        value={Number(params.centerDotSizePx) ?? 12}
+                        onChange={(v) => setParam(id, 'centerDotSizePx', v)}
+                        options={[8, 10, 12, 14, 16, 20, 24, 32, 48, 64].map((n) => ({ value: n, label: `${n} px` }))}
+                      />
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Màu chấm giữa (hex)</label>
+                        <input
+                          type="text"
+                          value={String(params.centerDotColor ?? '#f59e0b')}
+                          onChange={(e) => setParam(id, 'centerDotColor', e.target.value)}
+                          placeholder="#f59e0b"
+                          className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                        />
+                      </div>
                     </>
                   )}
                   {id === 'peripheral_vision' && (
@@ -386,6 +418,38 @@ export default function NeurologicalConfigForm() {
                         onChange={(v) => setParam(id, 'stimulusDurationMs', v)}
                         options={[100, 150, 200, 250, 300, 400, 500, 1000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
+                      <SelectNumber
+                        label="Kích thước chấm giữa (px)"
+                        value={Number(params.centerDotSizePx) ?? 8}
+                        onChange={(v) => setParam(id, 'centerDotSizePx', v)}
+                        options={[6, 8, 10, 12, 16, 24, 32, 48, 64].map((n) => ({ value: n, label: `${n} px` }))}
+                      />
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Màu chấm giữa (hex)</label>
+                        <input
+                          type="text"
+                          value={String(params.centerDotColor ?? '#f59e0b')}
+                          onChange={(e) => setParam(id, 'centerDotColor', e.target.value)}
+                          placeholder="#f59e0b"
+                          className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                        />
+                      </div>
+                      <SelectNumber
+                        label="Kích thước chấm kích thích (px)"
+                        value={Number(params.stimulusDotSizePx) ?? 16}
+                        onChange={(v) => setParam(id, 'stimulusDotSizePx', v)}
+                        options={[12, 16, 20, 24, 32, 48, 64].map((n) => ({ value: n, label: `${n} px` }))}
+                      />
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Màu chấm kích thích (hex)</label>
+                        <input
+                          type="text"
+                          value={String(params.stimulusDotColor ?? '#ffffff')}
+                          onChange={(e) => setParam(id, 'stimulusDotColor', e.target.value)}
+                          placeholder="#ffffff"
+                          className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                        />
+                      </div>
                       <SelectNumber
                         label="Min delay (ms)"
                         value={Number(params.minDelayMs) ?? 800}
