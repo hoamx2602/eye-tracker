@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import BottomActionBar from './BottomActionBar';
 
 export type PracticeGateProps = {
   /** Practice UI rendered by the test (e.g. simplified version of the task) */
@@ -36,7 +37,7 @@ export default function PracticeGate({
           {children}
         </div>
       </div>
-      <div className="flex-shrink-0 p-6 border-t border-gray-800/60 bg-gradient-to-t from-gray-950 via-gray-950 to-transparent flex justify-center">
+      <BottomActionBar>
         <button
           type="button"
           onClick={onStartRealTest}
@@ -47,7 +48,7 @@ export default function PracticeGate({
             <span className="opacity-90 group-hover:translate-x-0.5 transition">→</span>
           </span>
         </button>
-      </div>
+      </BottomActionBar>
     </div>
   );
 }

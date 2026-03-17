@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import type { GuideStep } from './types';
+import BottomActionBar from './BottomActionBar';
 
 function InstructionIcon({ className }: { className?: string }) {
   return (
@@ -118,7 +119,7 @@ export default function GuideSteps({
         </div>
       </div>
 
-      <div className="flex-shrink-0 p-6 border-t border-gray-800/60 bg-gradient-to-t from-gray-950 via-gray-950 to-transparent">
+      <BottomActionBar>
         <button
           type="button"
           onClick={onComplete}
@@ -129,7 +130,7 @@ export default function GuideSteps({
             <span className="opacity-90 group-hover:translate-x-0.5 transition">→</span>
           </span>
         </button>
-      </div>
+      </BottomActionBar>
     </div>
   );
 }
