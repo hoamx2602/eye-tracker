@@ -100,6 +100,16 @@ export default function NeurologicalConfigForm() {
     }));
   };
 
+  const setParams = (testId: string, updates: Record<string, unknown>) => {
+    setConfig((c) => ({
+      ...c,
+      testParameters: {
+        ...c.testParameters,
+        [testId]: { ...(c.testParameters[testId] ?? {}), ...updates },
+      },
+    }));
+  };
+
   const save = async () => {
     setSaving(true);
     setMessage(null);
@@ -196,31 +206,28 @@ export default function NeurologicalConfigForm() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pl-6">
                   {id === 'head_orientation' && (
                     <>
-                      <LabelInput
+                      <SelectNumber
                         label="Duration per direction (s)"
                         value={Number(params.durationPerDirectionSec) ?? 4}
                         onChange={(v) => setParam(id, 'durationPerDirectionSec', v)}
-                        min={1}
-                        max={10}
+                        options={[2, 3, 4, 5, 6, 8, 10].map((n) => ({ value: n, label: `${n} s` }))}
                       />
                       <div className="text-slate-400 text-sm">Order: left, right, up, down (fixed)</div>
                     </>
                   )}
                   {id === 'visual_search' && (
                     <>
-                      <LabelInput
-                        label="Number count (6–10)"
+                      <SelectNumber
+                        label="Number count"
                         value={Number(params.numberCount) ?? 8}
                         onChange={(v) => setParam(id, 'numberCount', v)}
-                        min={6}
-                        max={10}
+                        options={[6, 7, 8, 9, 10].map((n) => ({ value: n, label: String(n) }))}
                       />
-                      <LabelInput
+                      <SelectNumber
                         label="Practice count"
                         value={Number(params.practiceCount) ?? 4}
                         onChange={(v) => setParam(id, 'practiceCount', v)}
-                        min={1}
-                        max={10}
+                        options={[2, 3, 4, 5, 6].map((n) => ({ value: n, label: String(n) }))}
                       />
                       <LabelInput
                         label="AOI radius (px)"
@@ -250,12 +257,11 @@ export default function NeurologicalConfigForm() {
                           <option value={32}>32 cards</option>
                         </select>
                       </div>
-                      <LabelInput
+                      <SelectNumber
                         label="Dwell (ms)"
                         value={Number(params.dwellMs) ?? 800}
                         onChange={(v) => setParam(id, 'dwellMs', v)}
-                        min={200}
-                        max={2000}
+                        options={[400, 600, 800, 1000, 1200, 1500, 2000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
                       <div>
                         <label className="block text-sm font-medium text-slate-300 mb-1">Symbol size</label>
@@ -275,94 +281,91 @@ export default function NeurologicalConfigForm() {
                   )}
                   {id === 'anti_saccade' && (
                     <>
-                      <LabelInput
+                      <SelectNumber
                         label="Trial count"
                         value={Number(params.trialCount) ?? 12}
                         onChange={(v) => setParam(id, 'trialCount', v)}
-                        min={4}
-                        max={30}
+                        options={[8, 10, 12, 15, 18, 20, 24, 30].map((n) => ({ value: n, label: String(n) }))}
                       />
-                      <LabelInput
+                      <SelectNumber
                         label="Movement duration (ms)"
                         value={Number(params.movementDurationMs) ?? 1500}
                         onChange={(v) => setParam(id, 'movementDurationMs', v)}
-                        min={500}
-                        max={5000}
+                        options={[800, 1000, 1200, 1500, 2000, 2500, 3000, 4000, 5000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
-                      <LabelInput
+                      <SelectNumber
                         label="Interval between trials (ms)"
                         value={Number(params.intervalBetweenTrialsMs) ?? 800}
                         onChange={(v) => setParam(id, 'intervalBetweenTrialsMs', v)}
-                        min={200}
-                        max={3000}
+                        options={[400, 600, 800, 1000, 1200, 1500, 2000, 3000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
                     </>
                   )}
                   {id === 'saccadic' && (
                     <>
-                      <LabelInput
+                      <SelectNumber
                         label="Target duration (ms)"
                         value={Number(params.targetDurationMs) ?? 1000}
                         onChange={(v) => setParam(id, 'targetDurationMs', v)}
-                        min={400}
-                        max={3000}
+                        options={[500, 700, 1000, 1500, 2000, 2500, 3000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
-                      <LabelInput
+                      <SelectNumber
                         label="Total cycles"
                         value={Number(params.totalCycles) ?? 18}
                         onChange={(v) => setParam(id, 'totalCycles', v)}
-                        min={8}
-                        max={40}
+                        options={[10, 12, 15, 18, 20, 24, 30, 36, 40].map((n) => ({ value: n, label: String(n) }))}
                       />
                     </>
                   )}
                   {id === 'fixation_stability' && (
                     <>
-                      <LabelInput
+                      <SelectNumber
                         label="Duration (s)"
                         value={Number(params.durationSec) ?? 12}
                         onChange={(v) => setParam(id, 'durationSec', v)}
-                        min={10}
-                        max={15}
+                        options={[10, 11, 12, 13, 14, 15].map((n) => ({ value: n, label: `${n} s` }))}
                       />
-                      <LabelInput
+                      <SelectNumber
                         label="Blink interval (ms)"
                         value={Number(params.blinkIntervalMs) ?? 600}
                         onChange={(v) => setParam(id, 'blinkIntervalMs', v)}
-                        min={0}
-                        max={2000}
+                        options={[0, 300, 500, 600, 800, 1000, 1500, 2000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
                     </>
                   )}
                   {id === 'peripheral_vision' && (
                     <>
-                      <LabelInput
+                      <SelectNumber
                         label="Trial count"
                         value={Number(params.trialCount) ?? 16}
                         onChange={(v) => setParam(id, 'trialCount', v)}
-                        min={8}
-                        max={40}
+                        options={[8, 12, 16, 20, 24, 30, 40].map((n) => ({ value: n, label: String(n) }))}
                       />
-                      <LabelInput
+                      <SelectNumber
                         label="Stimulus duration (ms)"
                         value={Number(params.stimulusDurationMs) ?? 300}
                         onChange={(v) => setParam(id, 'stimulusDurationMs', v)}
-                        min={100}
-                        max={1000}
+                        options={[100, 150, 200, 250, 300, 400, 500, 1000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
-                      <LabelInput
+                      <SelectNumber
                         label="Min delay (ms)"
                         value={Number(params.minDelayMs) ?? 800}
-                        onChange={(v) => setParam(id, 'minDelayMs', v)}
-                        min={0}
-                        max={5000}
+                        onChange={(v) => {
+                          const max = Number(params.maxDelayMs) ?? 2000;
+                          if (v > max) setParams(id, { minDelayMs: v, maxDelayMs: v });
+                          else setParam(id, 'minDelayMs', v);
+                        }}
+                        options={[500, 800, 1000, 1500, 2000, 3000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
-                      <LabelInput
+                      <SelectNumber
                         label="Max delay (ms)"
                         value={Number(params.maxDelayMs) ?? 2000}
-                        onChange={(v) => setParam(id, 'maxDelayMs', v)}
-                        min={500}
-                        max={10000}
+                        onChange={(v) => {
+                          const min = Number(params.minDelayMs) ?? 800;
+                          if (v < min) setParams(id, { minDelayMs: v, maxDelayMs: v });
+                          else setParam(id, 'maxDelayMs', v);
+                        }}
+                        options={[1000, 1500, 2000, 2500, 3000, 4000, 5000, 10000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
                     </>
                   )}
@@ -402,18 +405,56 @@ function LabelInput({
   max?: number;
   step?: number;
 }) {
+  const clamped = (v: number) => {
+    let n = Number(v);
+    if (!Number.isFinite(n)) return value;
+    if (min != null) n = Math.max(min, n);
+    if (max != null) n = Math.min(max, n);
+    return n;
+  };
   return (
     <div>
       <label className="block text-slate-400 text-sm mb-0.5">{label}</label>
       <input
         type="number"
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => onChange(clamped(Number(e.target.value)))}
+        onBlur={(e) => onChange(clamped(Number(e.target.value)))}
         min={min}
         max={max}
         step={step}
         className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white"
       />
+    </div>
+  );
+}
+
+function SelectNumber({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  options: { value: number; label: string }[];
+}) {
+  const v = options.some((o) => o.value === value) ? value : options[0]?.value ?? value;
+  return (
+    <div>
+      <label className="block text-slate-400 text-sm mb-0.5">{label}</label>
+      <select
+        value={String(v)}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
