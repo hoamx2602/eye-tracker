@@ -39,7 +39,7 @@ function getRestartDelaySec(config?: Record<string, unknown>): number {
   return Math.max(RESTART_DELAY_MIN, Math.min(RESTART_DELAY_MAX, Math.round(v)));
 }
 
-/** Duration (ms) cho một bước di chuyển: ưu tiên tốc độ (px/s), fallback duration cũ. */
+/** Duration (ms) per movement step: prefer speed (px/s), fallback to legacy duration. */
 function getMovementDurationMs(config?: Record<string, unknown>, travelPx: number = TRAVEL_DISTANCE_PX): number {
   const speed = Number(config?.movementSpeedPxPerSec);
   if (Number.isFinite(speed) && speed > 0) {
@@ -78,7 +78,7 @@ function getStimulusShape(config?: Record<string, unknown>): AntiSaccadeStimulus
 
 /**
  * Practice: a few anti-saccade trials, same visual, no recording.
- * Sau khi hết 3 trial, đếm ngược practiceRestartDelaySec (từ config, 1–4 s) rồi tự chạy lại.
+ * After 3 trials, count down practiceRestartDelaySec (from config, 1–4 s) then auto-restart.
  */
 export default function AntiSaccadePractice({ config }: { config?: Record<string, unknown> }) {
   const practiceGate = usePracticeGate();
@@ -99,7 +99,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   const primaryOff = direction ? offset(direction, progress, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
   const dimOff = direction ? offset(OPPOSITE_DIRECTION[direction], progress, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
 
-  // Movement animation (tốc độ từ config.movementSpeedPxPerSec hoặc movementDurationMs)
+  // Movement animation (speed from config.movementSpeedPxPerSec or movementDurationMs)
   useEffect(() => {
     if (restartIn !== null) return;
     movementStartRef.current = performance.now();
@@ -152,7 +152,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
     <div className="flex flex-col items-center justify-center min-h-[300px]">
       {restartIn !== null ? (
         <p className="text-gray-400 text-sm mb-4">
-          Tự động chạy lại mô phỏng sau <strong className="text-amber-400">{restartIn}</strong> giây…
+          Simulation will restart in <strong className="text-amber-400">{restartIn}</strong> seconds…
         </p>
       ) : (
         <p className="text-gray-400 text-sm mb-4">

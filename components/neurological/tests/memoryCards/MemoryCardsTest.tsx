@@ -61,7 +61,7 @@ export default function MemoryCardsTest() {
   const symbolPx = SYMBOL_SIZE_PX[presetSize] ?? 46;
   const symbolStyle = { fontSize: `${symbolPx}px` };
 
-  // Log config để debug.
+  // Log config for debugging.
   useEffect(() => {
     console.log('[MemoryCards] config', JSON.stringify(config), '→ cardCount', cardCount, 'symbolSize', presetSize, '→ style', symbolStyle);
   }, [config.cardCount, config.dwellMs, config.symbolSize, cardCount, presetSize, symbolStyle.fontSize]);

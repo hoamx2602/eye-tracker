@@ -60,7 +60,7 @@ function HeadPositioningScreen({
           / 60
         </p>
         <p className="text-gray-500 text-xs mt-3 max-w-md mx-auto">
-          Nếu hình tự zoom khi bạn đẩy người ra xa/gần, việc tính khoảng cách sẽ sai. Hãy tắt <strong>Center Stage</strong> (Mac) hoặc <strong>Studio Effects / Automatic framing</strong> (Windows) trong cài đặt hệ thống.
+          If the image auto-zooms when you move closer or farther, distance calculation will be wrong. Turn off <strong>Center Stage</strong> (Mac) or <strong>Studio Effects / Automatic framing</strong> (Windows) in system settings.
         </p>
       </div>
     </div>

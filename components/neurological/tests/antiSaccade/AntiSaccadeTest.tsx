@@ -55,7 +55,7 @@ function getCenter(): { x: number; y: number } {
   return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 }
 
-/** Quãng đường từ giữa màn hình tới gần mép (dùng cho test thật). */
+/** Distance from screen center to near edge (used for real test). */
 function getTravelToEdges(): { travelX: number; travelY: number } {
   if (typeof window === 'undefined') return { travelX: TRAVEL_DISTANCE_PX, travelY: TRAVEL_DISTANCE_PX };
   const cx = window.innerWidth / 2;

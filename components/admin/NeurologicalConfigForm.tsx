@@ -277,7 +277,7 @@ export default function NeurologicalConfigForm() {
                           <option value="xl">Extra large</option>
                         </select>
                       </div>
-                      <p className="text-xs text-slate-500 -mt-1">Lưu rồi chọn Neurological để áp dụng.</p>
+                      <p className="text-xs text-slate-500 -mt-1">Save then select Neurological to apply.</p>
                     </>
                   )}
                   {id === 'anti_saccade' && (
@@ -289,13 +289,13 @@ export default function NeurologicalConfigForm() {
                         options={[8, 10, 12, 15, 18, 20, 24, 30].map((n) => ({ value: n, label: String(n) }))}
                       />
                       <SelectNumber
-                        label="Tốc độ di chuyển (px/s) — đồng nhất mọi hướng; duration tự tính theo quãng đường"
+                        label="Movement speed (px/s) — same for all directions; duration derived from distance"
                         value={Number(params.movementSpeedPxPerSec) ?? 120}
                         onChange={(v) => setParam(id, 'movementSpeedPxPerSec', v)}
                         options={[80, 100, 120, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} px/s` }))}
                       />
                       <div>
-                        <label className="block text-slate-400 text-sm mb-0.5">Vật thể kích thích (stimulus)</label>
+                        <label className="block text-slate-400 text-sm mb-0.5">Stimulus shape</label>
                         <select
                           value={String(params.stimulusShape ?? 'rectangle')}
                           onChange={(e) => setParam(id, 'stimulusShape', e.target.value)}
@@ -309,13 +309,13 @@ export default function NeurologicalConfigForm() {
                         </select>
                       </div>
                       <SelectNumber
-                        label="Độ mờ rectangle dim (opacity)"
+                        label="Dim rectangle opacity"
                         value={Number(params.dimRectOpacity) ?? 0.1}
                         onChange={(v) => setParam(id, 'dimRectOpacity', v)}
                         options={[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8].map((n) => ({ value: n, label: `${Math.round(n * 100)}%` }))}
                       />
                       <div>
-                        <label className="block text-slate-400 text-sm mb-0.5">Hiển thị rectangle mờ (dim)</label>
+                        <label className="block text-slate-400 text-sm mb-0.5">Show dim rectangle</label>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -323,7 +323,7 @@ export default function NeurologicalConfigForm() {
                             onChange={(e) => setParam(id, 'showDimRect', e.target.checked)}
                             className="rounded bg-slate-800 border-slate-600"
                           />
-                          <span className="text-sm text-slate-300">Bật — khi tắt: ẩn hẳn rectangle mờ, người dùng tự nhìn bằng mắt</span>
+                          <span className="text-sm text-slate-300">On — when off: dim rectangle is hidden and user looks by eye only</span>
                         </label>
                       </div>
                       <SelectNumber
@@ -333,7 +333,7 @@ export default function NeurologicalConfigForm() {
                         options={[400, 600, 800, 1000, 1200, 1500, 2000, 3000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
                       <SelectNumber
-                        label="Practice: thời gian chờ trước khi tự chạy lại (s)"
+                        label="Practice: delay before auto-restart (s)"
                         value={Number(params.practiceRestartDelaySec) ?? 3}
                         onChange={(v) => setParam(id, 'practiceRestartDelaySec', v)}
                         options={[1, 2, 3, 4].map((n) => ({ value: n, label: `${n} s` }))}
@@ -355,13 +355,13 @@ export default function NeurologicalConfigForm() {
                         options={[10, 12, 15, 18, 20, 24, 30, 36, 40].map((n) => ({ value: n, label: String(n) }))}
                       />
                       <SelectNumber
-                        label="Kích thước chấm đích (px)"
+                        label="Target dot size (px)"
                         value={Number(params.targetDotSizePx) ?? 64}
                         onChange={(v) => setParam(id, 'targetDotSizePx', v)}
                         options={[32, 40, 48, 56, 64].map((n) => ({ value: n, label: `${n} px` }))}
                       />
                       <div>
-                        <label className="block text-slate-400 text-sm mb-0.5">Màu chấm đích (hex)</label>
+                        <label className="block text-slate-400 text-sm mb-0.5">Target dot color (hex)</label>
                         <input
                           type="text"
                           value={String(params.targetDotColor ?? '#f59e0b')}
@@ -387,13 +387,13 @@ export default function NeurologicalConfigForm() {
                         options={[0, 300, 500, 600, 800, 1000, 1500, 2000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
                       <SelectNumber
-                        label="Kích thước chấm giữa (px)"
+                        label="Center dot size (px)"
                         value={Number(params.centerDotSizePx) ?? 12}
                         onChange={(v) => setParam(id, 'centerDotSizePx', v)}
                         options={[8, 10, 12, 14, 16, 20, 24, 32, 48, 64].map((n) => ({ value: n, label: `${n} px` }))}
                       />
                       <div>
-                        <label className="block text-slate-400 text-sm mb-0.5">Màu chấm giữa (hex)</label>
+                        <label className="block text-slate-400 text-sm mb-0.5">Center dot color (hex)</label>
                         <input
                           type="text"
                           value={String(params.centerDotColor ?? '#f59e0b')}
@@ -419,13 +419,13 @@ export default function NeurologicalConfigForm() {
                         options={[100, 150, 200, 250, 300, 400, 500, 1000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
                       <SelectNumber
-                        label="Kích thước chấm giữa (px)"
+                        label="Center dot size (px)"
                         value={Number(params.centerDotSizePx) ?? 8}
                         onChange={(v) => setParam(id, 'centerDotSizePx', v)}
                         options={[6, 8, 10, 12, 16, 24, 32, 48, 64].map((n) => ({ value: n, label: `${n} px` }))}
                       />
                       <div>
-                        <label className="block text-slate-400 text-sm mb-0.5">Màu chấm giữa (hex)</label>
+                        <label className="block text-slate-400 text-sm mb-0.5">Center dot color (hex)</label>
                         <input
                           type="text"
                           value={String(params.centerDotColor ?? '#f59e0b')}
@@ -435,13 +435,13 @@ export default function NeurologicalConfigForm() {
                         />
                       </div>
                       <SelectNumber
-                        label="Kích thước chấm kích thích (px)"
+                        label="Stimulus dot size (px)"
                         value={Number(params.stimulusDotSizePx) ?? 16}
                         onChange={(v) => setParam(id, 'stimulusDotSizePx', v)}
                         options={[12, 16, 20, 24, 32, 48, 64].map((n) => ({ value: n, label: `${n} px` }))}
                       />
                       <div>
-                        <label className="block text-slate-400 text-sm mb-0.5">Màu chấm kích thích (hex)</label>
+                        <label className="block text-slate-400 text-sm mb-0.5">Stimulus dot color (hex)</label>
                         <input
                           type="text"
                           value={String(params.stimulusDotColor ?? '#ffffff')}

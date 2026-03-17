@@ -16,7 +16,7 @@ export type StimulusShapeProps = {
   ariaHidden?: boolean;
 };
 
-/** Vật thể kích thích: vẽ theo shape (CSS hoặc emoji). */
+/** Stimulus shape: drawn via CSS or emoji. */
 export default function StimulusShape({
   shape,
   left,
@@ -91,7 +91,7 @@ export default function StimulusShape({
         style={commonStyle}
         aria-hidden={ariaHidden}
       >
-        <span style={{ fontSize: size }} role="img" aria-label="Ghế">
+        <span style={{ fontSize: size }} role="img" aria-label="Chair">
           🪑
         </span>
       </div>

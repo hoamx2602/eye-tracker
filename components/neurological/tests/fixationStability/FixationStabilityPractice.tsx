@@ -5,7 +5,7 @@ import { usePracticeGate } from '../../PracticeGate';
 import { DEFAULT_BLINK_INTERVAL_MS, PRACTICE_DURATION_SEC } from './constants';
 
 /**
- * Optional practice: dot nháy một lát rồi dừng; không hiển thị thời gian, chỉ hướng dẫn nhìn đến khi hết nháy.
+ * Optional practice: dot blinks for a while then stops; no time display, just instruct to look until it stops blinking.
  */
 export default function FixationStabilityPractice() {
   const practiceGate = usePracticeGate();
@@ -38,7 +38,7 @@ export default function FixationStabilityPractice() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[240px]">
       <p className="text-gray-400 text-sm mb-4 text-center">
-        Nhìn vào đây, cho đến khi nó không nháy nữa.
+        Look here until the dot stops blinking.
       </p>
       <div
         className="w-3 h-3 rounded-full bg-amber-400"

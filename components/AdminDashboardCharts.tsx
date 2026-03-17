@@ -19,7 +19,7 @@ import type { FeatureAnalytics } from '@/lib/featureAnalytics';
 const CHART_COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6'];
 const PIE_COLORS = ['#3b82f6', '#64748b'];
 
-/** Tooltip nền tối, không box trắng */
+/** Dark tooltip background, no white box */
 const TOOLTIP_WRAPPER_STYLE = { backgroundColor: 'transparent', border: 'none' };
 
 function DarkTooltip({

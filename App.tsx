@@ -1995,7 +1995,7 @@ function App() {
               const configSnapshot = await getNeurologicalConfig();
               const source = (configSnapshot as { _source?: string })._source;
               const memParams = configSnapshot?.testParameters?.memory_cards as Record<string, unknown> | undefined;
-              console.log('[Neuro] Config source:', source ?? 'unknown', '| memory_cards.cardCount =', memParams?.cardCount, '| Save từ Admin trước nếu thấy source=default');
+              console.log('[Neuro] Config source:', source ?? 'unknown', '| memory_cards.cardCount =', memParams?.cardCount, '| Save from Admin first if source=default');
               // Persist snapshot for the rest of this browser session (avoid race/state loss).
               try {
                 localStorage.setItem(NEURO_CONFIG_LS_KEY, JSON.stringify(configSnapshot));
@@ -2316,14 +2316,14 @@ function App() {
            {!hasCameraStream && (
              <div className="fixed inset-0 z-[250] flex flex-col items-center justify-center gap-4 bg-gray-950/95 p-6">
                <p className="text-gray-300 text-center max-w-md">
-                 Camera chưa bật. Bạn cần hoàn thành bước calibration trước khi dùng real-time tracking.
+                 Camera is not on. Complete the calibration step before using real-time tracking.
                </p>
                <button
                  type="button"
                  onClick={() => router.push(PATHS.HOME)}
                  className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
                >
-                 Về trang chủ để bắt đầu
+                 Go to home to start
                </button>
              </div>
            )}

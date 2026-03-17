@@ -22,8 +22,8 @@ export function createShuffledDeck(cardCount: number): number[] {
 }
 
 /**
- * Chọn lưới cols × rows = cardCount (không ô trống), gần vuông nhất (min |cols − rows|).
- * Ví dụ: 6→2×3, 8→2×4, 12→3×4, 16→4×4, 20→4×5, 24→4×6, 28→4×7, 32→4×8.
+ * Choose grid cols × rows = cardCount (no empty cells), as square as possible (min |cols − rows|).
+ * E.g. 6→2×3, 8→2×4, 12→3×4, 16→4×4, 20→4×5, 24→4×6, 28→4×7, 32→4×8.
  */
 export function getGridDimensions(cardCount: number): { cols: number; rows: number; cellCount: number } {
   const n = Math.max(2, Math.floor(cardCount));
@@ -38,7 +38,7 @@ export function getGridDimensions(cardCount: number): { cols: number; rows: numb
   return { cols, rows, cellCount: n };
 }
 
-/** Board đúng cardCount ô, không ô trống. */
+/** Board with exactly cardCount cells, no empty cells. */
 export function createBoard(cardCount: number): { cards: number[]; cols: number; rows: number } {
   const even = Math.max(2, Math.floor(cardCount / 2) * 2);
   const deck = createShuffledDeck(even);

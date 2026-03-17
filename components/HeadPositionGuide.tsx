@@ -55,7 +55,7 @@ const HeadPositionGuide: React.FC<HeadPositionGuideProps> = ({ validation, count
           </p>
         )}
         <p className="text-gray-500 text-xs mt-3 max-w-md">
-          Nếu hình tự zoom khi bạn di chuyển, tắt Center Stage (Mac) hoặc Studio Effects (Windows) để đo khoảng cách chính xác.
+          If the image auto-zooms when you move, turn off Center Stage (Mac) or Studio Effects (Windows) for accurate distance measurement.
         </p>
       </div>
 
