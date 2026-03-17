@@ -183,7 +183,7 @@ export default function SaccadicTest() {
       aria-label="Saccadic: look at the target when it appears"
     >
       <p className="text-center text-gray-400 text-sm pt-4 pb-2">
-        Look at the target. Cycle {cycleIndex + 1} of {totalCycles} ({targetSide}).
+        Look at the target.
       </p>
       <div
         className="absolute w-16 h-16 rounded-full bg-amber-400 border-4 border-amber-300 shadow-lg"
