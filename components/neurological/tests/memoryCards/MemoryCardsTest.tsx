@@ -223,9 +223,11 @@ export default function MemoryCardsTest() {
         style={{
           gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
           gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
-          width: 'min(92vw, 85vh)',
-          height: 'min(92vw, 85vh)',
-          aspectRatio: '1',
+          aspectRatio: `${cols} / ${rows}`,
+          maxWidth: '92vw',
+          maxHeight: '85vh',
+          width: cols >= rows ? 'min(92vw, 85vh)' : `min(92vw, calc(85vh * ${cols} / ${rows}))`,
+          height: rows > cols ? 'min(85vh, calc(92vw * ${rows} / ${cols}))' : undefined,
         }}
       >
         {board.map((value, index) => (

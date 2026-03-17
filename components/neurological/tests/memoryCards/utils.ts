@@ -21,20 +21,28 @@ export function createShuffledDeck(cardCount: number): number[] {
   return shuffle(deck);
 }
 
-/** Choose a near-square grid (cols × rows) to fit `cardCount` cells. */
+/**
+ * Chọn lưới cols × rows = cardCount (không ô trống), gần vuông nhất (min |cols − rows|).
+ * Ví dụ: 6→2×3, 8→2×4, 12→3×4, 16→4×4, 20→4×5, 24→4×6, 28→4×7, 32→4×8.
+ */
 export function getGridDimensions(cardCount: number): { cols: number; rows: number; cellCount: number } {
   const n = Math.max(2, Math.floor(cardCount));
-  const cols = Math.max(2, Math.ceil(Math.sqrt(n)));
-  const rows = Math.max(2, Math.ceil(n / cols));
-  return { cols, rows, cellCount: cols * rows };
+  let cols = 1;
+  for (let c = Math.floor(Math.sqrt(n)); c >= 1; c--) {
+    if (n % c === 0) {
+      cols = c;
+      break;
+    }
+  }
+  const rows = n / cols;
+  return { cols, rows, cellCount: n };
 }
 
-/** Board is sized to `cellCount`; extra cells are -1 (empty). */
+/** Board đúng cardCount ô, không ô trống. */
 export function createBoard(cardCount: number): { cards: number[]; cols: number; rows: number } {
   const even = Math.max(2, Math.floor(cardCount / 2) * 2);
   const deck = createShuffledDeck(even);
-  const { cols, rows, cellCount } = getGridDimensions(even);
-  const empties = Math.max(0, cellCount - deck.length);
-  const cards = shuffle([...deck, ...Array.from({ length: empties }, () => -1)]);
+  const { cols, rows } = getGridDimensions(even);
+  const cards = shuffle([...deck]);
   return { cards, cols, rows };
 }
