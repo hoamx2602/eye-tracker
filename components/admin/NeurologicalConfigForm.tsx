@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { STIMULUS_SHAPE_OPTIONS } from '@/components/neurological/tests/antiSaccade/constants';
 
 const TEST_LABELS: Record<string, string> = {
   head_orientation: 'Head Orientation',
@@ -33,7 +34,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
     head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
     visual_search: { numberCount: 8, practiceCount: 4, aoiRadiusPx: 80 },
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
-    anti_saccade: { trialCount: 12, movementSpeedPxPerSec: 120, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3, dimRectOpacity: 0.1, showDimRect: true },
+    anti_saccade: { trialCount: 12, movementSpeedPxPerSec: 120, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3, dimRectOpacity: 0.1, showDimRect: true, stimulusShape: 'rectangle' },
     saccadic: { targetDurationMs: 1000, totalCycles: 18 },
     fixation_stability: { durationSec: 12, blinkIntervalMs: 600 },
     peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000 },
@@ -293,6 +294,20 @@ export default function NeurologicalConfigForm() {
                         onChange={(v) => setParam(id, 'movementSpeedPxPerSec', v)}
                         options={[80, 100, 120, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} px/s` }))}
                       />
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Vật thể kích thích (stimulus)</label>
+                        <select
+                          value={String(params.stimulusShape ?? 'rectangle')}
+                          onChange={(e) => setParam(id, 'stimulusShape', e.target.value)}
+                          className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm"
+                        >
+                          {STIMULUS_SHAPE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       <SelectNumber
                         label="Độ mờ rectangle dim (opacity)"
                         value={Number(params.dimRectOpacity) ?? 0.1}

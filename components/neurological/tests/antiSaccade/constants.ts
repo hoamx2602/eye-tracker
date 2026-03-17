@@ -47,3 +47,21 @@ export const TRAVEL_DISTANCE_PX = 180;
 export const AOI_RADIUS_PX = 70;
 /** Gaze sample interval (ms) during trial. */
 export const GAZE_SAMPLE_INTERVAL_MS = 20;
+
+/** Loại vật thể kích thích: hình chữ nhật, tròn, tam giác, bóng, bàn, ghế. */
+export type AntiSaccadeStimulusShape =
+  | 'rectangle'
+  | 'circle'
+  | 'triangle'
+  | 'ball'
+  | 'table'
+  | 'chair';
+
+export const STIMULUS_SHAPE_OPTIONS: { value: AntiSaccadeStimulusShape; label: string }[] = [
+  { value: 'rectangle', label: 'Hình chữ nhật' },
+  { value: 'circle', label: 'Hình tròn' },
+  { value: 'triangle', label: 'Tam giác' },
+  { value: 'ball', label: 'Quả bóng' },
+  { value: 'table', label: 'Bàn' },
+  { value: 'chair', label: 'Ghế' },
+];

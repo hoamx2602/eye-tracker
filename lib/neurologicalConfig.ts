@@ -25,6 +25,7 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     practiceRestartDelaySec: 3,
     dimRectOpacity: 0.1,
     showDimRect: true,
+    stimulusShape: 'rectangle',
   },
   saccadic: { targetDurationMs: 1000, totalCycles: 18 },
   fixation_stability: { durationSec: 12, blinkIntervalMs: 600 },

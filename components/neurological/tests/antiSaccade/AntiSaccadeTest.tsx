@@ -11,13 +11,23 @@ import {
   GAZE_SAMPLE_INTERVAL_MS,
   RECT_HALF_PX,
   TRAVEL_DISTANCE_PX,
+  STIMULUS_SHAPE_OPTIONS,
   type AntiSaccadeDirection,
+  type AntiSaccadeStimulusShape,
 } from './constants';
+import StimulusShape from './StimulusShape';
+import { dimPosition, generateTrialDirections, primaryPosition } from './utils';
 
 function isHorizontalDirection(d: AntiSaccadeDirection): boolean {
   return d === 'left' || d === 'right';
 }
-import { dimPosition, generateTrialDirections, primaryPosition } from './utils';
+
+const VALID_SHAPES = new Set(STIMULUS_SHAPE_OPTIONS.map((o) => o.value));
+
+function getStimulusShape(config: Record<string, unknown>): AntiSaccadeStimulusShape {
+  const v = String(config?.stimulusShape ?? 'rectangle').toLowerCase();
+  return VALID_SHAPES.has(v as AntiSaccadeStimulusShape) ? (v as AntiSaccadeStimulusShape) : 'rectangle';
+}
 
 export interface AntiSaccadeTrialResult {
   direction: AntiSaccadeDirection;
@@ -73,6 +83,7 @@ export default function AntiSaccadeTest() {
     return Number.isFinite(v) ? Math.max(0.1, Math.min(0.9, v)) : 0.1;
   })();
   const showDimRect = config.showDimRect !== false;
+  const stimulusShape = getStimulusShape(config);
 
   const directions = useMemo(() => generateTrialDirections(trialCount), [trialCount]);
   const startTimeRef = useRef(0);
@@ -202,45 +213,38 @@ export default function AntiSaccadeTest() {
       </p>
       {progress === 0 && direction ? (
         showDimRect ? (
-          <div
-            className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
-            style={{
-              left: isHorizontalDirection(direction)
-                ? center.x - RECT_HALF_PX
-                : center.x - RECT_HALF_PX / 2,
-              top: isHorizontalDirection(direction)
-                ? center.y - RECT_HALF_PX / 2
-                : center.y - RECT_HALF_PX,
-              width: isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX,
-              height: isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2,
-              opacity: dimRectOpacity,
-            }}
-            aria-hidden
+          <StimulusShape
+            shape={stimulusShape}
+            left={isHorizontalDirection(direction) ? center.x - RECT_HALF_PX : center.x - RECT_HALF_PX / 2}
+            top={isHorizontalDirection(direction) ? center.y - RECT_HALF_PX / 2 : center.y - RECT_HALF_PX}
+            width={isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX}
+            height={isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2}
+            isPrimary={false}
+            opacity={dimRectOpacity}
+            ariaHidden
           />
         ) : null
       ) : (
         <>
-          <div
-            className="absolute bg-blue-400 rounded-lg shadow-lg border-2 border-blue-300"
-            style={{
-              left: primaryPos.x - RECT_HALF_PX / 2,
-              top: primaryPos.y - RECT_HALF_PX / 2,
-              width: RECT_HALF_PX,
-              height: RECT_HALF_PX,
-            }}
-            aria-hidden
+          <StimulusShape
+            shape={stimulusShape}
+            left={primaryPos.x - RECT_HALF_PX / 2}
+            top={primaryPos.y - RECT_HALF_PX / 2}
+            width={RECT_HALF_PX}
+            height={RECT_HALF_PX}
+            isPrimary={true}
+            ariaHidden
           />
           {showDimRect && (
-            <div
-              className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
-              style={{
-                left: dimPos.x - RECT_HALF_PX / 2,
-                top: dimPos.y - RECT_HALF_PX / 2,
-                width: RECT_HALF_PX,
-                height: RECT_HALF_PX,
-                opacity: dimRectOpacity,
-              }}
-              aria-hidden
+            <StimulusShape
+              shape={stimulusShape}
+              left={dimPos.x - RECT_HALF_PX / 2}
+              top={dimPos.y - RECT_HALF_PX / 2}
+              width={RECT_HALF_PX}
+              height={RECT_HALF_PX}
+              isPrimary={false}
+              opacity={dimRectOpacity}
+              ariaHidden
             />
           )}
         </>
