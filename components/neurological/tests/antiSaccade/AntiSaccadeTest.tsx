@@ -38,9 +38,21 @@ export interface AntiSaccadeResult {
   };
 }
 
+const EDGE_MARGIN_PX = 24;
+
 function getCenter(): { x: number; y: number } {
   if (typeof window === 'undefined') return { x: 960, y: 540 };
   return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+}
+
+/** Quãng đường từ giữa màn hình tới gần mép (dùng cho test thật). */
+function getTravelToEdges(): { travelX: number; travelY: number } {
+  if (typeof window === 'undefined') return { travelX: TRAVEL_DISTANCE_PX, travelY: TRAVEL_DISTANCE_PX };
+  const cx = window.innerWidth / 2;
+  const cy = window.innerHeight / 2;
+  const travelX = Math.max(TRAVEL_DISTANCE_PX, Math.min(cx - EDGE_MARGIN_PX, window.innerWidth - cx - EDGE_MARGIN_PX));
+  const travelY = Math.max(TRAVEL_DISTANCE_PX, Math.min(cy - EDGE_MARGIN_PX, window.innerHeight - cy - EDGE_MARGIN_PX));
+  return { travelX, travelY };
 }
 
 export default function AntiSaccadeTest() {
@@ -70,14 +82,16 @@ export default function AntiSaccadeTest() {
   const betweenStartRef = useRef(0);
 
   const center = getCenter();
+  const { travelX, travelY } = getTravelToEdges();
   const direction = directions[trialIndex];
+  const travelPx = direction ? (isHorizontalDirection(direction) ? travelX : travelY) : TRAVEL_DISTANCE_PX;
   const primaryPos = useMemo(
-    () => (direction ? primaryPosition(direction, center.x, center.y, progress, TRAVEL_DISTANCE_PX) : center),
-    [direction, center.x, center.y, progress]
+    () => (direction ? primaryPosition(direction, center.x, center.y, progress, travelPx) : center),
+    [direction, center.x, center.y, progress, travelPx]
   );
   const dimPos = useMemo(
-    () => (direction ? dimPosition(direction, center.x, center.y, progress, TRAVEL_DISTANCE_PX) : center),
-    [direction, center.x, center.y, progress]
+    () => (direction ? dimPosition(direction, center.x, center.y, progress, travelPx) : center),
+    [direction, center.x, center.y, progress, travelPx]
   );
 
   useEffect(() => {
@@ -101,7 +115,9 @@ export default function AntiSaccadeTest() {
         const p = Math.min(1, elapsed / movementDurationMs);
         setProgress(p);
 
-        const dimPosNow = dimPosition(dir, center.x, center.y, p, TRAVEL_DISTANCE_PX);
+        const { travelX: tx, travelY: ty } = getTravelToEdges();
+        const travelPxNow = isHorizontalDirection(dir) ? tx : ty;
+        const dimPosNow = dimPosition(dir, center.x, center.y, p, travelPxNow);
         const g = gazeRef.current;
         const tRel = (now - movementStartRef.current) / 1000;
         trialGazeSamplesRef.current.push({ t: tRel, x: g.x, y: g.y });
