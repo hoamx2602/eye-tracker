@@ -62,7 +62,11 @@ export default function AntiSaccadeTest() {
   gazeRef.current = gaze;
 
   const trialCount = Math.max(4, Math.min(30, Number(config.trialCount) ?? DEFAULT_TRIAL_COUNT));
-  const movementDurationMs = Math.max(500, Number(config.movementDurationMs) ?? DEFAULT_MOVEMENT_DURATION_MS);
+  const speedPxPerSec = (() => {
+    const v = Number(config.movementSpeedPxPerSec);
+    return Number.isFinite(v) && v > 0 ? Math.min(500, v) : 0;
+  })();
+  const fallbackDurationMs = Math.max(500, Number(config.movementDurationMs) ?? DEFAULT_MOVEMENT_DURATION_MS);
   const intervalMs = Math.max(200, Number(config.intervalBetweenTrialsMs) ?? DEFAULT_INTERVAL_BETWEEN_TRIALS_MS);
   const dimRectOpacity = (() => {
     const v = Number(config.dimRectOpacity);
@@ -111,12 +115,16 @@ export default function AntiSaccadeTest() {
       if (!dir) return;
 
       if (phase === 'moving') {
-        const elapsed = now - movementStartRef.current;
-        const p = Math.min(1, elapsed / movementDurationMs);
-        setProgress(p);
-
         const { travelX: tx, travelY: ty } = getTravelToEdges();
         const travelPxNow = isHorizontalDirection(dir) ? tx : ty;
+        const trialDurationMs =
+          speedPxPerSec > 0
+            ? Math.max(300, Math.min(15000, (1000 * travelPxNow) / speedPxPerSec))
+            : fallbackDurationMs;
+        const elapsed = now - movementStartRef.current;
+        const p = Math.min(1, elapsed / trialDurationMs);
+        setProgress(p);
+
         const dimPosNow = dimPosition(dir, center.x, center.y, p, travelPxNow);
         const g = gazeRef.current;
         const tRel = (now - movementStartRef.current) / 1000;
@@ -173,7 +181,7 @@ export default function AntiSaccadeTest() {
     }, GAZE_SAMPLE_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [trialIndex, trialCount, phase, directions, movementDurationMs, intervalMs, center.x, center.y, completeTest]);
+  }, [trialIndex, trialCount, phase, directions, speedPxPerSec, fallbackDurationMs, intervalMs, center.x, center.y, completeTest]);
 
   if (trialIndex >= trialCount) {
     return (

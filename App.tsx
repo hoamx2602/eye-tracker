@@ -69,7 +69,6 @@ import AntiSaccadePractice from '@/components/neurological/tests/antiSaccade/Ant
 import {
   ANTI_SACCADE_GUIDE_STEPS,
   DEFAULT_TRIAL_COUNT,
-  DEFAULT_MOVEMENT_DURATION_MS,
   DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
 } from '@/components/neurological/tests/antiSaccade/constants';
 import SaccadicTest from '@/components/neurological/tests/saccadic/SaccadicTest';
@@ -2151,7 +2150,7 @@ function App() {
             practiceContent={(config) => <AntiSaccadePractice config={config} />}
             practiceTitle="Practice: Anti-Saccade"
             testContent={<AntiSaccadeTest />}
-            config={(neuroConfigSnapshot?.testParameters?.anti_saccade as Record<string, unknown>) ?? { trialCount: DEFAULT_TRIAL_COUNT, movementDurationMs: DEFAULT_MOVEMENT_DURATION_MS, intervalBetweenTrialsMs: DEFAULT_INTERVAL_BETWEEN_TRIALS_MS, practiceRestartDelaySec: 3, showDimRect: true }}
+            config={(neuroConfigSnapshot?.testParameters?.anti_saccade as Record<string, unknown>) ?? { trialCount: DEFAULT_TRIAL_COUNT, movementSpeedPxPerSec: 120, intervalBetweenTrialsMs: DEFAULT_INTERVAL_BETWEEN_TRIALS_MS, practiceRestartDelaySec: 3, showDimRect: true }}
             onTestComplete={(payload) => handleNeuroTestComplete('anti_saccade', payload)}
           />
         </NeuroGazeProvider>

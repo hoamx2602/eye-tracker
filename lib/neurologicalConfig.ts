@@ -20,7 +20,7 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
   memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
   anti_saccade: {
     trialCount: 12,
-    movementDurationMs: 1500,
+    movementSpeedPxPerSec: 120,
     intervalBetweenTrialsMs: 800,
     practiceRestartDelaySec: 3,
     dimRectOpacity: 0.1,

@@ -33,7 +33,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
     head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
     visual_search: { numberCount: 8, practiceCount: 4, aoiRadiusPx: 80 },
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
-    anti_saccade: { trialCount: 12, movementDurationMs: 1500, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3, dimRectOpacity: 0.1, showDimRect: true },
+    anti_saccade: { trialCount: 12, movementSpeedPxPerSec: 120, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3, dimRectOpacity: 0.1, showDimRect: true },
     saccadic: { targetDurationMs: 1000, totalCycles: 18 },
     fixation_stability: { durationSec: 12, blinkIntervalMs: 600 },
     peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000 },
@@ -288,10 +288,10 @@ export default function NeurologicalConfigForm() {
                         options={[8, 10, 12, 15, 18, 20, 24, 30].map((n) => ({ value: n, label: String(n) }))}
                       />
                       <SelectNumber
-                        label="Movement duration (ms) — thời gian mỗi bước di chuyển; số lớn = chậm hơn"
-                        value={Number(params.movementDurationMs) ?? 1500}
-                        onChange={(v) => setParam(id, 'movementDurationMs', v)}
-                        options={[800, 1000, 1200, 1500, 2000, 2500, 3000, 4000, 5000].map((n) => ({ value: n, label: `${n} ms` }))}
+                        label="Tốc độ di chuyển (px/s) — đồng nhất mọi hướng; duration tự tính theo quãng đường"
+                        value={Number(params.movementSpeedPxPerSec) ?? 120}
+                        onChange={(v) => setParam(id, 'movementSpeedPxPerSec', v)}
+                        options={[80, 100, 120, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} px/s` }))}
                       />
                       <SelectNumber
                         label="Độ mờ rectangle dim (opacity)"

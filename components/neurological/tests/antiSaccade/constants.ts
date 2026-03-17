@@ -31,8 +31,10 @@ export const OPPOSITE_DIRECTION: Record<AntiSaccadeDirection, AntiSaccadeDirecti
 
 /** Number of trials in the main test. */
 export const DEFAULT_TRIAL_COUNT = 12;
-/** Duration (ms) each rectangle moves per trial. */
+/** Duration (ms) each rectangle moves per trial (fallback when speed not set). */
 export const DEFAULT_MOVEMENT_DURATION_MS = 1500;
+/** Tốc độ di chuyển (px/s) — dùng để tính duration theo quãng đường, đồng nhất mọi hướng. */
+export const DEFAULT_MOVEMENT_SPEED_PX_PER_SEC = 120;
 /** Pause (ms) between trials. */
 export const DEFAULT_INTERVAL_BETWEEN_TRIALS_MS = 800;
 /** Practice: number of trials. */

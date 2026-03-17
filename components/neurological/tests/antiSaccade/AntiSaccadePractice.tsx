@@ -35,7 +35,12 @@ function getRestartDelaySec(config?: Record<string, unknown>): number {
   return Math.max(RESTART_DELAY_MIN, Math.min(RESTART_DELAY_MAX, Math.round(v)));
 }
 
-function getMovementDurationMs(config?: Record<string, unknown>): number {
+/** Duration (ms) cho một bước di chuyển: ưu tiên tốc độ (px/s), fallback duration cũ. */
+function getMovementDurationMs(config?: Record<string, unknown>, travelPx: number = TRAVEL_DISTANCE_PX): number {
+  const speed = Number(config?.movementSpeedPxPerSec);
+  if (Number.isFinite(speed) && speed > 0) {
+    return Math.max(300, Math.min(15000, (1000 * travelPx) / speed));
+  }
   const v = Number(config?.movementDurationMs);
   if (!Number.isFinite(v) || v < 500) return DEFAULT_MOVEMENT_DURATION_MS;
   return Math.min(10000, v);
@@ -66,7 +71,7 @@ function getShowDimRect(config?: Record<string, unknown>): boolean {
  */
 export default function AntiSaccadePractice({ config }: { config?: Record<string, unknown> }) {
   const restartDelaySec = getRestartDelaySec(config);
-  const movementDurationMs = getMovementDurationMs(config);
+  const movementDurationMs = getMovementDurationMs(config, TRAVEL_DISTANCE_PX);
   const dimOpacity = getDimRectOpacity(config);
   const showDimRect = getShowDimRect(config);
   const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS));
@@ -79,7 +84,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   const primaryOff = direction ? offset(direction, progress, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
   const dimOff = direction ? offset(OPPOSITE_DIRECTION[direction], progress, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
 
-  // Movement animation (tốc độ = config.movementDurationMs)
+  // Movement animation (tốc độ từ config.movementSpeedPxPerSec hoặc movementDurationMs)
   useEffect(() => {
     if (restartIn !== null) return;
     movementStartRef.current = performance.now();
