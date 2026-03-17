@@ -15,11 +15,10 @@ export default function GuideSteps({
   onComplete,
   completeButtonLabel = 'Start Test',
 }: GuideStepsProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const step = steps[currentIndex];
-  const isLast = currentIndex >= steps.length - 1;
+  const [showAll] = useState(true);
+  if (!steps?.length) return null;
 
-  if (!step) return null;
+  const title = steps.find((s) => typeof s.title === 'string' && s.title.trim().length > 0)?.title ?? 'Instructions';
 
   return (
     <div
@@ -27,57 +26,50 @@ export default function GuideSteps({
       role="region"
       aria-labelledby="guide-step-title"
     >
-      <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center max-w-2xl mx-auto">
-        {step.title && (
-          <h2 id="guide-step-title" className="text-lg font-bold text-white mb-4 text-center">
-            {step.title}
+      <div className="flex-1 overflow-y-auto p-6 w-full">
+        <div className="max-w-2xl mx-auto">
+          <h2 id="guide-step-title" className="text-xl font-bold text-white mb-4 text-center">
+            {title}
           </h2>
-        )}
-        <p className="text-gray-300 text-center whitespace-pre-line leading-relaxed">
-          {step.body}
-        </p>
-        {step.image && typeof step.image === 'string' && (
-          <img
-            src={step.image}
-            alt=""
-            className="mt-6 rounded-lg max-h-48 object-contain"
-          />
-        )}
-      </div>
-      <div className="flex-shrink-0 p-6 border-t border-gray-800 flex justify-between items-center">
-        <div className="w-24">
-          {currentIndex > 0 ? (
-            <button
-              type="button"
-              onClick={() => setCurrentIndex((i) => i - 1)}
-              className="px-4 py-2 text-gray-400 hover:text-white text-sm font-medium transition"
-            >
-              ← Back
-            </button>
+
+          {showAll ? (
+            <div className="space-y-4">
+              {steps.map((s, idx) => (
+                <div key={s.id ?? String(idx)} className="rounded-xl border border-gray-800 bg-gray-900/30 p-4">
+                  {s.title ? (
+                    <div className="text-white font-semibold mb-1">
+                      {s.title}
+                    </div>
+                  ) : (
+                    <div className="text-gray-400 text-sm mb-1">
+                      Step {idx + 1}
+                    </div>
+                  )}
+                  <div className="text-gray-200 whitespace-pre-line leading-relaxed">
+                    {s.body}
+                  </div>
+                  {s.image && typeof s.image === 'string' ? (
+                    <img
+                      src={s.image}
+                      alt=""
+                      className="mt-3 rounded-lg max-h-48 object-contain"
+                    />
+                  ) : null}
+                </div>
+              ))}
+            </div>
           ) : null}
         </div>
-        <span className="text-gray-500 text-sm">
-          {currentIndex + 1} / {steps.length}
-        </span>
-        <div className="w-24 flex justify-end">
-          {isLast ? (
-            <button
-              type="button"
-              onClick={onComplete}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition"
-            >
-              {completeButtonLabel}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setCurrentIndex((i) => i + 1)}
-              className="px-5 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium rounded-xl transition"
-            >
-              Next
-            </button>
-          )}
-        </div>
+      </div>
+
+      <div className="flex-shrink-0 p-6 border-t border-gray-800 flex justify-center">
+        <button
+          type="button"
+          onClick={onComplete}
+          className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition"
+        >
+          {completeButtonLabel}
+        </button>
       </div>
     </div>
   );
