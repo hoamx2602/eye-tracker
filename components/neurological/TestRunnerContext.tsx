@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext } from 'react';
+import React, { createContext, useCallback, useContext, useRef } from 'react';
 import type { TestResultPayload } from './types';
 
 export interface TestRunnerContextValue {
@@ -24,12 +24,12 @@ export function TestRunnerProvider({
   onTestComplete,
   children,
 }: TestRunnerProviderProps) {
-  const completeTest = useCallback(
-    (payload: TestResultPayload) => {
-      onTestComplete({ ...payload, testId });
-    },
-    [testId, onTestComplete]
-  );
+  const onCompleteRef = useRef(onTestComplete);
+  onCompleteRef.current = onTestComplete;
+
+  const completeTest = useCallback((payload: TestResultPayload) => {
+    onCompleteRef.current({ ...payload, testId });
+  }, [testId]);
 
   const value: TestRunnerContextValue = {
     testId,

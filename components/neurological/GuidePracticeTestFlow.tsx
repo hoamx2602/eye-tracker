@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import GuideSteps from './GuideSteps';
 import PracticeGate from './PracticeGate';
 import { TestRunnerProvider } from './TestRunnerContext';
@@ -27,7 +27,7 @@ export type GuidePracticeTestFlowProps = {
 
 /**
  * Orchestrates Guide → (Practice?) → Test for a single neurological test.
- * When test completes, shows overlay with Làm lại (redo) and Tiếp tục (continue).
+ * When test completes, shows overlay with Redo and Continue.
  */
 export default function GuidePracticeTestFlow({
   testId,
@@ -43,6 +43,9 @@ export default function GuidePracticeTestFlow({
   const [phase, setPhase] = useState<GuidePracticeTestFlowPhase>('guide');
   const [pendingPayload, setPendingPayload] = useState<TestResultPayload | null>(null);
   const [testRunKey, setTestRunKey] = useState(0);
+
+  /** Stable callback so TestRunnerProvider does not get a new ref each render (avoids "Maximum update depth" in tests that call completeTest in useEffect). */
+  const handleRunnerComplete = useCallback((payload: TestResultPayload) => setPendingPayload(payload), []);
 
   if (phase === 'guide') {
     return (
@@ -79,14 +82,14 @@ export default function GuidePracticeTestFlow({
         key={testRunKey}
         testId={testId}
         config={config}
-        onTestComplete={(payload) => setPendingPayload(payload)}
+        onTestComplete={handleRunnerComplete}
       >
         {testContent}
       </TestRunnerProvider>
       {pendingPayload !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="bg-gray-900 rounded-xl p-6 shadow-xl max-w-sm w-full mx-4 flex flex-col gap-4">
-            <p className="text-white text-center font-medium">Bài test hoàn thành</p>
+          <div className="bg-gray-900/95 rounded-2xl border border-gray-800/70 p-6 shadow-xl max-w-sm w-full mx-4 flex flex-col gap-5">
+            <p className="text-white text-center font-semibold">Test complete</p>
             <div className="flex gap-3">
               <button
                 type="button"
@@ -94,9 +97,9 @@ export default function GuidePracticeTestFlow({
                   setPendingPayload(null);
                   setTestRunKey((k) => k + 1);
                 }}
-                className="flex-1 py-2.5 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium transition-colors"
+                className="flex-1 px-7 py-3.5 rounded-2xl border border-gray-600 bg-gray-800/60 hover:bg-gray-700/70 hover:border-gray-500 text-white font-semibold transition active:translate-y-[1px]"
               >
-                Làm lại
+                Redo
               </button>
               <button
                 type="button"
@@ -104,9 +107,12 @@ export default function GuidePracticeTestFlow({
                   onTestComplete(pendingPayload);
                   setPendingPayload(null);
                 }}
-                className="flex-1 py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-colors"
+                className="group flex-1 px-7 py-3.5 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold rounded-2xl transition shadow-[0_10px_30px_rgba(0,140,255,0.18)] active:translate-y-[1px]"
               >
-                Tiếp tục
+                <span className="inline-flex items-center justify-center gap-2">
+                  <span>Continue</span>
+                  <span className="opacity-90 group-hover:translate-x-0.5 transition">→</span>
+                </span>
               </button>
             </div>
           </div>
