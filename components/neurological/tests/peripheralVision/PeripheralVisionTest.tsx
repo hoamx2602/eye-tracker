@@ -49,6 +49,8 @@ export default function PeripheralVisionTest() {
   const { gaze } = useNeuroGaze();
   const gazeRef = useRef(gaze);
   gazeRef.current = gaze;
+  const completeTestRef = useRef(completeTest);
+  completeTestRef.current = completeTest;
 
   const trialCount = Math.max(8, Math.min(40, Number(config.trialCount) ?? DEFAULT_TRIAL_COUNT));
   const stimulusDurationMs = Math.max(100, Number(config.stimulusDurationMs) ?? DEFAULT_STIMULUS_DURATION_MS);
@@ -159,7 +161,7 @@ export default function PeripheralVisionTest() {
             });
             centerStability = totalSamples > 0 ? centerStability / totalSamples : 0;
 
-            completeTest({
+            completeTestRef.current({
               testId: 'peripheral_vision',
               startTime: startTimeRef.current,
               endTime: endTime,
@@ -188,7 +190,7 @@ export default function PeripheralVisionTest() {
       if (itiTimeoutRef.current) clearTimeout(itiTimeoutRef.current);
       clearInterval(gazeInterval);
     };
-  }, [trialIndex, trialCount, zones, minDelayMs, maxDelayMs, stimulusDurationMs, completeTest]);
+  }, [trialIndex, trialCount, zones, minDelayMs, maxDelayMs, stimulusDurationMs]);
 
   if (trialIndex >= trialCount) {
     return (

@@ -209,7 +209,7 @@ export default function AntiSaccadeTest() {
       aria-label="Anti-saccade: look at the dim rectangle"
     >
       <p className="text-center text-gray-400 text-sm pt-4 pb-2">
-        Look at the <strong className="text-gray-300">dim</strong> rectangle. Trial {trialIndex + 1} of {trialCount}.
+        Look at the <strong className="text-gray-300">dim</strong> rectangle.
       </p>
       {progress === 0 && direction ? (
         showDimRect ? (
