@@ -139,35 +139,42 @@ export default function NeurologicalConfigForm() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="w-8 h-8 border-2 border-slate-500 border-t-transparent rounded-full animate-spin" />
-      </div>
+      <div className="text-slate-400 py-8">Loading neurological config…</div>
     );
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {message && (
-        <div
-          className={`px-4 py-2 rounded-lg text-sm ${message.type === 'success' ? 'bg-emerald-900/50 text-emerald-200' : 'bg-red-900/50 text-red-200'}`}
-        >
+        <p className={`text-sm ${message.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
           {message.text}
-        </div>
+        </p>
       )}
 
-      <section>
-        <h2 className="text-lg font-semibold text-white mb-3">Test order</h2>
-        <p className="text-slate-400 text-sm mb-3">Order in which tests run. Use arrows to reorder.</p>
+      <div className="flex flex-wrap items-center justify-end gap-4 border-b border-slate-700 pb-4">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold rounded-lg transition"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+
+      <section className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">
+        <h3 className="text-sm font-bold text-slate-300">Test order</h3>
+        <p className="text-slate-400 text-xs">Order in which tests run. Use arrows to reorder.</p>
         <ul className="space-y-1">
           {config.testOrder.map((id, index) => (
-            <li key={id} className="flex items-center gap-2 py-1">
-              <span className="text-slate-500 w-6">{index + 1}.</span>
+            <li key={id} className="flex items-center gap-2 py-1.5">
+              <span className="text-slate-500 w-6 tabular-nums">{index + 1}.</span>
               <span className="text-white flex-1">{TEST_LABELS[id] ?? id}</span>
               <button
                 type="button"
                 onClick={() => moveTest(index, 'up')}
                 disabled={index === 0}
-                className="px-2 py-0.5 rounded bg-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-2 py-1 rounded-lg bg-slate-700 border border-slate-600 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium hover:bg-slate-600"
               >
                 ↑
               </button>
@@ -175,7 +182,7 @@ export default function NeurologicalConfigForm() {
                 type="button"
                 onClick={() => moveTest(index, 'down')}
                 disabled={index === config.testOrder.length - 1}
-                className="px-2 py-0.5 rounded bg-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-2 py-1 rounded-lg bg-slate-700 border border-slate-600 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium hover:bg-slate-600"
               >
                 ↓
               </button>
@@ -184,27 +191,27 @@ export default function NeurologicalConfigForm() {
         </ul>
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold text-white mb-3">Tests & parameters</h2>
-        <div className="space-y-6">
+      <section className="space-y-4">
+        <h3 className="text-sm font-bold text-slate-300">Tests & parameters</h3>
+        <div className="space-y-4">
           {ALL_TEST_IDS.map((id) => {
             const params = config.testParameters[id] ?? {};
             const enabled = config.testEnabled[id] !== false;
             return (
-              <div key={id} className="border border-slate-700 rounded-lg p-4 bg-slate-800/50">
-                <div className="flex items-center gap-3 mb-3">
+              <div key={id} className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">
+                <div className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     id={`enabled-${id}`}
                     checked={enabled}
                     onChange={(e) => setEnabled(id, e.target.checked)}
-                    className="rounded border-slate-500"
+                    className="rounded border-slate-500 bg-slate-800"
                   />
-                  <label htmlFor={`enabled-${id}`} className="font-medium text-white">
+                  <label htmlFor={`enabled-${id}`} className="font-semibold text-white">
                     {TEST_LABELS[id]}
                   </label>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pl-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pl-6">
                   {id === 'head_orientation' && (
                     <>
                       <SelectNumber
@@ -213,7 +220,7 @@ export default function NeurologicalConfigForm() {
                         onChange={(v) => setParam(id, 'durationPerDirectionSec', v)}
                         options={[2, 3, 4, 5, 6, 8, 10].map((n) => ({ value: n, label: `${n} s` }))}
                       />
-                      <div className="text-slate-400 text-sm">Order: left, right, up, down (fixed)</div>
+                      <p className="text-xs text-slate-500">Order: left, right, up, down (fixed)</p>
                     </>
                   )}
                   {id === 'visual_search' && (
@@ -242,11 +249,11 @@ export default function NeurologicalConfigForm() {
                   {id === 'memory_cards' && (
                     <>
                       <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-1">Card count</label>
+                        <label className="block text-slate-400 text-sm mb-0.5">Card count</label>
                         <select
                           value={String(params.cardCount ?? 16)}
                           onChange={(e) => setParam(id, 'cardCount', Number(e.target.value))}
-                          className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-slate-200 text-sm"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
                         >
                           <option value={6}>6 cards</option>
                           <option value={8}>8 cards</option>
@@ -265,11 +272,11 @@ export default function NeurologicalConfigForm() {
                         options={[400, 600, 800, 1000, 1200, 1500, 2000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
                       <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-1">Symbol size</label>
+                        <label className="block text-slate-400 text-sm mb-0.5">Symbol size</label>
                         <select
                           value={String(params.symbolSize ?? 'lg')}
                           onChange={(e) => setParam(id, 'symbolSize', e.target.value)}
-                          className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-slate-200 text-sm"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
                         >
                           <option value="sm">Small</option>
                           <option value="md">Medium</option>
@@ -277,7 +284,7 @@ export default function NeurologicalConfigForm() {
                           <option value="xl">Extra large</option>
                         </select>
                       </div>
-                      <p className="text-xs text-slate-500 -mt-1">Save then select Neurological to apply.</p>
+                      <p className="text-xs text-slate-500">Save then select Neurological to apply.</p>
                     </>
                   )}
                   {id === 'anti_saccade' && (
@@ -289,7 +296,7 @@ export default function NeurologicalConfigForm() {
                         options={[8, 10, 12, 15, 18, 20, 24, 30].map((n) => ({ value: n, label: String(n) }))}
                       />
                       <SelectNumber
-                        label="Movement speed (px/s) — same for all directions; duration derived from distance"
+                        label="Movement speed (px/s)"
                         value={Number(params.movementSpeedPxPerSec) ?? 120}
                         onChange={(v) => setParam(id, 'movementSpeedPxPerSec', v)}
                         options={[80, 100, 120, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} px/s` }))}
@@ -299,7 +306,7 @@ export default function NeurologicalConfigForm() {
                         <select
                           value={String(params.stimulusShape ?? 'rectangle')}
                           onChange={(e) => setParam(id, 'stimulusShape', e.target.value)}
-                          className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
                         >
                           {STIMULUS_SHAPE_OPTIONS.map((o) => (
                             <option key={o.value} value={o.value}>
@@ -321,9 +328,9 @@ export default function NeurologicalConfigForm() {
                             type="checkbox"
                             checked={params.showDimRect !== false}
                             onChange={(e) => setParam(id, 'showDimRect', e.target.checked)}
-                            className="rounded bg-slate-800 border-slate-600"
+                            className="rounded border-slate-500 bg-slate-800"
                           />
-                          <span className="text-sm text-slate-300">On — when off: dim rectangle is hidden and user looks by eye only</span>
+                          <span className="text-xs text-slate-400">On — when off: dim rectangle is hidden and user looks by eye only</span>
                         </label>
                       </div>
                       <SelectNumber
@@ -367,7 +374,7 @@ export default function NeurologicalConfigForm() {
                           value={String(params.targetDotColor ?? '#f59e0b')}
                           onChange={(e) => setParam(id, 'targetDotColor', e.target.value)}
                           placeholder="#f59e0b"
-                          className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm font-mono"
                         />
                       </div>
                     </>
@@ -399,7 +406,7 @@ export default function NeurologicalConfigForm() {
                           value={String(params.centerDotColor ?? '#f59e0b')}
                           onChange={(e) => setParam(id, 'centerDotColor', e.target.value)}
                           placeholder="#f59e0b"
-                          className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm font-mono"
                         />
                       </div>
                     </>
@@ -431,7 +438,7 @@ export default function NeurologicalConfigForm() {
                           value={String(params.centerDotColor ?? '#f59e0b')}
                           onChange={(e) => setParam(id, 'centerDotColor', e.target.value)}
                           placeholder="#f59e0b"
-                          className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm font-mono"
                         />
                       </div>
                       <SelectNumber
@@ -447,7 +454,7 @@ export default function NeurologicalConfigForm() {
                           value={String(params.stimulusDotColor ?? '#ffffff')}
                           onChange={(e) => setParam(id, 'stimulusDotColor', e.target.value)}
                           placeholder="#ffffff"
-                          className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm font-mono"
                         />
                       </div>
                       <SelectNumber
@@ -478,17 +485,6 @@ export default function NeurologicalConfigForm() {
           })}
         </div>
       </section>
-
-      <div>
-        <button
-          type="button"
-          onClick={save}
-          disabled={saving}
-          className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium"
-        >
-          {saving ? 'Saving…' : 'Save config'}
-        </button>
-      </div>
     </div>
   );
 }
@@ -526,7 +522,7 @@ function LabelInput({
         min={min}
         max={max}
         step={step}
-        className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white"
+        className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
       />
     </div>
   );
@@ -550,7 +546,7 @@ function SelectNumber({
       <select
         value={String(v)}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full px-3 py-1.5 rounded bg-slate-800 border border-slate-600 text-white text-sm"
+        className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
