@@ -55,6 +55,11 @@ function isHorizontalDirection(d: AntiSaccadeDirection): boolean {
   return d === 'left' || d === 'right';
 }
 
+function getShowDimRect(config?: Record<string, unknown>): boolean {
+  if (config?.showDimRect === false) return false;
+  return true;
+}
+
 /**
  * Practice: a few anti-saccade trials, same visual, no recording.
  * Sau khi hết 3 trial, đếm ngược practiceRestartDelaySec (từ config, 1–4 s) rồi tự chạy lại.
@@ -63,6 +68,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   const restartDelaySec = getRestartDelaySec(config);
   const movementDurationMs = getMovementDurationMs(config);
   const dimOpacity = getDimRectOpacity(config);
+  const showDimRect = getShowDimRect(config);
   const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS));
   const [trialIndex, setTrialIndex] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -134,24 +140,26 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
       )}
       <div className="relative rounded-xl overflow-hidden bg-gray-900" style={{ width: BOX_SIZE, height: BOX_SIZE }}>
         {progress === 0 && direction ? (
-          /* Một hình duy nhất lúc mới vào: ngang khi chuyển động trái/phải, dọc khi lên/xuống; viền nét đứt */
-          <div
-            className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
-            style={{
-              left: isHorizontalDirection(direction)
-                ? CENTER - RECT_HALF_PX
-                : CENTER - RECT_HALF_PX / 2,
-              top: isHorizontalDirection(direction)
-                ? CENTER - RECT_HALF_PX / 2
-                : CENTER - RECT_HALF_PX,
-              width: isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX,
-              height: isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2,
-              opacity: dimOpacity,
-            }}
-          />
+          showDimRect ? (
+            /* Một hình duy nhất lúc mới vào: ngang khi chuyển động trái/phải, dọc khi lên/xuống; viền nét đứt */
+            <div
+              className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
+              style={{
+                left: isHorizontalDirection(direction)
+                  ? CENTER - RECT_HALF_PX
+                  : CENTER - RECT_HALF_PX / 2,
+                top: isHorizontalDirection(direction)
+                  ? CENTER - RECT_HALF_PX / 2
+                  : CENTER - RECT_HALF_PX,
+                width: isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX,
+                height: isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2,
+                opacity: dimOpacity,
+              }}
+            />
+          ) : null
         ) : (
           <>
-            {/* Hai nửa sau khi tách: primary (sáng), dim (mờ, viền đứt) */}
+            {/* Hai nửa sau khi tách: primary (sáng); dim chỉ khi showDimRect */}
             <div
               className="absolute bg-blue-400 rounded-lg border-2 border-blue-300"
               style={{
@@ -161,16 +169,18 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
                 height: RECT_HALF_PX,
               }}
             />
-            <div
-              className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
-              style={{
-                left: CENTER - RECT_HALF_PX / 2 + dimOff.x,
-                top: CENTER - RECT_HALF_PX / 2 + dimOff.y,
-                width: RECT_HALF_PX,
-                height: RECT_HALF_PX,
-                opacity: dimOpacity,
-              }}
-            />
+            {showDimRect && (
+              <div
+                className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
+                style={{
+                  left: CENTER - RECT_HALF_PX / 2 + dimOff.x,
+                  top: CENTER - RECT_HALF_PX / 2 + dimOff.y,
+                  width: RECT_HALF_PX,
+                  height: RECT_HALF_PX,
+                  opacity: dimOpacity,
+                }}
+              />
+            )}
           </>
         )}
       </div>

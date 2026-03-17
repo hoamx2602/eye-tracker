@@ -56,6 +56,7 @@ export default function AntiSaccadeTest() {
     const v = Number(config.dimRectOpacity);
     return Number.isFinite(v) ? Math.max(0.1, Math.min(0.9, v)) : 0.1;
   })();
+  const showDimRect = config.showDimRect !== false;
 
   const directions = useMemo(() => generateTrialDirections(trialCount), [trialCount]);
   const startTimeRef = useRef(0);
@@ -176,25 +177,25 @@ export default function AntiSaccadeTest() {
         Look at the <strong className="text-gray-300">dim</strong> rectangle. Trial {trialIndex + 1} of {trialCount}.
       </p>
       {progress === 0 && direction ? (
-        /* Một hình duy nhất lúc mới vào: ngang khi trái/phải, dọc khi lên/xuống; viền nét đứt */
-        <div
-          className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
-          style={{
-            left: isHorizontalDirection(direction)
-              ? center.x - RECT_HALF_PX
-              : center.x - RECT_HALF_PX / 2,
-            top: isHorizontalDirection(direction)
-              ? center.y - RECT_HALF_PX / 2
-              : center.y - RECT_HALF_PX,
-            width: isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX,
-            height: isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2,
-            opacity: dimRectOpacity,
-          }}
-          aria-hidden
-        />
+        showDimRect ? (
+          <div
+            className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
+            style={{
+              left: isHorizontalDirection(direction)
+                ? center.x - RECT_HALF_PX
+                : center.x - RECT_HALF_PX / 2,
+              top: isHorizontalDirection(direction)
+                ? center.y - RECT_HALF_PX / 2
+                : center.y - RECT_HALF_PX,
+              width: isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX,
+              height: isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2,
+              opacity: dimRectOpacity,
+            }}
+            aria-hidden
+          />
+        ) : null
       ) : (
         <>
-          {/* Hai nửa sau khi tách */}
           <div
             className="absolute bg-blue-400 rounded-lg shadow-lg border-2 border-blue-300"
             style={{
@@ -205,17 +206,19 @@ export default function AntiSaccadeTest() {
             }}
             aria-hidden
           />
-          <div
-            className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
-            style={{
-              left: dimPos.x - RECT_HALF_PX / 2,
-              top: dimPos.y - RECT_HALF_PX / 2,
-              width: RECT_HALF_PX,
-              height: RECT_HALF_PX,
-              opacity: dimRectOpacity,
-            }}
-            aria-hidden
-          />
+          {showDimRect && (
+            <div
+              className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
+              style={{
+                left: dimPos.x - RECT_HALF_PX / 2,
+                top: dimPos.y - RECT_HALF_PX / 2,
+                width: RECT_HALF_PX,
+                height: RECT_HALF_PX,
+                opacity: dimRectOpacity,
+              }}
+              aria-hidden
+            />
+          )}
         </>
       )}
     </div>

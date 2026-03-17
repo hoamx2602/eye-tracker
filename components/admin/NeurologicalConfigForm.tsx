@@ -33,7 +33,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
     head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
     visual_search: { numberCount: 8, practiceCount: 4, aoiRadiusPx: 80 },
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
-    anti_saccade: { trialCount: 12, movementDurationMs: 1500, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3, dimRectOpacity: 0.1 },
+    anti_saccade: { trialCount: 12, movementDurationMs: 1500, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3, dimRectOpacity: 0.1, showDimRect: true },
     saccadic: { targetDurationMs: 1000, totalCycles: 18 },
     fixation_stability: { durationSec: 12, blinkIntervalMs: 600 },
     peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000 },
@@ -299,6 +299,18 @@ export default function NeurologicalConfigForm() {
                         onChange={(v) => setParam(id, 'dimRectOpacity', v)}
                         options={[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8].map((n) => ({ value: n, label: `${Math.round(n * 100)}%` }))}
                       />
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Hiển thị rectangle mờ (dim)</label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={params.showDimRect !== false}
+                            onChange={(e) => setParam(id, 'showDimRect', e.target.checked)}
+                            className="rounded bg-slate-800 border-slate-600"
+                          />
+                          <span className="text-sm text-slate-300">Bật — khi tắt: ẩn hẳn rectangle mờ, người dùng tự nhìn bằng mắt</span>
+                        </label>
+                      </div>
                       <SelectNumber
                         label="Interval between trials (ms)"
                         value={Number(params.intervalBetweenTrialsMs) ?? 800}
