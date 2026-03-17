@@ -21,24 +21,31 @@ export default function PracticeGate({
       role="region"
       aria-labelledby="practice-gate-title"
     >
-      <div className="flex-shrink-0 p-4 border-b border-gray-800">
-        <h2 id="practice-gate-title" className="text-lg font-bold text-white">
-          {title}
-        </h2>
-        <p className="text-gray-400 text-sm mt-1">
-          Try it out. When you are ready, click &quot;Start real test&quot; below.
-        </p>
+      <div className="flex-shrink-0 border-b border-gray-800/60 bg-gradient-to-b from-blue-600/10 to-transparent">
+        <div className="p-6 max-w-3xl mx-auto">
+          <h2 id="practice-gate-title" className="text-2xl font-bold text-white text-center tracking-tight">
+            {title}
+          </h2>
+          <p className="mt-2 text-sm text-gray-300/90 text-center">
+            Try it out. When you are ready, start the real test.
+          </p>
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-6">
-        {children}
+      <div className="flex-1 overflow-y-auto p-6 w-full">
+        <div className="max-w-3xl mx-auto">
+          {children}
+        </div>
       </div>
-      <div className="flex-shrink-0 p-6 border-t border-gray-800 flex justify-center">
+      <div className="flex-shrink-0 p-6 border-t border-gray-800/60 bg-gradient-to-t from-gray-950 via-gray-950 to-transparent flex justify-center">
         <button
           type="button"
           onClick={onStartRealTest}
-          className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition"
+          className="group px-7 py-3.5 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold rounded-2xl transition shadow-[0_10px_30px_rgba(0,140,255,0.18)] active:translate-y-[1px]"
         >
-          Start real test
+          <span className="inline-flex items-center gap-2">
+            <span>Start real test</span>
+            <span className="opacity-90 group-hover:translate-x-0.5 transition">→</span>
+          </span>
         </button>
       </div>
     </div>
