@@ -1,11 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  DEFAULT_TARGET_DURATION_MS,
-  PRACTICE_CYCLES,
-  type SaccadicTargetSide,
-} from './constants';
+import { DEFAULT_TARGET_DURATION_MS, type SaccadicTargetSide } from './constants';
 import { getTargetPosition } from './utils';
 
 function getViewport(): { w: number; h: number } {
@@ -30,10 +26,6 @@ export default function SaccadicPractice() {
     const id = setInterval(() => {
       const elapsed = performance.now() - cycleStartRef.current;
       if (elapsed >= DEFAULT_TARGET_DURATION_MS) {
-        if (cycleIndex + 1 >= PRACTICE_CYCLES) {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          return;
-        }
         setCycleIndex((i) => i + 1);
         cycleStartRef.current = performance.now();
       }
@@ -45,19 +37,22 @@ export default function SaccadicPractice() {
   }, [cycleIndex]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[280px]">
-      <p className="text-gray-400 text-sm mb-4">
-        Look at the target when it appears. Cycle {cycleIndex + 1} of {PRACTICE_CYCLES} ({targetSide}).
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-gray-950"
+      role="region"
+      aria-label="Saccadic practice: look at the target when it appears"
+    >
+      <p className="text-center text-gray-400 text-sm pt-4 pb-2">
+        Look at the target when it appears.
       </p>
-      <div className="relative w-full max-w-md h-48">
-        <div
-          className="absolute w-12 h-12 rounded-full bg-amber-400 border-4 border-amber-300"
-          style={{
-            left: targetPos.x - 24,
-            top: targetPos.y - 24,
-          }}
-        />
-      </div>
+      <div
+        className="absolute w-16 h-16 rounded-full bg-amber-400 border-4 border-amber-300 shadow-lg"
+        style={{
+          left: targetPos.x - 32,
+          top: targetPos.y - 32,
+        }}
+        aria-hidden
+      />
     </div>
   );
 }
