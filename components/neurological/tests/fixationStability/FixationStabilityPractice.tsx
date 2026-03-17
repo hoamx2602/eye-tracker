@@ -1,12 +1,16 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { usePracticeGate } from '../../PracticeGate';
 import { DEFAULT_BLINK_INTERVAL_MS, PRACTICE_DURATION_SEC } from './constants';
 
 /**
  * Optional practice: dot nháy một lát rồi dừng; không hiển thị thời gian, chỉ hướng dẫn nhìn đến khi hết nháy.
  */
 export default function FixationStabilityPractice() {
+  const practiceGate = usePracticeGate();
+  const practiceGateRef = useRef(practiceGate);
+  practiceGateRef.current = practiceGate;
   const [blinkVisible, setBlinkVisible] = useState(true);
   const blinkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -21,6 +25,7 @@ export default function FixationStabilityPractice() {
           blinkIntervalRef.current = null;
         }
         setBlinkVisible(true);
+        practiceGateRef.current?.markPracticeDone();
         clearInterval(check);
       }
     }, 200);

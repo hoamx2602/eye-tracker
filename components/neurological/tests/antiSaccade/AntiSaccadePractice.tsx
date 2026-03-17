@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { usePracticeGate } from '../../PracticeGate';
 import {
   DEFAULT_MOVEMENT_DURATION_MS,
   OPPOSITE_DIRECTION,
@@ -80,6 +81,9 @@ function getStimulusShape(config?: Record<string, unknown>): AntiSaccadeStimulus
  * Sau khi hết 3 trial, đếm ngược practiceRestartDelaySec (từ config, 1–4 s) rồi tự chạy lại.
  */
 export default function AntiSaccadePractice({ config }: { config?: Record<string, unknown> }) {
+  const practiceGate = usePracticeGate();
+  const practiceGateRef = useRef(practiceGate);
+  practiceGateRef.current = practiceGate;
   const restartDelaySec = getRestartDelaySec(config);
   const movementDurationMs = getMovementDurationMs(config, TRAVEL_DISTANCE_PX);
   const dimOpacity = getDimRectOpacity(config);
@@ -108,6 +112,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
         if (trialIndex + 1 >= PRACTICE_TRIALS) {
           if (intervalRef.current) clearInterval(intervalRef.current);
           intervalRef.current = null;
+          practiceGateRef.current?.markPracticeDone();
           setRestartIn(restartDelaySec);
           return;
         }

@@ -27,7 +27,7 @@ export type GuidePracticeTestFlowProps = {
 
 /**
  * Orchestrates Guide → (Practice?) → Test for a single neurological test.
- * Use this from the orchestrator (ticket 12) or when embedding one test.
+ * When test completes, shows overlay with Làm lại (redo) and Tiếp tục (continue).
  */
 export default function GuidePracticeTestFlow({
   testId,
@@ -41,6 +41,8 @@ export default function GuidePracticeTestFlow({
   completeButtonLabel = 'Start Test',
 }: GuidePracticeTestFlowProps) {
   const [phase, setPhase] = useState<GuidePracticeTestFlowPhase>('guide');
+  const [pendingPayload, setPendingPayload] = useState<TestResultPayload | null>(null);
+  const [testRunKey, setTestRunKey] = useState(0);
 
   if (phase === 'guide') {
     return (
@@ -72,12 +74,44 @@ export default function GuidePracticeTestFlow({
   }
 
   return (
-    <TestRunnerProvider
-      testId={testId}
-      config={config}
-      onTestComplete={onTestComplete}
-    >
-      {testContent}
-    </TestRunnerProvider>
+    <>
+      <TestRunnerProvider
+        key={testRunKey}
+        testId={testId}
+        config={config}
+        onTestComplete={(payload) => setPendingPayload(payload)}
+      >
+        {testContent}
+      </TestRunnerProvider>
+      {pendingPayload !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="bg-gray-900 rounded-xl p-6 shadow-xl max-w-sm w-full mx-4 flex flex-col gap-4">
+            <p className="text-white text-center font-medium">Bài test hoàn thành</p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingPayload(null);
+                  setTestRunKey((k) => k + 1);
+                }}
+                className="flex-1 py-2.5 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium transition-colors"
+              >
+                Làm lại
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onTestComplete(pendingPayload);
+                  setPendingPayload(null);
+                }}
+                className="flex-1 py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-colors"
+              >
+                Tiếp tục
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
