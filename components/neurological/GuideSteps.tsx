@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import type { GuideStep } from './types';
 
-function HandPointerIcon({ className }: { className?: string }) {
+function InstructionIcon({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -15,11 +15,12 @@ function HandPointerIcon({ className }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M8 13V6.8a1.8 1.8 0 0 1 3.6 0V12" />
-      <path d="M11.6 12V7.6a1.6 1.6 0 0 1 3.2 0V12.2" />
-      <path d="M14.8 12.2V8.3a1.5 1.5 0 0 1 3 0V13" />
-      <path d="M8 13.2l-1.2-1.1a1.7 1.7 0 0 0-2.5 2.2l2.8 3.1c.6.7 1.5 1.1 2.4 1.1h4.2c2 0 3.7-1.3 4.3-3.2l.8-2.6" />
-      <path d="M12.2 4.7a1.6 1.6 0 0 1 1.6 1.6" opacity="0.6" />
+      {/* cursor */}
+      <path d="M6.5 3.5l10.2 10.2-4 .7-1.4 4.1L6.5 3.5z" />
+      {/* click rays */}
+      <path d="M18.5 6.5l2-2" opacity="0.7" />
+      <path d="M19 10h2.8" opacity="0.7" />
+      <path d="M16.5 4.5V1.8" opacity="0.7" />
     </svg>
   );
 }
@@ -88,7 +89,7 @@ export default function GuideSteps({
                     <div className="rounded-2xl border border-gray-800/70 bg-gradient-to-b from-gray-900/60 to-gray-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] transition hover:border-gray-700/70 hover:bg-gray-900/70">
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5 text-blue-200/80">
-                          <HandPointerIcon className="w-5 h-5" />
+                          <InstructionIcon className="w-5 h-5" />
                         </div>
                         <div className="min-w-0 flex-1">
                           {s.title ? (
