@@ -36,7 +36,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
     anti_saccade: { trialCount: 12, movementSpeedPxPerSec: 120, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3, dimRectOpacity: 0.1, showDimRect: true, stimulusShape: 'rectangle' },
     saccadic: { targetDurationMs: 1000, totalCycles: 18 },
-    fixation_stability: { durationSec: 12, blinkIntervalMs: 600 },
+    fixation_stability: { durationSec: 5, blinkIntervalMs: 600 },
     peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000 },
   };
   return { ...defaults[id], ...(params[id] ?? {}) };
@@ -360,9 +360,9 @@ export default function NeurologicalConfigForm() {
                     <>
                       <SelectNumber
                         label="Duration (s)"
-                        value={Number(params.durationSec) ?? 12}
+                        value={Number(params.durationSec) ?? 5}
                         onChange={(v) => setParam(id, 'durationSec', v)}
-                        options={[10, 11, 12, 13, 14, 15].map((n) => ({ value: n, label: `${n} s` }))}
+                        options={[5, 6, 8, 10, 12, 15].map((n) => ({ value: n, label: `${n} s` }))}
                       />
                       <SelectNumber
                         label="Blink interval (ms)"

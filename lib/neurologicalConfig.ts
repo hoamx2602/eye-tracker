@@ -28,7 +28,7 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     stimulusShape: 'rectangle',
   },
   saccadic: { targetDurationMs: 1000, totalCycles: 18 },
-  fixation_stability: { durationSec: 12, blinkIntervalMs: 600 },
+  fixation_stability: { durationSec: 5, blinkIntervalMs: 600 },
   peripheral_vision: {
     trialCount: 16,
     stimulusDurationMs: 300,

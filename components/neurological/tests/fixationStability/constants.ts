@@ -18,9 +18,9 @@ export const FIXATION_STABILITY_GUIDE_STEPS: GuideStep[] = [
   },
 ];
 
-/** Test duration in seconds (10–15). */
-export const DEFAULT_DURATION_SEC = 12;
-export const MIN_DURATION_SEC = 10;
+/** Test duration in seconds (5–15). */
+export const DEFAULT_DURATION_SEC = 5;
+export const MIN_DURATION_SEC = 5;
 export const MAX_DURATION_SEC = 15;
 /** Blink interval (ms) for the center dot. 0 = no blink. */
 export const DEFAULT_BLINK_INTERVAL_MS = 600;
