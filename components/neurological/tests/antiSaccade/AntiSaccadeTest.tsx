@@ -13,6 +13,10 @@ import {
   TRAVEL_DISTANCE_PX,
   type AntiSaccadeDirection,
 } from './constants';
+
+function isHorizontalDirection(d: AntiSaccadeDirection): boolean {
+  return d === 'left' || d === 'right';
+}
 import { dimPosition, generateTrialDirections, primaryPosition } from './utils';
 
 export interface AntiSaccadeTrialResult {
@@ -50,7 +54,7 @@ export default function AntiSaccadeTest() {
   const intervalMs = Math.max(200, Number(config.intervalBetweenTrialsMs) ?? DEFAULT_INTERVAL_BETWEEN_TRIALS_MS);
   const dimRectOpacity = (() => {
     const v = Number(config.dimRectOpacity);
-    return Number.isFinite(v) ? Math.max(0.2, Math.min(0.9, v)) : 0.6;
+    return Number.isFinite(v) ? Math.max(0.1, Math.min(0.9, v)) : 0.1;
   })();
 
   const directions = useMemo(() => generateTrialDirections(trialCount), [trialCount]);
@@ -171,29 +175,49 @@ export default function AntiSaccadeTest() {
       <p className="text-center text-gray-400 text-sm pt-4 pb-2">
         Look at the <strong className="text-gray-300">dim</strong> rectangle. Trial {trialIndex + 1} of {trialCount}.
       </p>
-      {/* Primary (bright) rectangle — do not look at this one */}
-      <div
-        className="absolute bg-blue-400 rounded-lg shadow-lg border-2 border-blue-300"
-        style={{
-          left: primaryPos.x - RECT_HALF_PX,
-          top: primaryPos.y - RECT_HALF_PX / 2,
-          width: RECT_HALF_PX * 2,
-          height: RECT_HALF_PX,
-        }}
-        aria-hidden
-      />
-      {/* Dim (target) rectangle — look at this one; opacity from config */}
-      <div
-        className="absolute bg-slate-500 rounded-lg border border-slate-400"
-        style={{
-          left: dimPos.x - RECT_HALF_PX,
-          top: dimPos.y - RECT_HALF_PX / 2,
-          width: RECT_HALF_PX * 2,
-          height: RECT_HALF_PX,
-          opacity: dimRectOpacity,
-        }}
-        aria-hidden
-      />
+      {progress === 0 && direction ? (
+        /* Một hình duy nhất lúc mới vào: ngang khi trái/phải, dọc khi lên/xuống; viền nét đứt */
+        <div
+          className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
+          style={{
+            left: isHorizontalDirection(direction)
+              ? center.x - RECT_HALF_PX
+              : center.x - RECT_HALF_PX / 2,
+            top: isHorizontalDirection(direction)
+              ? center.y - RECT_HALF_PX / 2
+              : center.y - RECT_HALF_PX,
+            width: isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX,
+            height: isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2,
+            opacity: dimRectOpacity,
+          }}
+          aria-hidden
+        />
+      ) : (
+        <>
+          {/* Hai nửa sau khi tách */}
+          <div
+            className="absolute bg-blue-400 rounded-lg shadow-lg border-2 border-blue-300"
+            style={{
+              left: primaryPos.x - RECT_HALF_PX / 2,
+              top: primaryPos.y - RECT_HALF_PX / 2,
+              width: RECT_HALF_PX,
+              height: RECT_HALF_PX,
+            }}
+            aria-hidden
+          />
+          <div
+            className="absolute rounded-lg border-2 border-dashed border-slate-400 bg-slate-500"
+            style={{
+              left: dimPos.x - RECT_HALF_PX / 2,
+              top: dimPos.y - RECT_HALF_PX / 2,
+              width: RECT_HALF_PX,
+              height: RECT_HALF_PX,
+              opacity: dimRectOpacity,
+            }}
+            aria-hidden
+          />
+        </>
+      )}
     </div>
   );
 }
