@@ -59,6 +59,8 @@ export default function FixationStabilityTest() {
   const { gaze } = useNeuroGaze();
   const gazeRef = useRef(gaze);
   gazeRef.current = gaze;
+  const completeTestRef = useRef(completeTest);
+  completeTestRef.current = completeTest;
 
   const durationSec = Math.max(
     MIN_DURATION_SEC,
@@ -99,7 +101,7 @@ export default function FixationStabilityTest() {
       const dispersionPx = std(distances);
       const microSaccadeCount = countMicroSaccades(samples, 50);
 
-      completeTest({
+      completeTestRef.current({
         testId: 'fixation_stability',
         startTime: startTimeRef.current,
         endTime,
@@ -117,7 +119,7 @@ export default function FixationStabilityTest() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (endTimeoutRef.current) clearTimeout(endTimeoutRef.current);
     };
-  }, [durationSec, completeTest]);
+  }, [durationSec]);
 
   useEffect(() => {
     if (blinkIntervalMs <= 0) return;
