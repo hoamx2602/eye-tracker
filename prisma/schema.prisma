@@ -98,6 +98,16 @@ model NeurologicalRun {
   status String @default("in_progress")
 }
 
+// App & calibration config (admin-editable default; app fetches via GET /api/app-config)
+model AppConfig {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name   String @default("default") @unique
+  config Json   // AppConfig JSON (calibration, smoothing, recording, etc.)
+}
+
 model Admin {
   id           String   @id @default(cuid())
   email        String   @unique

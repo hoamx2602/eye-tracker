@@ -41,10 +41,10 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
               Tests
             </Link>
             <Link
-              href="/admin/neurological-config"
-              className={`font-medium transition ${pathname?.startsWith('/admin/neurological-config') ? 'text-white' : 'text-slate-300 hover:text-white'}`}
+              href="/admin/config"
+              className={`font-medium transition ${pathname?.startsWith('/admin/config') ? 'text-white' : 'text-slate-300 hover:text-white'}`}
             >
-              Neuro config
+              Config
             </Link>
           </nav>
           <button
