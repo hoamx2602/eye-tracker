@@ -22,6 +22,7 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     trialCount: 12,
     movementDurationMs: 1500,
     intervalBetweenTrialsMs: 800,
+    practiceRestartDelaySec: 3,
   },
   saccadic: { targetDurationMs: 1000, totalCycles: 18 },
   fixation_stability: { durationSec: 12, blinkIntervalMs: 600 },

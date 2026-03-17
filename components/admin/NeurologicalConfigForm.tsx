@@ -33,7 +33,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
     head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
     visual_search: { numberCount: 8, practiceCount: 4, aoiRadiusPx: 80 },
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
-    anti_saccade: { trialCount: 12, movementDurationMs: 1500, intervalBetweenTrialsMs: 800 },
+    anti_saccade: { trialCount: 12, movementDurationMs: 1500, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3 },
     saccadic: { targetDurationMs: 1000, totalCycles: 18 },
     fixation_stability: { durationSec: 12, blinkIntervalMs: 600 },
     peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000 },
@@ -298,6 +298,12 @@ export default function NeurologicalConfigForm() {
                         value={Number(params.intervalBetweenTrialsMs) ?? 800}
                         onChange={(v) => setParam(id, 'intervalBetweenTrialsMs', v)}
                         options={[400, 600, 800, 1000, 1200, 1500, 2000, 3000].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
+                      <SelectNumber
+                        label="Practice: thời gian chờ trước khi tự chạy lại (s)"
+                        value={Number(params.practiceRestartDelaySec) ?? 3}
+                        onChange={(v) => setParam(id, 'practiceRestartDelaySec', v)}
+                        options={[1, 2, 3, 4].map((n) => ({ value: n, label: `${n} s` }))}
                       />
                     </>
                   )}

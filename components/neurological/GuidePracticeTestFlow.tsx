@@ -14,8 +14,8 @@ export type GuidePracticeTestFlowProps = {
   guideSteps: GuideStep[];
   /** If true, show PracticeGate with practiceContent before test phase */
   enablePractice?: boolean;
-  /** Content shown during practice (e.g. simplified task). Required if enablePractice is true. */
-  practiceContent?: React.ReactNode;
+  /** Content shown during practice. May be ReactNode or (config) => ReactNode to receive test config. */
+  practiceContent?: React.ReactNode | ((config: Record<string, unknown>) => React.ReactNode);
   /** Optional title for the practice screen */
   practiceTitle?: string;
   /** Content rendered during test phase. Must use useTestRunner() and call completeTest(payload) when done. */
@@ -59,12 +59,14 @@ export default function GuidePracticeTestFlow({
   }
 
   if (phase === 'practice') {
+    const content =
+      typeof practiceContent === 'function' ? practiceContent(config) : practiceContent;
     return (
       <PracticeGate
         title={practiceTitle}
         onStartRealTest={() => setPhase('test')}
       >
-        {practiceContent}
+        {content}
       </PracticeGate>
     );
   }

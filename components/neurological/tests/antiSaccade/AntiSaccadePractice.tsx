@@ -4,13 +4,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   DEFAULT_MOVEMENT_DURATION_MS,
   OPPOSITE_DIRECTION,
+  PRACTICE_TRIALS,
   RECT_HALF_PX,
   TRAVEL_DISTANCE_PX,
   type AntiSaccadeDirection,
 } from './constants';
 import { generateTrialDirections } from './utils';
 
-const PRACTICE_TRIALS = 3;
 const BOX_SIZE = 360;
 const CENTER = BOX_SIZE / 2;
 
@@ -25,20 +25,35 @@ function offset(d: AntiSaccadeDirection, progress: number, travel: number): { x:
   }
 }
 
+const DEFAULT_RESTART_DELAY_SEC = 3;
+const RESTART_DELAY_MIN = 1;
+const RESTART_DELAY_MAX = 4;
+
+function getRestartDelaySec(config?: Record<string, unknown>): number {
+  const v = Number(config?.practiceRestartDelaySec);
+  if (!Number.isFinite(v)) return DEFAULT_RESTART_DELAY_SEC;
+  return Math.max(RESTART_DELAY_MIN, Math.min(RESTART_DELAY_MAX, Math.round(v)));
+}
+
 /**
  * Practice: a few anti-saccade trials, same visual, no recording.
+ * Sau khi hết 3 trial, đếm ngược practiceRestartDelaySec (từ config, 1–4 s) rồi tự chạy lại.
  */
-export default function AntiSaccadePractice() {
-  const directions = useRef(generateTrialDirections(PRACTICE_TRIALS)).current;
+export default function AntiSaccadePractice({ config }: { config?: Record<string, unknown> }) {
+  const restartDelaySec = getRestartDelaySec(config);
+  const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS));
   const [trialIndex, setTrialIndex] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [restartIn, setRestartIn] = useState<number | null>(null);
   const movementStartRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const direction = directions[trialIndex];
+  const direction = directionsRef.current[trialIndex];
   const primaryOff = direction ? offset(direction, progress, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
   const dimOff = direction ? offset(OPPOSITE_DIRECTION[direction], progress, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
 
+  // Movement animation
   useEffect(() => {
+    if (restartIn !== null) return;
     movementStartRef.current = performance.now();
     const id = setInterval(() => {
       const now = performance.now();
@@ -48,6 +63,8 @@ export default function AntiSaccadePractice() {
       if (p >= 1) {
         if (trialIndex + 1 >= PRACTICE_TRIALS) {
           if (intervalRef.current) clearInterval(intervalRef.current);
+          intervalRef.current = null;
+          setRestartIn(restartDelaySec);
           return;
         }
         setTrialIndex((i) => i + 1);
@@ -58,14 +75,41 @@ export default function AntiSaccadePractice() {
     intervalRef.current = id;
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = null;
     };
-  }, [trialIndex]);
+  }, [trialIndex, restartIn]);
+
+  // Countdown then restart
+  useEffect(() => {
+    if (restartIn === null || restartIn <= 0) return;
+    const t = setInterval(() => {
+      setRestartIn((prev) => {
+        if (prev === null || prev <= 0) return null;
+        const next = prev - 1;
+        if (next === 0) {
+          directionsRef.current = generateTrialDirections(PRACTICE_TRIALS);
+          setTrialIndex(0);
+          setProgress(0);
+          movementStartRef.current = performance.now();
+          return null;
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [restartIn]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[300px]">
-      <p className="text-gray-400 text-sm mb-4">
-        Follow the <strong className="text-slate-300">dim</strong> rectangle with your eyes. Trial {trialIndex + 1} of {PRACTICE_TRIALS}.
-      </p>
+      {restartIn !== null ? (
+        <p className="text-gray-400 text-sm mb-4">
+          Tự động chạy lại mô phỏng sau <strong className="text-amber-400">{restartIn}</strong> giây…
+        </p>
+      ) : (
+        <p className="text-gray-400 text-sm mb-4">
+          Follow the <strong className="text-slate-300">dim</strong> rectangle with your eyes. Trial {trialIndex + 1} of {PRACTICE_TRIALS}.
+        </p>
+      )}
       <div className="relative rounded-xl overflow-hidden bg-gray-900" style={{ width: BOX_SIZE, height: BOX_SIZE }}>
         <div
           className="absolute bg-blue-400 rounded-lg border-2 border-blue-300"
