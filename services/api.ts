@@ -59,12 +59,27 @@ export interface NeurologicalRun {
   updatedAt: string;
 }
 
+/** Public default config (testOrder, testParameters, testEnabled) for run creation. */
+export async function getNeurologicalConfig(): Promise<{
+  testOrder: string[];
+  testParameters: Record<string, unknown>;
+  testEnabled: Record<string, boolean>;
+}> {
+  const url = `${getBaseUrl()}/api/neurological-config?t=${Date.now()}`;
+  const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to load neurological config');
+  return res.json();
+}
+
 export const neurologicalRunsApi = {
-  async create(sessionId: string): Promise<NeurologicalRun> {
+  async create(
+    sessionId: string,
+    configSnapshot?: { testOrder: string[]; testParameters: Record<string, unknown>; testEnabled: Record<string, boolean> }
+  ): Promise<NeurologicalRun> {
     const res = await fetch(`${getBaseUrl()}/api/neurological-runs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId }),
+      body: JSON.stringify(configSnapshot ? { sessionId, configSnapshot } : { sessionId }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

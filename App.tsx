@@ -22,7 +22,7 @@ import {
 } from './types';
 import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
 import { HybridRegressor, GazeSmoother, DataCleaner } from './services/mathUtils';
-import { sessionsApi, uploadApi, neurologicalRunsApi } from './services/api';
+import { sessionsApi, uploadApi, neurologicalRunsApi, getNeurologicalConfig } from './services/api';
 import CalibrationLayer from './components/CalibrationLayer';
 import EyeMovementLayer from './components/EyeMovementLayer';
 import GazeCursor from './components/GazeCursor';
@@ -722,7 +722,7 @@ function App() {
             const bc = brightnessCanvasRef.current;
             bc.width = 100;
             bc.height = 100;
-            const bctx = bc.getContext('2d');
+            const bctx = bc.getContext('2d', { willReadFrequently: true });
             if (bctx) {
               bctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, 100, 100);
               const img = bctx.getImageData(0, 0, 100, 100).data;
@@ -1978,11 +1978,16 @@ function App() {
             setCurrentNeuroTestId(null);
             setCurrentNeuroTestIndex(0);
             try {
-              const run = await neurologicalRunsApi.create(createdSessionId!);
+              const configSnapshot = await getNeurologicalConfig();
+              const source = (configSnapshot as { _source?: string })._source;
+              const memParams = configSnapshot?.testParameters?.memory_cards as Record<string, unknown> | undefined;
+              console.log('[Neuro] Config source:', source ?? 'unknown', '| memory_cards.symbolSizePx =', memParams?.symbolSizePx, '| Save từ Admin trước nếu thấy source=default');
+              const run = await neurologicalRunsApi.create(createdSessionId!, configSnapshot);
               setNeuroRunId(run.id);
               const order = Array.isArray(run.testOrderSnapshot) ? run.testOrderSnapshot : [];
               setNeuroTestOrder(order);
               const snap = run.configSnapshot as { testOrder: string[]; testParameters: Record<string, Record<string, unknown>>; testEnabled: Record<string, boolean> } | undefined;
+              console.log('[Neuro] Run created; snapshot memory_cards =', snap?.testParameters?.memory_cards);
               setNeuroConfigSnapshot(snap ?? { testOrder: order, testParameters: {}, testEnabled: {} });
               setNeuroRunStatus('ready');
               pathSyncSourceRef.current = 'internal';
@@ -2107,7 +2112,7 @@ function App() {
             practiceContent={<MemoryCardsPractice />}
             practiceTitle="Practice: Memory Cards (2×2)"
             testContent={<MemoryCardsTest />}
-            config={(neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { gridSize: DEFAULT_GRID_SIZE, dwellMs: DEFAULT_DWELL_MS, symbolSize: 'lg', symbolScale: 1.5 }}
+            config={(neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { gridSize: DEFAULT_GRID_SIZE, dwellMs: DEFAULT_DWELL_MS, symbolSizePx: 40 }}
             onTestComplete={(payload) => handleNeuroTestComplete('memory_cards', payload)}
           />
         </NeuroGazeProvider>

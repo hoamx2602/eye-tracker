@@ -6,10 +6,11 @@ import { useNeuroGaze } from '../../NeuroGazeContext';
 import {
   DEFAULT_DWELL_MS,
   DEFAULT_SYMBOL_SCALE,
-  DEFAULT_SYMBOL_SIZE,
   FLIP_BACK_DELAY_MS,
   GAZE_PATH_INTERVAL_MS,
+  MAX_SYMBOL_SIZE_PX,
   MAX_SYMBOL_SCALE,
+  MIN_SYMBOL_SIZE_PX,
   MIN_SYMBOL_SCALE,
   type MemoryCardsGridSize,
   type MemoryCardsSymbolSize,
@@ -36,11 +37,8 @@ export interface MemoryCardsResult {
 const GRID_SIZES: MemoryCardsGridSize[] = [4, 6, 9];
 /** Base rem for symbol; scale is applied from config. */
 const SYMBOL_BASE_REM = 1.25;
-const SYMBOL_SIZE_CLASS: Record<MemoryCardsSymbolSize, string> = {
-  md: 'text-2xl',
-  lg: 'text-4xl',
-  xl: 'text-5xl',
-};
+/** Preset symbolSize → scale when symbolScale not in config. */
+const SYMBOL_SIZE_TO_SCALE: Record<MemoryCardsSymbolSize, number> = { md: 1, lg: 1.35, xl: 1.9 };
 const SYMBOLS = '◆●▲■★♦♥♣✓✗○◇☆▪▫①②③④⑤⑥⑦⑧⑨⑩'.split('');
 
 function getSymbol(id: number): string {
@@ -59,15 +57,21 @@ export default function MemoryCardsTest() {
     ? (Number(config.gridSize) as MemoryCardsGridSize)
     : 4;
   const dwellMs = Math.max(300, Number(config.dwellMs) ?? DEFAULT_DWELL_MS);
+  // Kích thước chữ: ưu tiên symbolSizePx (pixel); không có thì dùng scale/preset.
+  const sizePx = Number(config.symbolSizePx);
+  const usePx = Number.isFinite(sizePx) && sizePx >= MIN_SYMBOL_SIZE_PX && sizePx <= MAX_SYMBOL_SIZE_PX;
   const symbolScaleNum = Number(config.symbolScale);
-  const symbolScale = Number.isFinite(symbolScaleNum) && symbolScaleNum >= MIN_SYMBOL_SCALE && symbolScaleNum <= MAX_SYMBOL_SCALE
-    ? symbolScaleNum
-    : DEFAULT_SYMBOL_SCALE;
-  const symbolSize = (['md', 'lg', 'xl'] as MemoryCardsSymbolSize[]).includes(config.symbolSize as MemoryCardsSymbolSize)
-    ? (config.symbolSize as MemoryCardsSymbolSize)
-    : DEFAULT_SYMBOL_SIZE;
-  const symbolClass = Number.isFinite(Number(config.symbolScale)) ? '' : SYMBOL_SIZE_CLASS[symbolSize];
-  const symbolStyle = Number.isFinite(Number(config.symbolScale)) ? { fontSize: `${SYMBOL_BASE_REM * symbolScale}rem` } : undefined;
+  const hasExplicitScale = Number.isFinite(symbolScaleNum) && symbolScaleNum >= MIN_SYMBOL_SCALE && symbolScaleNum <= MAX_SYMBOL_SCALE;
+  const presetSize = (['md', 'lg', 'xl'] as MemoryCardsSymbolSize[]).includes(config.symbolSize as MemoryCardsSymbolSize) ? (config.symbolSize as MemoryCardsSymbolSize) : 'lg';
+  const symbolScale = hasExplicitScale ? symbolScaleNum : (SYMBOL_SIZE_TO_SCALE[presetSize] ?? DEFAULT_SYMBOL_SCALE);
+  const symbolStyle = usePx
+    ? { fontSize: `${sizePx}px` }
+    : { fontSize: `${SYMBOL_BASE_REM * symbolScale}rem` };
+
+  // Log config để debug: xem run có nhận symbolSizePx không (run mới sau khi Save config).
+  useEffect(() => {
+    console.log('[MemoryCards] config', JSON.stringify(config), '| symbolSizePx', config.symbolSizePx, 'usePx', usePx, '→ style', symbolStyle);
+  }, [config.gridSize, config.dwellMs, config.symbolSizePx, config.symbolScale, config.symbolSize, usePx, symbolStyle.fontSize]);
 
   const [board] = useState(() => createBoard(gridSize));
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
@@ -236,7 +240,7 @@ export default function MemoryCardsTest() {
             disabled={value < 0 || matched.has(index) || secondSelected !== null}
             onClick={() => selectCard(index)}
             className={`
-              w-full h-full min-w-[28px] min-h-[28px] rounded-lg border-2 flex items-center justify-center font-bold ${symbolClass}
+              w-full h-full min-w-[28px] min-h-[28px] rounded-lg border-2 flex items-center justify-center font-bold
               transition-all duration-200
               ${value < 0 ? 'invisible' : ''}
               ${matched.has(index) ? 'bg-emerald-700 border-emerald-500 text-white' : ''}

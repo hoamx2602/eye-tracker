@@ -28,10 +28,14 @@ export const DEFAULT_GRID_SIZE: MemoryCardsGridSize = 4;
 /** Symbol size preset: 'md' | 'lg' | 'xl'. */
 export type MemoryCardsSymbolSize = 'md' | 'lg' | 'xl';
 export const DEFAULT_SYMBOL_SIZE: MemoryCardsSymbolSize = 'lg';
-/** Numeric scale for symbol size (0.8–2.5). Applied as fontSize = baseRem * symbolScale. Overrides symbolSize when set. */
+/** Numeric scale for symbol size (0.8–2.5). Fallback when symbolSizePx not set. */
 export const DEFAULT_SYMBOL_SCALE = 1.5;
 export const MIN_SYMBOL_SCALE = 0.8;
 export const MAX_SYMBOL_SCALE = 2.5;
+/** Symbol size in pixels (ưu tiên). Kích thước chữ/hình trong ô thẻ. */
+export const DEFAULT_SYMBOL_SIZE_PX = 40;
+export const MIN_SYMBOL_SIZE_PX = 16;
+export const MAX_SYMBOL_SIZE_PX = 200;
 /** Practice grid: 2×2 = 2 cards = 1 pair. */
 export const PRACTICE_GRID_SIZE = 2;
 /** Gaze path sample interval (ms). */

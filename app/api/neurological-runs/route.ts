@@ -30,16 +30,33 @@ export async function POST(request: NextRequest) {
     }
 
     let configSnapshot: { testOrder: string[]; testParameters: Record<string, unknown>; testEnabled: Record<string, boolean> };
-    const dbConfig = await prisma.neurologicalTestConfig.findFirst({
-      where: { name: 'default' },
-    });
-    if (dbConfig && dbConfig.testOrder && typeof dbConfig.testOrder === 'object') {
-      const order = Array.isArray(dbConfig.testOrder) ? (dbConfig.testOrder as string[]) : [];
-      const params = (dbConfig.testParameters as Record<string, unknown>) ?? {};
-      const enabled = (dbConfig.testEnabled as Record<string, boolean>) ?? {};
-      configSnapshot = { testOrder: order, testParameters: params, testEnabled: enabled };
+    const bodySnapshot = body.configSnapshot;
+    if (
+      bodySnapshot &&
+      typeof bodySnapshot === 'object' &&
+      Array.isArray(bodySnapshot.testOrder) &&
+      typeof bodySnapshot.testParameters === 'object' &&
+      bodySnapshot.testParameters !== null &&
+      typeof bodySnapshot.testEnabled === 'object' &&
+      bodySnapshot.testEnabled !== null
+    ) {
+      configSnapshot = {
+        testOrder: bodySnapshot.testOrder as string[],
+        testParameters: bodySnapshot.testParameters as Record<string, unknown>,
+        testEnabled: bodySnapshot.testEnabled as Record<string, boolean>,
+      };
     } else {
-      configSnapshot = getDefaultConfigSnapshot() as { testOrder: string[]; testParameters: Record<string, unknown>; testEnabled: Record<string, boolean> };
+      const dbConfig = await prisma.neurologicalTestConfig.findFirst({
+        where: { name: 'default' },
+      });
+      if (dbConfig && dbConfig.testOrder && typeof dbConfig.testOrder === 'object') {
+        const order = Array.isArray(dbConfig.testOrder) ? (dbConfig.testOrder as string[]) : [];
+        const params = (dbConfig.testParameters as Record<string, unknown>) ?? {};
+        const enabled = (dbConfig.testEnabled as Record<string, boolean>) ?? {};
+        configSnapshot = { testOrder: order, testParameters: params, testEnabled: enabled };
+      } else {
+        configSnapshot = getDefaultConfigSnapshot() as { testOrder: string[]; testParameters: Record<string, unknown>; testEnabled: Record<string, boolean> };
+      }
     }
 
     const testOrderSnapshot = configSnapshot.testOrder;
