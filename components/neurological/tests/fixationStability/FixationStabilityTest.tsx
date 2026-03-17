@@ -70,7 +70,6 @@ export default function FixationStabilityTest() {
   const gazeSamplesRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const endTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [elapsedSec, setElapsedSec] = useState(0);
   const [blinkVisible, setBlinkVisible] = useState(true);
 
   useEffect(() => {
@@ -82,7 +81,6 @@ export default function FixationStabilityTest() {
       const t = (now - startTimeRef.current) / 1000;
       const g = gazeRef.current;
       gazeSamplesRef.current.push({ t, x: g.x, y: g.y });
-      setElapsedSec(Math.min(durationSec, t));
     }, GAZE_SAMPLE_INTERVAL_MS);
 
     endTimeoutRef.current = setTimeout(() => {
@@ -127,8 +125,6 @@ export default function FixationStabilityTest() {
     return () => clearInterval(id);
   }, [blinkIntervalMs]);
 
-  const remaining = Math.max(0, Math.ceil(durationSec - elapsedSec));
-
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-950"
@@ -136,7 +132,7 @@ export default function FixationStabilityTest() {
       aria-label="Fixation stability: keep gaze on the dot"
     >
       <p className="text-gray-400 text-sm mb-4">
-        Keep your gaze on the dot. Time remaining: <span className="font-mono text-white">{remaining}</span> s
+        Keep your gaze on the dot.
       </p>
       <div
         className="w-3 h-3 rounded-full bg-amber-400 shadow-lg"
