@@ -14,7 +14,7 @@ function getSymbol(id: number): string {
  * Practice: 2×2 grid (1 pair). No recording; just get familiar with flip and match.
  */
 export default function MemoryCardsPractice() {
-  const [board] = useState(() => createBoard(PRACTICE_GRID_SIZE));
+  const [{ cards: board }] = useState(() => createBoard(PRACTICE_GRID_SIZE * PRACTICE_GRID_SIZE));
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [matched, setMatched] = useState<Set<number>>(new Set());
   const [firstSelected, setFirstSelected] = useState<number | null>(null);

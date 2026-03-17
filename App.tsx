@@ -62,7 +62,6 @@ import MemoryCardsTest from '@/components/neurological/tests/memoryCards/MemoryC
 import MemoryCardsPractice from '@/components/neurological/tests/memoryCards/MemoryCardsPractice';
 import {
   MEMORY_CARDS_GUIDE_STEPS,
-  DEFAULT_GRID_SIZE,
   DEFAULT_DWELL_MS,
 } from '@/components/neurological/tests/memoryCards/constants';
 import AntiSaccadeTest from '@/components/neurological/tests/antiSaccade/AntiSaccadeTest';
@@ -225,6 +224,7 @@ function App() {
     testParameters: Record<string, Record<string, unknown>>;
     testEnabled: Record<string, boolean>;
   } | null>(null);
+  const NEURO_CONFIG_LS_KEY = 'neuro_config_snapshot_v1';
   const [currentNeuroTestIndex, setCurrentNeuroTestIndex] = useState(0);
   const [preSymptomScores, setPreSymptomScores] = useState<SymptomScores | null>(null);
   const [postSymptomScores, setPostSymptomScores] = useState<SymptomScores | null>(null);
@@ -496,6 +496,21 @@ function App() {
       console.log('[App] status=', status, 'pathname=', typeof pathname === 'string' ? pathname : pathname);
     }
   }, [status, pathname]);
+
+  // Load cached neuro config snapshot for this browser session.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(NEURO_CONFIG_LS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as any;
+      if (parsed && typeof parsed === 'object' && parsed.testParameters && parsed.testEnabled) {
+        setNeuroConfigSnapshot(parsed);
+      }
+    } catch (_) {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // After nav to /tracking Next may remount App → hasCameraStream resets. If we have a session (came from calibration), re-start camera.
   const hasTriedRestartCameraRef = useRef(false);
@@ -1981,14 +1996,24 @@ function App() {
               const configSnapshot = await getNeurologicalConfig();
               const source = (configSnapshot as { _source?: string })._source;
               const memParams = configSnapshot?.testParameters?.memory_cards as Record<string, unknown> | undefined;
-              console.log('[Neuro] Config source:', source ?? 'unknown', '| memory_cards.symbolSizePx =', memParams?.symbolSizePx, '| Save từ Admin trước nếu thấy source=default');
+              console.log('[Neuro] Config source:', source ?? 'unknown', '| memory_cards.cardCount =', memParams?.cardCount, '| Save từ Admin trước nếu thấy source=default');
+              // Persist snapshot for the rest of this browser session (avoid race/state loss).
+              try {
+                localStorage.setItem(NEURO_CONFIG_LS_KEY, JSON.stringify(configSnapshot));
+              } catch (_) {}
               const run = await neurologicalRunsApi.create(createdSessionId!, configSnapshot);
               setNeuroRunId(run.id);
               const order = Array.isArray(run.testOrderSnapshot) ? run.testOrderSnapshot : [];
               setNeuroTestOrder(order);
               const snap = run.configSnapshot as { testOrder: string[]; testParameters: Record<string, Record<string, unknown>>; testEnabled: Record<string, boolean> } | undefined;
               console.log('[Neuro] Run created; snapshot memory_cards =', snap?.testParameters?.memory_cards);
-              setNeuroConfigSnapshot(snap ?? { testOrder: order, testParameters: {}, testEnabled: {} });
+              // Use cached snapshot as source of truth for this session.
+              const chosen = configSnapshot as any;
+              setNeuroConfigSnapshot({
+                testOrder: Array.isArray(chosen.testOrder) ? chosen.testOrder : order,
+                testParameters: (chosen.testParameters as Record<string, Record<string, unknown>>) ?? {},
+                testEnabled: (chosen.testEnabled as Record<string, boolean>) ?? {},
+              });
               setNeuroRunStatus('ready');
               pathSyncSourceRef.current = 'internal';
               router.push(PATHS.NEURO_PRE);
@@ -2112,7 +2137,7 @@ function App() {
             practiceContent={<MemoryCardsPractice />}
             practiceTitle="Practice: Memory Cards (2×2)"
             testContent={<MemoryCardsTest />}
-            config={(neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { gridSize: DEFAULT_GRID_SIZE, dwellMs: DEFAULT_DWELL_MS, symbolSizePx: 40 }}
+            config={(neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { cardCount: 16, dwellMs: DEFAULT_DWELL_MS, symbolSize: 'lg' }}
             onTestComplete={(payload) => handleNeuroTestComplete('memory_cards', payload)}
           />
         </NeuroGazeProvider>

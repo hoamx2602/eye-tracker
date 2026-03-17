@@ -22,13 +22,6 @@ export async function POST(request: NextRequest) {
     const existing = await prisma.neurologicalRun.findUnique({
       where: { sessionId },
     });
-    if (existing) {
-      return NextResponse.json(
-        { error: 'This session already has a neurological run' },
-        { status: 409 }
-      );
-    }
-
     let configSnapshot: { testOrder: string[]; testParameters: Record<string, unknown>; testEnabled: Record<string, boolean> };
     const bodySnapshot = body.configSnapshot;
     if (
@@ -40,6 +33,7 @@ export async function POST(request: NextRequest) {
       typeof bodySnapshot.testEnabled === 'object' &&
       bodySnapshot.testEnabled !== null
     ) {
+      console.log('[api/neurological-runs POST] source=body sessionId=', sessionId, 'existingRun=', Boolean(existing));
       configSnapshot = {
         testOrder: bodySnapshot.testOrder as string[],
         testParameters: bodySnapshot.testParameters as Record<string, unknown>,
@@ -50,25 +44,38 @@ export async function POST(request: NextRequest) {
         where: { name: 'default' },
       });
       if (dbConfig && dbConfig.testOrder && typeof dbConfig.testOrder === 'object') {
+        console.log('[api/neurological-runs POST] source=db sessionId=', sessionId, 'existingRun=', Boolean(existing), 'dbConfig.updatedAt=', dbConfig.updatedAt?.toISOString?.());
         const order = Array.isArray(dbConfig.testOrder) ? (dbConfig.testOrder as string[]) : [];
         const params = (dbConfig.testParameters as Record<string, unknown>) ?? {};
         const enabled = (dbConfig.testEnabled as Record<string, boolean>) ?? {};
         configSnapshot = { testOrder: order, testParameters: params, testEnabled: enabled };
       } else {
+        console.log('[api/neurological-runs POST] source=default sessionId=', sessionId, 'existingRun=', Boolean(existing));
         configSnapshot = getDefaultConfigSnapshot() as { testOrder: string[]; testParameters: Record<string, unknown>; testEnabled: Record<string, boolean> };
       }
     }
 
     const testOrderSnapshot = configSnapshot.testOrder;
+    console.log('[api/neurological-runs POST] snapshot memory_cards=', (configSnapshot.testParameters as any)?.memory_cards);
 
-    const run = await prisma.neurologicalRun.create({
-      data: {
-        sessionId,
-        configSnapshot,
-        testOrderSnapshot,
-        status: 'in_progress',
-      },
-    });
+    // If a run already exists for this session, refresh its snapshot so latest admin config applies.
+    // This is especially helpful during iterative tuning/testing.
+    const run = existing
+      ? await prisma.neurologicalRun.update({
+          where: { id: existing.id },
+          data: {
+            configSnapshot,
+            testOrderSnapshot,
+          },
+        })
+      : await prisma.neurologicalRun.create({
+          data: {
+            sessionId,
+            configSnapshot,
+            testOrderSnapshot,
+            status: 'in_progress',
+          },
+        });
 
     return NextResponse.json(
       {
@@ -83,7 +90,7 @@ export async function POST(request: NextRequest) {
         createdAt: run.createdAt,
         updatedAt: run.updatedAt,
       },
-      { status: 201 }
+      { status: existing ? 200 : 201 }
     );
   } catch (e) {
     console.error('[api/neurological-runs POST]', e);

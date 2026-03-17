@@ -22,20 +22,23 @@ export const MEMORY_CARDS_GUIDE_STEPS: GuideStep[] = [
   },
 ];
 
-/** Grid size for main test: 4 → 4×4 (8 pairs), 6 → 6×6 (18 pairs), 9 → 9×9 (40 pairs, one empty). */
-export type MemoryCardsGridSize = 4 | 6 | 9;
-export const DEFAULT_GRID_SIZE: MemoryCardsGridSize = 4;
-/** Symbol size preset: 'md' | 'lg' | 'xl'. */
-export type MemoryCardsSymbolSize = 'md' | 'lg' | 'xl';
+/** Total cards shown in the grid (must be even). */
+export const MEMORY_CARDS_CARD_COUNTS = [6, 8, 12, 16, 20, 24, 28, 32] as const;
+export type MemoryCardsCardCount = (typeof MEMORY_CARDS_CARD_COUNTS)[number];
+export const DEFAULT_CARD_COUNT: MemoryCardsCardCount = 16;
+
+/** Symbol size preset: 'sm' | 'md' | 'lg' | 'xl'. */
+export const MEMORY_CARDS_SYMBOL_SIZES = ['sm', 'md', 'lg', 'xl'] as const;
+export type MemoryCardsSymbolSize = (typeof MEMORY_CARDS_SYMBOL_SIZES)[number];
 export const DEFAULT_SYMBOL_SIZE: MemoryCardsSymbolSize = 'lg';
-/** Numeric scale for symbol size (0.8–2.5). Fallback when symbolSizePx not set. */
-export const DEFAULT_SYMBOL_SCALE = 1.5;
-export const MIN_SYMBOL_SCALE = 0.8;
-export const MAX_SYMBOL_SCALE = 2.5;
-/** Symbol size in pixels (ưu tiên). Kích thước chữ/hình trong ô thẻ. */
-export const DEFAULT_SYMBOL_SIZE_PX = 40;
-export const MIN_SYMBOL_SIZE_PX = 16;
-export const MAX_SYMBOL_SIZE_PX = 200;
+
+/** Map symbol preset → font size in px. */
+export const SYMBOL_SIZE_PX: Record<MemoryCardsSymbolSize, number> = {
+  sm: 28,
+  md: 36,
+  lg: 46,
+  xl: 58,
+};
 /** Practice grid: 2×2 = 2 cards = 1 pair. */
 export const PRACTICE_GRID_SIZE = 2;
 /** Gaze path sample interval (ms). */

@@ -32,7 +32,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
   const defaults: Record<string, Record<string, unknown>> = {
     head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
     visual_search: { numberCount: 8, practiceCount: 4, aoiRadiusPx: 80 },
-    memory_cards: { gridSize: 4, dwellMs: 800, symbolSizePx: 40 },
+    memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
     anti_saccade: { trialCount: 12, movementDurationMs: 1500, intervalBetweenTrialsMs: 800 },
     saccadic: { targetDurationMs: 1000, totalCycles: 18 },
     fixation_stability: { durationSec: 12, blinkIntervalMs: 600 },
@@ -233,13 +233,23 @@ export default function NeurologicalConfigForm() {
                   )}
                   {id === 'memory_cards' && (
                     <>
-                      <LabelInput
-                        label="Grid size (4|6|9)"
-                        value={Number(params.gridSize) ?? 4}
-                        onChange={(v) => setParam(id, 'gridSize', v)}
-                        min={4}
-                        max={9}
-                      />
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1">Card count</label>
+                        <select
+                          value={String(params.cardCount ?? 16)}
+                          onChange={(e) => setParam(id, 'cardCount', Number(e.target.value))}
+                          className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-slate-200 text-sm"
+                        >
+                          <option value={6}>6 cards</option>
+                          <option value={8}>8 cards</option>
+                          <option value={12}>12 cards</option>
+                          <option value={16}>16 cards</option>
+                          <option value={20}>20 cards</option>
+                          <option value={24}>24 cards</option>
+                          <option value={28}>28 cards</option>
+                          <option value={32}>32 cards</option>
+                        </select>
+                      </div>
                       <LabelInput
                         label="Dwell (ms)"
                         value={Number(params.dwellMs) ?? 800}
@@ -247,15 +257,20 @@ export default function NeurologicalConfigForm() {
                         min={200}
                         max={2000}
                       />
-                      <LabelInput
-                        label="Symbol size (px)"
-                        value={Number(params.symbolSizePx) ?? 40}
-                        onChange={(v) => setParam(id, 'symbolSizePx', v)}
-                        min={16}
-                        max={200}
-                        step={2}
-                      />
-                      <p className="text-xs text-slate-500 -mt-2">Kích thước chữ/hình trong ô thẻ (pixel). 16–200 px. Lưu rồi chọn Neurological (hoặc calibration mới rồi chọn Neurological) để áp dụng.</p>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1">Symbol size</label>
+                        <select
+                          value={String(params.symbolSize ?? 'lg')}
+                          onChange={(e) => setParam(id, 'symbolSize', e.target.value)}
+                          className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-slate-200 text-sm"
+                        >
+                          <option value="sm">Small</option>
+                          <option value="md">Medium</option>
+                          <option value="lg">Large</option>
+                          <option value="xl">Extra large</option>
+                        </select>
+                      </div>
+                      <p className="text-xs text-slate-500 -mt-1">Lưu rồi chọn Neurological để áp dụng.</p>
                     </>
                   )}
                   {id === 'anti_saccade' && (

@@ -72,6 +72,12 @@ export async function getNeurologicalConfig(): Promise<{
 }
 
 export const neurologicalRunsApi = {
+  async get(id: string): Promise<NeurologicalRun> {
+    const res = await fetch(`${getBaseUrl()}/api/neurological-runs/${id}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Get run failed: ${res.status}`);
+    return res.json();
+  },
+
   async create(
     sessionId: string,
     configSnapshot?: { testOrder: string[]; testParameters: Record<string, unknown>; testEnabled: Record<string, boolean> }

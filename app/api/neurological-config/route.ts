@@ -13,6 +13,7 @@ export async function GET() {
 
     if (!row) {
       const defaultSnap = getDefaultConfigSnapshot();
+      console.log('[api/neurological-config GET] source=default memory_cards=', (defaultSnap.testParameters as any)?.memory_cards);
       return NextResponse.json(
         {
           testOrder: defaultSnap.testOrder,
@@ -27,6 +28,7 @@ export async function GET() {
     const testOrder = Array.isArray(row.testOrder) ? row.testOrder : (row.testOrder as unknown) as string[];
     const testParameters = (row.testParameters as Record<string, unknown>) ?? {};
     const testEnabled = (row.testEnabled as Record<string, boolean>) ?? {};
+    console.log('[api/neurological-config GET] source=db updatedAt=', row.updatedAt?.toISOString?.(), 'memory_cards=', (testParameters as any)?.memory_cards);
 
     return NextResponse.json(
       { testOrder, testParameters, testEnabled, _source: 'db' },

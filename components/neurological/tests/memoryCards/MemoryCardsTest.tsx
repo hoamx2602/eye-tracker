@@ -5,14 +5,13 @@ import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroGaze } from '../../NeuroGazeContext';
 import {
   DEFAULT_DWELL_MS,
-  DEFAULT_SYMBOL_SCALE,
+  DEFAULT_CARD_COUNT,
   FLIP_BACK_DELAY_MS,
   GAZE_PATH_INTERVAL_MS,
-  MAX_SYMBOL_SIZE_PX,
-  MAX_SYMBOL_SCALE,
-  MIN_SYMBOL_SIZE_PX,
-  MIN_SYMBOL_SCALE,
-  type MemoryCardsGridSize,
+  SYMBOL_SIZE_PX,
+  MEMORY_CARDS_CARD_COUNTS,
+  MEMORY_CARDS_SYMBOL_SIZES,
+  type MemoryCardsCardCount,
   type MemoryCardsSymbolSize,
 } from './constants';
 import { createBoard } from './utils';
@@ -27,18 +26,16 @@ export interface MemoryCardsMove {
 export interface MemoryCardsResult {
   startTime: number;
   endTime: number;
-  gridSize: number;
+  cardCount: number;
+  cols: number;
+  rows: number;
   moves: MemoryCardsMove[];
   correctPairsCount: number;
   completionTimeMs: number;
   gazePath: Array<{ t: number; x: number; y: number }>;
 }
 
-const GRID_SIZES: MemoryCardsGridSize[] = [4, 6, 9];
-/** Base rem for symbol; scale is applied from config. */
 const SYMBOL_BASE_REM = 1.25;
-/** Preset symbolSize → scale when symbolScale not in config. */
-const SYMBOL_SIZE_TO_SCALE: Record<MemoryCardsSymbolSize, number> = { md: 1, lg: 1.35, xl: 1.9 };
 const SYMBOLS = '◆●▲■★♦♥♣✓✗○◇☆▪▫①②③④⑤⑥⑦⑧⑨⑩'.split('');
 
 function getSymbol(id: number): string {
@@ -53,27 +50,23 @@ export default function MemoryCardsTest() {
   gazeRef.current = gaze;
   const gridContainerRef = useRef<HTMLDivElement>(null);
 
-  const gridSize = GRID_SIZES.includes(Number(config.gridSize) as MemoryCardsGridSize)
-    ? (Number(config.gridSize) as MemoryCardsGridSize)
-    : 4;
+  const cardCountNum = Number(config.cardCount);
+  const cardCount = (MEMORY_CARDS_CARD_COUNTS as readonly number[]).includes(cardCountNum)
+    ? (cardCountNum as MemoryCardsCardCount)
+    : DEFAULT_CARD_COUNT;
   const dwellMs = Math.max(300, Number(config.dwellMs) ?? DEFAULT_DWELL_MS);
-  // Kích thước chữ: ưu tiên symbolSizePx (pixel); không có thì dùng scale/preset.
-  const sizePx = Number(config.symbolSizePx);
-  const usePx = Number.isFinite(sizePx) && sizePx >= MIN_SYMBOL_SIZE_PX && sizePx <= MAX_SYMBOL_SIZE_PX;
-  const symbolScaleNum = Number(config.symbolScale);
-  const hasExplicitScale = Number.isFinite(symbolScaleNum) && symbolScaleNum >= MIN_SYMBOL_SCALE && symbolScaleNum <= MAX_SYMBOL_SCALE;
-  const presetSize = (['md', 'lg', 'xl'] as MemoryCardsSymbolSize[]).includes(config.symbolSize as MemoryCardsSymbolSize) ? (config.symbolSize as MemoryCardsSymbolSize) : 'lg';
-  const symbolScale = hasExplicitScale ? symbolScaleNum : (SYMBOL_SIZE_TO_SCALE[presetSize] ?? DEFAULT_SYMBOL_SCALE);
-  const symbolStyle = usePx
-    ? { fontSize: `${sizePx}px` }
-    : { fontSize: `${SYMBOL_BASE_REM * symbolScale}rem` };
+  const presetSize = (MEMORY_CARDS_SYMBOL_SIZES as readonly string[]).includes(String(config.symbolSize))
+    ? (String(config.symbolSize) as MemoryCardsSymbolSize)
+    : 'lg';
+  const symbolPx = SYMBOL_SIZE_PX[presetSize] ?? 46;
+  const symbolStyle = { fontSize: `${symbolPx}px` };
 
-  // Log config để debug: xem run có nhận symbolSizePx không (run mới sau khi Save config).
+  // Log config để debug.
   useEffect(() => {
-    console.log('[MemoryCards] config', JSON.stringify(config), '| symbolSizePx', config.symbolSizePx, 'usePx', usePx, '→ style', symbolStyle);
-  }, [config.gridSize, config.dwellMs, config.symbolSizePx, config.symbolScale, config.symbolSize, usePx, symbolStyle.fontSize]);
+    console.log('[MemoryCards] config', JSON.stringify(config), '→ cardCount', cardCount, 'symbolSize', presetSize, '→ style', symbolStyle);
+  }, [config.cardCount, config.dwellMs, config.symbolSize, cardCount, presetSize, symbolStyle.fontSize]);
 
-  const [board] = useState(() => createBoard(gridSize));
+  const [{ cards: board, cols, rows }] = useState(() => createBoard(cardCount));
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [matched, setMatched] = useState<Set<number>>(new Set());
   const [firstSelected, setFirstSelected] = useState<number | null>(null);
@@ -87,7 +80,7 @@ export default function MemoryCardsTest() {
   const lockedRef = useRef(false);
   const flipBackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const pairCount = Math.floor((gridSize * gridSize) / 2);
+  const pairCount = Math.floor(cardCount / 2);
   const allMatched = matched.size === pairCount * 2;
 
   const selectCard = useCallback(
@@ -158,12 +151,12 @@ export default function MemoryCardsTest() {
       const g = gazeRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const cellW = rect.width / gridSize;
-      const cellH = rect.height / gridSize;
+      const cellW = rect.width / cols;
+      const cellH = rect.height / rows;
       const col = Math.floor((g.x - rect.left) / cellW);
       const row = Math.floor((g.y - rect.top) / cellH);
-      const index = row * gridSize + col;
-      if (col < 0 || col >= gridSize || row < 0 || row >= gridSize) {
+      const index = row * cols + col;
+      if (col < 0 || col >= cols || row < 0 || row >= rows) {
         dwellCardRef.current = null;
         return;
       }
@@ -183,7 +176,7 @@ export default function MemoryCardsTest() {
       }
     }, 100);
     return () => clearInterval(interval);
-  }, [board, gridSize, matched, dwellMs, selectCard]);
+  }, [board, cols, rows, matched, dwellMs, selectCard]);
 
   // Completion
   useEffect(() => {
@@ -198,13 +191,15 @@ export default function MemoryCardsTest() {
       testId: 'memory_cards',
       startTime: startTimeRef.current,
       endTime,
-      gridSize,
+      cardCount,
+      cols,
+      rows,
       moves: [...movesRef.current],
       correctPairsCount,
       completionTimeMs: endTime - startTimeRef.current,
       gazePath: [...gazePathRef.current],
     });
-  }, [allMatched, completeTest, gridSize]);
+  }, [allMatched, completeTest, cardCount, cols, rows]);
 
   useEffect(() => () => {
     if (flipBackTimeoutRef.current) clearTimeout(flipBackTimeoutRef.current);
@@ -226,8 +221,8 @@ export default function MemoryCardsTest() {
         ref={gridContainerRef}
         className="grid gap-1.5 place-items-center shrink-0"
         style={{
-          gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
-          gridTemplateRows: `repeat(${gridSize}, minmax(0, 1fr))`,
+          gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
           width: 'min(92vw, 85vh)',
           height: 'min(92vw, 85vh)',
           aspectRatio: '1',

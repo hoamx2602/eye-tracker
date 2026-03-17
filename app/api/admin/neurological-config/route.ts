@@ -67,6 +67,8 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const name = typeof body.name === 'string' ? body.name : 'default';
+    const incomingMemoryCards = (body?.testParameters?.memory_cards ?? null) as unknown;
+    console.log('[admin/neurological-config PUT] name=', name, 'incoming memory_cards=', incomingMemoryCards);
 
     let testOrder: string[] | undefined;
     if (body.testOrder !== undefined) {
@@ -125,6 +127,9 @@ export async function PUT(request: NextRequest) {
       create: createPayload,
       update: Object.keys(updatePayload).length > 0 ? updatePayload : { updatedAt: new Date() },
     });
+
+    const savedMemoryCards = (row.testParameters as Record<string, unknown> | null)?.['memory_cards'];
+    console.log('[admin/neurological-config PUT] saved memory_cards=', savedMemoryCards, 'updatedAt=', row.updatedAt?.toISOString?.());
 
     return NextResponse.json({
       id: row.id,
