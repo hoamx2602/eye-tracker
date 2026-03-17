@@ -33,7 +33,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
     head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
     visual_search: { numberCount: 8, practiceCount: 4, aoiRadiusPx: 80 },
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
-    anti_saccade: { trialCount: 12, movementDurationMs: 1500, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3 },
+    anti_saccade: { trialCount: 12, movementDurationMs: 1500, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3, dimRectOpacity: 0.6 },
     saccadic: { targetDurationMs: 1000, totalCycles: 18 },
     fixation_stability: { durationSec: 12, blinkIntervalMs: 600 },
     peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000 },
@@ -288,10 +288,16 @@ export default function NeurologicalConfigForm() {
                         options={[8, 10, 12, 15, 18, 20, 24, 30].map((n) => ({ value: n, label: String(n) }))}
                       />
                       <SelectNumber
-                        label="Movement duration (ms)"
+                        label="Movement duration (ms) — thời gian mỗi bước di chuyển; số lớn = chậm hơn"
                         value={Number(params.movementDurationMs) ?? 1500}
                         onChange={(v) => setParam(id, 'movementDurationMs', v)}
                         options={[800, 1000, 1200, 1500, 2000, 2500, 3000, 4000, 5000].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
+                      <SelectNumber
+                        label="Độ mờ rectangle dim (opacity)"
+                        value={Number(params.dimRectOpacity) ?? 0.6}
+                        onChange={(v) => setParam(id, 'dimRectOpacity', v)}
+                        options={[0.3, 0.4, 0.5, 0.6, 0.7, 0.8].map((n) => ({ value: n, label: `${Math.round(n * 100)}%` }))}
                       />
                       <SelectNumber
                         label="Interval between trials (ms)"

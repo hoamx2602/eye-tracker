@@ -48,6 +48,10 @@ export default function AntiSaccadeTest() {
   const trialCount = Math.max(4, Math.min(30, Number(config.trialCount) ?? DEFAULT_TRIAL_COUNT));
   const movementDurationMs = Math.max(500, Number(config.movementDurationMs) ?? DEFAULT_MOVEMENT_DURATION_MS);
   const intervalMs = Math.max(200, Number(config.intervalBetweenTrialsMs) ?? DEFAULT_INTERVAL_BETWEEN_TRIALS_MS);
+  const dimRectOpacity = (() => {
+    const v = Number(config.dimRectOpacity);
+    return Number.isFinite(v) ? Math.max(0.2, Math.min(0.9, v)) : 0.6;
+  })();
 
   const directions = useMemo(() => generateTrialDirections(trialCount), [trialCount]);
   const startTimeRef = useRef(0);
@@ -178,14 +182,15 @@ export default function AntiSaccadeTest() {
         }}
         aria-hidden
       />
-      {/* Dim (target) rectangle — look at this one */}
+      {/* Dim (target) rectangle — look at this one; opacity from config */}
       <div
-        className="absolute bg-slate-500 rounded-lg border border-slate-400 opacity-60"
+        className="absolute bg-slate-500 rounded-lg border border-slate-400"
         style={{
           left: dimPos.x - RECT_HALF_PX,
           top: dimPos.y - RECT_HALF_PX / 2,
           width: RECT_HALF_PX * 2,
           height: RECT_HALF_PX,
+          opacity: dimRectOpacity,
         }}
         aria-hidden
       />

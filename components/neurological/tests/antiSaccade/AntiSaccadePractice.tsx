@@ -35,12 +35,30 @@ function getRestartDelaySec(config?: Record<string, unknown>): number {
   return Math.max(RESTART_DELAY_MIN, Math.min(RESTART_DELAY_MAX, Math.round(v)));
 }
 
+function getMovementDurationMs(config?: Record<string, unknown>): number {
+  const v = Number(config?.movementDurationMs);
+  if (!Number.isFinite(v) || v < 500) return DEFAULT_MOVEMENT_DURATION_MS;
+  return Math.min(10000, v);
+}
+
+const DIM_OPACITY_MIN = 0.2;
+const DIM_OPACITY_MAX = 0.9;
+const DIM_OPACITY_DEFAULT = 0.6;
+
+function getDimRectOpacity(config?: Record<string, unknown>): number {
+  const v = Number(config?.dimRectOpacity);
+  if (!Number.isFinite(v)) return DIM_OPACITY_DEFAULT;
+  return Math.max(DIM_OPACITY_MIN, Math.min(DIM_OPACITY_MAX, v));
+}
+
 /**
  * Practice: a few anti-saccade trials, same visual, no recording.
  * Sau khi hết 3 trial, đếm ngược practiceRestartDelaySec (từ config, 1–4 s) rồi tự chạy lại.
  */
 export default function AntiSaccadePractice({ config }: { config?: Record<string, unknown> }) {
   const restartDelaySec = getRestartDelaySec(config);
+  const movementDurationMs = getMovementDurationMs(config);
+  const dimOpacity = getDimRectOpacity(config);
   const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS));
   const [trialIndex, setTrialIndex] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -51,14 +69,14 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   const primaryOff = direction ? offset(direction, progress, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
   const dimOff = direction ? offset(OPPOSITE_DIRECTION[direction], progress, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
 
-  // Movement animation
+  // Movement animation (tốc độ = config.movementDurationMs)
   useEffect(() => {
     if (restartIn !== null) return;
     movementStartRef.current = performance.now();
     const id = setInterval(() => {
       const now = performance.now();
       const elapsed = now - movementStartRef.current;
-      const p = Math.min(1, elapsed / DEFAULT_MOVEMENT_DURATION_MS);
+      const p = Math.min(1, elapsed / movementDurationMs);
       setProgress(p);
       if (p >= 1) {
         if (trialIndex + 1 >= PRACTICE_TRIALS) {
@@ -77,7 +95,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = null;
     };
-  }, [trialIndex, restartIn]);
+  }, [trialIndex, restartIn, movementDurationMs]);
 
   // Countdown then restart
   useEffect(() => {
@@ -121,12 +139,13 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
           }}
         />
         <div
-          className="absolute bg-slate-500 rounded-lg border border-slate-400 opacity-60"
+          className="absolute bg-slate-500 rounded-lg border border-slate-400"
           style={{
             left: CENTER - RECT_HALF_PX + dimOff.x,
             top: CENTER - RECT_HALF_PX / 2 + dimOff.y,
             width: RECT_HALF_PX * 2,
             height: RECT_HALF_PX,
+            opacity: dimOpacity,
           }}
         />
       </div>
