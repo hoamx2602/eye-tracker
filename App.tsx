@@ -38,163 +38,17 @@ import CapturedImageModal from './components/CapturedImageModal';
 import TrackingToolbar from './components/TrackingToolbar';
 import HeadPositioningScreen from './components/HeadPositioningScreen';
 import PostCalibrationChoiceScreen from './components/PostCalibrationChoiceScreen';
-import SymptomAssessment from './components/SymptomAssessment';
 import type { SymptomScores } from '@/lib/symptomAssessment';
-import {
-  GuidePracticeTestFlow,
-  NeuroHeadPoseProvider,
-  NeuroGazeProvider,
-  NeuroPanelLayoutContext,
-  type TestResultPayload,
-} from '@/components/neurological';
-import HeadOrientationTest from '@/components/neurological/tests/headOrientation/HeadOrientationTest';
-import { HEAD_ORIENTATION_GUIDE_STEPS } from '@/components/neurological/tests/headOrientation/constants';
-import VisualSearchTest from '@/components/neurological/tests/visualSearch/VisualSearchTest';
-import VisualSearchPractice from '@/components/neurological/tests/visualSearch/VisualSearchPractice';
-import {
-  VISUAL_SEARCH_GUIDE_STEPS,
-  DEFAULT_NUMBER_COUNT,
-  DEFAULT_AOI_RADIUS_PX,
-  PRACTICE_COUNT,
-} from '@/components/neurological/tests/visualSearch/constants';
-import MemoryCardsTest from '@/components/neurological/tests/memoryCards/MemoryCardsTest';
-import MemoryCardsPractice from '@/components/neurological/tests/memoryCards/MemoryCardsPractice';
-import {
-  MEMORY_CARDS_GUIDE_STEPS,
-  DEFAULT_DWELL_MS,
-} from '@/components/neurological/tests/memoryCards/constants';
-import AntiSaccadeTest from '@/components/neurological/tests/antiSaccade/AntiSaccadeTest';
-import AntiSaccadePractice from '@/components/neurological/tests/antiSaccade/AntiSaccadePractice';
-import {
-  ANTI_SACCADE_GUIDE_STEPS,
-  DEFAULT_TRIAL_COUNT,
-  DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
-} from '@/components/neurological/tests/antiSaccade/constants';
-import SaccadicTest from '@/components/neurological/tests/saccadic/SaccadicTest';
-import SaccadicPractice from '@/components/neurological/tests/saccadic/SaccadicPractice';
-import {
-  SACCADIC_GUIDE_STEPS,
-  DEFAULT_TARGET_DURATION_MS,
-  DEFAULT_TOTAL_CYCLES,
-} from '@/components/neurological/tests/saccadic/constants';
-import FixationStabilityTest from '@/components/neurological/tests/fixationStability/FixationStabilityTest';
-import FixationStabilityPractice from '@/components/neurological/tests/fixationStability/FixationStabilityPractice';
-import {
-  FIXATION_STABILITY_GUIDE_STEPS,
-  DEFAULT_DURATION_SEC,
-  DEFAULT_BLINK_INTERVAL_MS,
-} from '@/components/neurological/tests/fixationStability/constants';
-import PeripheralVisionTest from '@/components/neurological/tests/peripheralVision/PeripheralVisionTest';
-import PeripheralVisionPractice from '@/components/neurological/tests/peripheralVision/PeripheralVisionPractice';
-import {
-  PERIPHERAL_VISION_GUIDE_STEPS,
-  DEFAULT_TRIAL_COUNT as PERIPHERAL_DEFAULT_TRIAL_COUNT,
-  DEFAULT_STIMULUS_DURATION_MS,
-  DEFAULT_MIN_DELAY_MS,
-  DEFAULT_MAX_DELAY_MS,
-} from '@/components/neurological/tests/peripheralVision/constants';
+import type { TestResultPayload } from '@/components/neurological';
+import NeurologicalFlowSection from '@/components/neurological/NeurologicalFlowSection';
+import { useNeuroFlowHandlers } from '@/components/neurological/useNeuroFlowHandlers';
+import AppMainOverlays from '@/components/AppMainOverlays';
+import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, roundedRect } from '@/lib/appHelpers';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
-
-// --- CONFIGURATION ---
-const EDGE_PAD = 4;
 
 /** When true (NEXT_PUBLIC_CALIBRATION_TEST_MODE=1): after first calibration phase (grid) only, save session and show choice screen (Real-time vs Neurological). Choice is always required. */
 const CALIBRATION_TEST_MODE =
   typeof process !== 'undefined' && process.env.NEXT_PUBLIC_CALIBRATION_TEST_MODE === '1';
-
-// --- DYNAMIC CALIBRATION POINTS GENERATOR ---
-const generateCalibrationPoints = (count: number): CalibrationPoint[] => {
-  const points: CalibrationPoint[] = [];
-  
-  // Always include corners and center (5 points) if count >= 5
-  // But for a general approach, we can generate a grid that best fits 'count'
-  // or use a specific distribution.
-  
-  // Strategy:
-  // 1. Calculate grid dimensions (rows x cols) that approximate sqrt(count)
-  // 2. Distribute points evenly
-  
-  // However, standard eye tracking grids are usually 3x3 (9), 4x4 (16), 5x4 (20), etc.
-  
-  let rows = Math.round(Math.sqrt(count));
-  let cols = Math.ceil(count / rows);
-  
-  // Adjust to ensure we have enough points
-  while (rows * cols < count) {
-      cols++;
-  }
-  
-  // Generate grid points
-  const xStep = (100 - 2 * EDGE_PAD) / (cols - 1 || 1);
-  const yStep = (100 - 2 * EDGE_PAD) / (rows - 1 || 1);
-  
-  let generatedCount = 0;
-  
-  for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-          if (generatedCount >= count) break;
-          
-          const x = EDGE_PAD + (c * xStep);
-          const y = EDGE_PAD + (r * yStep);
-          
-          points.push({
-              id: generatedCount + 1,
-              x: x,
-              y: y,
-              completed: false
-          });
-          generatedCount++;
-      }
-  }
-  
-  // If we have fewer points than requested (due to grid logic), add random ones? 
-  // No, the loop ensures we stop at count. 
-  // But if rows*cols > count, we might miss the bottom-right if we just break.
-  // Better to center the grid or pick specific points.
-  
-  // Let's refine:
-  // If count is one of the standard presets, use specific logic?
-  // Actually, the grid logic above fills row by row. 
-  // For 5 points, it might do 2x3 grid and take first 5.
-  // 2x3 grid:
-  // (0,0) (0,1) (0,2)
-  // (1,0) (1,1)
-  // This is okay, but maybe not symmetric.
-  
-  // Alternative: Uniform distribution.
-  // But for eye tracking, grid is preferred.
-  
-  return points;
-};
-
-const VALIDATION_POINTS: CalibrationPoint[] = [
-  { id: 1001, x: 25, y: 25, completed: false },
-  { id: 1002, x: 75, y: 75, completed: false },
-  { id: 1003, x: 25, y: 75, completed: false },
-  { id: 1004, x: 75, y: 25, completed: false }, 
-  { id: 1005, x: 50, y: 50, completed: false }, 
-];
-
-interface GazeRecord {
-  timestamp: number;
-  x: number;
-  y: number;
-}
-
-interface CapturedImage {
-  url: string;
-  timestamp: string;
-}
-
-function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
 
 function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -1614,63 +1468,70 @@ function App() {
     }
   }, [router]);
 
-  const handleNeuroTestComplete = useCallback(
-    async (testId: string, payload: TestResultPayload) => {
-      const nextResults = { ...neuroTestResults, [testId]: payload };
-      setNeuroTestResults(nextResults);
-      if (neuroRunId) {
-        try {
-          await neurologicalRunsApi.patch(neuroRunId, {
-            testResults: { [testId]: payload },
-          });
-        } catch (e) {
-          console.error('Patch test result failed', e);
-        }
-      }
-      const order = neuroTestOrder.length > 0 ? neuroTestOrder : ['head_orientation', 'visual_search', 'memory_cards', 'anti_saccade', 'saccadic', 'fixation_stability', 'peripheral_vision'];
-      const enabled = neuroConfigSnapshot?.testEnabled ?? {};
-      let nextIdx = -1;
-      for (let i = currentNeuroTestIndex + 1; i < order.length; i++) {
-        if (enabled[order[i]] !== false) {
-          nextIdx = i;
-          break;
-        }
-      }
+  const {
+    handleNeuroTestComplete,
+    handleNeuroPreSubmit,
+    handleNeuroPostSubmit,
+    handleNeuroExitRun,
+  } = useNeuroFlowHandlers({
+    neuroRunId,
+    neuroTestOrder,
+    neuroConfigSnapshot,
+    currentNeuroTestIndex,
+    neuroTestResults,
+    NEURO_TEST_PROGRESS_LS_KEY,
+    setNeuroTestResults,
+    setCurrentNeuroTestIndex,
+    setCurrentNeuroTestId,
+    setNeuroPhase,
+    setPreSymptomScores,
+    setPostSymptomScores,
+    pathSyncSourceRef,
+    routerPush: router.push,
+    onStartRealTimeTracking: startRealTimeTracking,
+  });
+
+  const handleChooseNeurological = useCallback(async () => {
+    setStatus('NEURO_FLOW');
+    statusRef.current = 'NEURO_FLOW';
+    setNeuroRunStatus('creating');
+    setNeuroPhase('pre');
+    setPreSymptomScores(null);
+    setPostSymptomScores(null);
+    setNeuroTestResults({});
+    setCurrentNeuroTestId(null);
+    setCurrentNeuroTestIndex(0);
+    try {
+      localStorage.removeItem(NEURO_TEST_PROGRESS_LS_KEY);
+    } catch (_) {}
+    try {
+      const configSnapshot = await getNeurologicalConfig();
+      const source = (configSnapshot as { _source?: string })._source;
+      const memParams = configSnapshot?.testParameters?.memory_cards as Record<string, unknown> | undefined;
+      console.log('[Neuro] Config source:', source ?? 'unknown', '| memory_cards.cardCount =', memParams?.cardCount, '| Save from Admin first if source=default');
       try {
-        localStorage.setItem(
-          NEURO_TEST_PROGRESS_LS_KEY,
-          JSON.stringify({
-            runId: neuroRunId,
-            phase: nextIdx >= 0 ? 'tests' : 'post',
-            currentTestId: nextIdx >= 0 ? order[nextIdx] : null,
-            currentTestIndex: nextIdx >= 0 ? nextIdx : order.length,
-            testResults: nextResults,
-            savedAt: new Date().toISOString(),
-          })
-        );
+        localStorage.setItem(NEURO_CONFIG_LS_KEY, JSON.stringify(configSnapshot));
       } catch (_) {}
-      if (nextIdx >= 0) {
-        setCurrentNeuroTestIndex(nextIdx);
-        setCurrentNeuroTestId(order[nextIdx]);
-        pathSyncSourceRef.current = 'internal';
-        router.push(PATHS.NEURO_TEST(order[nextIdx]));
-      } else {
-        setNeuroPhase('post');
-        setCurrentNeuroTestId(null);
-        pathSyncSourceRef.current = 'internal';
-        router.push(PATHS.NEURO_POST);
-      }
-    },
-    [
-      neuroRunId,
-      neuroTestOrder,
-      neuroConfigSnapshot?.testEnabled,
-      currentNeuroTestIndex,
-      neuroTestResults,
-      router,
-      NEURO_TEST_PROGRESS_LS_KEY,
-    ]
-  );
+      const run = await neurologicalRunsApi.create(createdSessionId!, configSnapshot);
+      setNeuroRunId(run.id);
+      const order = Array.isArray(run.testOrderSnapshot) ? run.testOrderSnapshot : [];
+      setNeuroTestOrder(order);
+      const snap = run.configSnapshot as { testOrder: string[]; testParameters: Record<string, Record<string, unknown>>; testEnabled: Record<string, boolean> } | undefined;
+      console.log('[Neuro] Run created; snapshot memory_cards =', snap?.testParameters?.memory_cards);
+      const chosen = configSnapshot as any;
+      setNeuroConfigSnapshot({
+        testOrder: Array.isArray(chosen.testOrder) ? chosen.testOrder : order,
+        testParameters: (chosen.testParameters as Record<string, Record<string, unknown>>) ?? {},
+        testEnabled: (chosen.testEnabled as Record<string, boolean>) ?? {},
+      });
+      setNeuroRunStatus('ready');
+      pathSyncSourceRef.current = 'internal';
+      router.push(PATHS.NEURO_PRE);
+    } catch (e) {
+      console.error('Create neuro run failed', e);
+      setNeuroRunStatus('error');
+    }
+  }, [NEURO_CONFIG_LS_KEY, NEURO_TEST_PROGRESS_LS_KEY, createdSessionId, router]);
 
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
     const inputVector = eyeTrackingService.prepareFeatureVector(features);
@@ -1901,567 +1762,82 @@ function App() {
         );
       })()}
 
-      {showConsentModal && (
-        <ConsentModal
-          open={showConsentModal}
-          onAgree={handleConsentAgree}
-          onDecline={handleConsentDecline}
-        />
-      )}
+      <AppMainOverlays
+        status={status}
+        showConsentModal={showConsentModal}
+        showDemographicsForm={showDemographicsForm}
+        headPosCanvasRef={headPosCanvasRef}
+        headValidation={headValidation}
+        positionHoldTime={positionHoldTime}
+        stableFrameCount={stableFrameCount}
+        createdSessionId={createdSessionId}
+        recordedVideoUrl={recordedVideoUrl}
+        capturedImages={capturedImages}
+        capturedImageModalIndex={capturedImageModalIndex}
+        loadingMsg={loadingMsg}
+        accuracyScore={accuracyScore}
+        sessionSaveStatus={sessionSaveStatus}
+        sessionSaveError={sessionSaveError}
+        lastSavedCounts={lastSavedCounts}
+        lightLevel={lightLevel}
+        calibPhase={calibPhase}
+        calibPoints={calibPoints}
+        currentCalibIndex={currentCalibIndex}
+        isCapturing={isCapturing}
+        config={config}
+        calibrationProgress={calibrationProgress}
+        currentExerciseIndex={currentExerciseIndex}
+        trackingMode={trackingMode}
+        hasCameraStream={hasCameraStream}
+        gazePos={gazePos}
+        showHeatmap={showHeatmap}
+        isRecording={isRecording}
+        showStopSaveModal={showStopSaveModal}
+        isBlinking={isBlinking}
+        showCamera={showCamera}
+        heatmapRef={heatmapRef}
+        exerciseTargetRef={exerciseTargetRef}
+        trackingHistoryCount={trackingHistoryRef.current.length}
+        onConsentAgree={handleConsentAgree}
+        onConsentDecline={handleConsentDecline}
+        onDemographicsSubmit={handleDemographicsSubmit}
+        onDemographicsBack={() => setShowDemographicsForm(false)}
+        onSetCapturedImageModalIndex={setCapturedImageModalIndex}
+        onSetRunMode={setRunMode}
+        onSetShowConsentModal={setShowConsentModal}
+        onGoHome={() => router.push(PATHS.HOME)}
+        onChooseRealTime={startRealTimeTracking}
+        onChooseNeurological={handleChooseNeurological}
+        onPointMouseDown={handlePointMouseDown}
+        onPointMouseUp={() => handlePointMouseUp(false)}
+        onExerciseComplete={handleExerciseComplete}
+        onTrackingModeChange={setTrackingMode}
+        onToggleHeatmap={() => setShowHeatmap(!showHeatmap)}
+        onOpenStopSaveModal={() => setShowStopSaveModal(true)}
+        onStopSaveConfirm={handleStopSaveConfirm}
+        onStopSaveCancel={() => setShowStopSaveModal(false)}
+        onSetShowCamera={setShowCamera}
+        rawFeatures={rawFeatures}
+      />
 
-      {showDemographicsForm && (
-        <DemographicsForm
-          onSubmit={handleDemographicsSubmit}
-          onBack={() => setShowDemographicsForm(false)}
-        />
-      )}
+      <NeurologicalFlowSection
+        status={status}
+        neuroRunStatus={neuroRunStatus}
+        neuroPhase={neuroPhase}
+        currentNeuroTestId={currentNeuroTestId}
+        neuroRunId={neuroRunId}
+        neuroTestOrder={neuroTestOrder}
+        neuroConfigSnapshot={neuroConfigSnapshot}
+        neuroHeadPose={neuroHeadPose}
+        gazePos={gazePos}
+        neuroTestResults={neuroTestResults}
+        onPreSubmit={handleNeuroPreSubmit}
+        onPostSubmit={handleNeuroPostSubmit}
+        onExitRun={handleNeuroExitRun}
+        onTestComplete={handleNeuroTestComplete}
+        onDoneBack={startRealTimeTracking}
+      />
 
-      {status === 'IDLE' && (
-        <div className="flex flex-col items-center justify-center h-full space-y-8 p-4 z-10 relative">
-          <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
-            EYE TRACKER
-          </h1>
-
-          {/* RECORDED VIDEO DOWNLOAD LINK */}
-          {recordedVideoUrl && (
-             <div className="bg-gray-800 p-4 rounded-xl border border-green-700 flex flex-col items-center space-y-2 animate-bounce-in">
-                <div className="text-green-400 font-bold text-sm uppercase">Last Session Recording Ready</div>
-                <a 
-                    href={recordedVideoUrl} 
-                    download={`eye_tracking_session_${new Date().toISOString()}.webm`}
-                    className="px-6 py-2 bg-green-600 hover:bg-green-500 rounded-full font-bold text-white transition-all text-sm"
-                >
-                    Download Video
-                </a>
-             </div>
-          )}
-
-           {/* CAPTURED IMAGES GALLERY (Simple Grid) */}
-           {capturedImages.length > 0 && (
-              <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 max-w-2xl w-full">
-                  <div className="text-xs font-bold text-gray-400 uppercase mb-2">Captured Faces ({capturedImages.length})</div>
-                  <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-thin">
-                      {capturedImages.map((img, i) => (
-                          <button
-                              key={i}
-                              type="button"
-                              onClick={() => setCapturedImageModalIndex(i)}
-                              className="flex-shrink-0 relative group rounded overflow-hidden border-2 border-transparent hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 transition"
-                          >
-                              <img src={img.url} alt={`Face ${i + 1}`} className="h-20 w-auto rounded border border-gray-600 pointer-events-none"/>
-                              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-[8px] p-0.5 text-center text-white">{img.timestamp}</div>
-                          </button>
-                      ))}
-                  </div>
-              </div>
-           )}
-
-           {capturedImageModalIndex !== null && capturedImages[capturedImageModalIndex] && (
-             <CapturedImageModal
-               image={capturedImages[capturedImageModalIndex]}
-               index={capturedImageModalIndex}
-               total={capturedImages.length}
-               onClose={() => setCapturedImageModalIndex(null)}
-               onPrev={capturedImageModalIndex > 0 ? () => setCapturedImageModalIndex(capturedImageModalIndex - 1) : undefined}
-               onNext={capturedImageModalIndex < capturedImages.length - 1 ? () => setCapturedImageModalIndex(capturedImageModalIndex + 1) : undefined}
-             />
-           )}
-
-
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => { setRunMode('calibration'); setShowConsentModal(true); }}
-                className="group relative px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-full transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(37,99,235,0.5)]"
-              >
-                Start Calibration
-              </button>
-              <button
-                onClick={() => { setRunMode('test'); setShowConsentModal(true); }}
-                className="px-8 py-4 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-full transition-all hover:scale-105 active:scale-95 border border-violet-500/50"
-              >
-                Start Test
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {status === 'LOADING_MODEL' && (
-        <div className="flex items-center justify-center h-full">
-          <div className="flex flex-col items-center space-y-4">
-            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className={`animate-pulse font-bold ${accuracyScore && accuracyScore > 400 ? 'text-orange-400' : 'text-blue-300'}`}>
-              {loadingMsg}
-            </p>
-            {sessionSaveStatus === 'saving' && (
-              <p className="text-sm text-gray-400">You can relax for a moment.</p>
-            )}
-            {sessionSaveStatus === 'saved' && (
-              <p className="text-sm text-green-400">
-                Session saved.
-                {lastSavedCounts && (
-                  <span className="block text-gray-400 text-xs mt-0.5">
-                    {lastSavedCounts.samples} samples, {lastSavedCounts.images} images. Go to Admin → Sessions (refresh to see).
-                    {lastSavedCounts.samples === 0 && ' — No calibration data.'}
-                  </span>
-                )}
-              </p>
-            )}
-            {sessionSaveStatus === 'error' && sessionSaveError && (
-              <p className="text-sm text-red-400 max-w-md text-center">{sessionSaveError}</p>
-            )}
-          </div>
-        </div>
-      )}
-      
-      {/* HEAD_POSITIONING: Contained camera view (like frontend HeadPoseStep) */}
-      {status === 'HEAD_POSITIONING' && (
-        <HeadPositioningScreen
-          headPosCanvasRef={headPosCanvasRef}
-          headValidation={headValidation}
-          positionHoldTime={positionHoldTime}
-          stableFrameCount={stableFrameCount}
-        />
-      )}
-
-      {/* Post-calibration: choose Real-time tracking or Neurological test */}
-      {status === 'POST_CALIBRATION_CHOICE' && createdSessionId && (
-        <PostCalibrationChoiceScreen
-          sessionId={createdSessionId}
-          onChooseRealTime={startRealTimeTracking}
-          onChooseNeurological={async () => {
-            setStatus('NEURO_FLOW');
-            statusRef.current = 'NEURO_FLOW';
-            setNeuroRunStatus('creating');
-            setNeuroPhase('pre');
-            setPreSymptomScores(null);
-            setPostSymptomScores(null);
-            setNeuroTestResults({});
-            setCurrentNeuroTestId(null);
-            setCurrentNeuroTestIndex(0);
-            try {
-              localStorage.removeItem(NEURO_TEST_PROGRESS_LS_KEY);
-            } catch (_) {}
-            try {
-              const configSnapshot = await getNeurologicalConfig();
-              const source = (configSnapshot as { _source?: string })._source;
-              const memParams = configSnapshot?.testParameters?.memory_cards as Record<string, unknown> | undefined;
-              console.log('[Neuro] Config source:', source ?? 'unknown', '| memory_cards.cardCount =', memParams?.cardCount, '| Save from Admin first if source=default');
-              // Persist snapshot for the rest of this browser session (avoid race/state loss).
-              try {
-                localStorage.setItem(NEURO_CONFIG_LS_KEY, JSON.stringify(configSnapshot));
-              } catch (_) {}
-              const run = await neurologicalRunsApi.create(createdSessionId!, configSnapshot);
-              setNeuroRunId(run.id);
-              const order = Array.isArray(run.testOrderSnapshot) ? run.testOrderSnapshot : [];
-              setNeuroTestOrder(order);
-              const snap = run.configSnapshot as { testOrder: string[]; testParameters: Record<string, Record<string, unknown>>; testEnabled: Record<string, boolean> } | undefined;
-              console.log('[Neuro] Run created; snapshot memory_cards =', snap?.testParameters?.memory_cards);
-              // Use cached snapshot as source of truth for this session.
-              const chosen = configSnapshot as any;
-              setNeuroConfigSnapshot({
-                testOrder: Array.isArray(chosen.testOrder) ? chosen.testOrder : order,
-                testParameters: (chosen.testParameters as Record<string, Record<string, unknown>>) ?? {},
-                testEnabled: (chosen.testEnabled as Record<string, boolean>) ?? {},
-              });
-              setNeuroRunStatus('ready');
-              pathSyncSourceRef.current = 'internal';
-              router.push(PATHS.NEURO_PRE);
-            } catch (e) {
-              console.error('Create neuro run failed', e);
-              setNeuroRunStatus('error');
-            }
-          }}
-        />
-      )}
-      {/* /choice without session (e.g. direct open for testing): show message */}
-      {status === 'POST_CALIBRATION_CHOICE' && !createdSessionId && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950 p-6">
-          <p className="text-gray-400 text-center max-w-md">
-            No session yet. Complete calibration first to choose Real-time tracking or Neurological tests.
-          </p>
-          <button
-            type="button"
-            onClick={() => router.push(PATHS.HOME)}
-            className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-          >
-            Go to home
-          </button>
-        </div>
-      )}
-
-      {/* Neurological run: creating run (loading/error) */}
-      {status === 'NEURO_FLOW' && neuroRunStatus === 'creating' && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950">
-          <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-400">Starting neurological run…</p>
-        </div>
-      )}
-      {status === 'NEURO_FLOW' && neuroRunStatus === 'error' && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 p-6 bg-gray-950">
-          <p className="text-red-400 text-center">Could not start run. Check connection and try again.</p>
-          <button type="button" onClick={startRealTimeTracking} className="px-6 py-3 rounded-xl bg-gray-700 text-white">
-            Back to real-time tracking
-          </button>
-        </div>
-      )}
-      {/* Pre-test */}
-      {status === 'NEURO_FLOW' && neuroRunStatus === 'ready' && neuroPhase === 'pre' && (
-        <SymptomAssessment
-          variant="pre"
-          onSubmit={async (scores) => {
-            setPreSymptomScores(scores);
-            if (neuroRunId) {
-              try {
-                await neurologicalRunsApi.patch(neuroRunId, { preSymptomScores: scores });
-              } catch (e) {
-                console.error('Patch pre scores failed', e);
-              }
-            }
-            const order = neuroTestOrder.length > 0 ? neuroTestOrder : ['head_orientation', 'visual_search', 'memory_cards', 'anti_saccade', 'saccadic', 'fixation_stability', 'peripheral_vision'];
-            const enabled = neuroConfigSnapshot?.testEnabled ?? {};
-            let idx = -1;
-            for (let i = 0; i < order.length; i++) {
-              if (enabled[order[i]] !== false) {
-                idx = i;
-                break;
-              }
-            }
-            if (idx < 0) {
-              setNeuroPhase('post');
-              setCurrentNeuroTestId(null);
-              pathSyncSourceRef.current = 'internal';
-              router.push(PATHS.NEURO_POST);
-            } else {
-              setNeuroPhase('tests');
-              setCurrentNeuroTestIndex(idx);
-              setCurrentNeuroTestId(order[idx]);
-              pathSyncSourceRef.current = 'internal';
-              router.push(PATHS.NEURO_TEST(order[idx]));
-            }
-          }}
-          onBack={async () => {
-            if (neuroRunId) {
-              try {
-                await neurologicalRunsApi.patch(neuroRunId, { status: 'abandoned' });
-              } catch (_) {}
-            }
-            startRealTimeTracking();
-          }}
-        />
-      )}
-      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'head_orientation' && (
-        <NeuroPanelLayoutContext.Provider value={{ inPanel: true }}>
-          <NeuroHeadPoseProvider headPose={neuroHeadPose}>
-            <GuidePracticeTestFlow
-              testId="head_orientation"
-              guideSteps={HEAD_ORIENTATION_GUIDE_STEPS}
-              enablePractice={false}
-              testContent={<HeadOrientationTest />}
-              config={(neuroConfigSnapshot?.testParameters?.head_orientation as Record<string, unknown>) ?? { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] }}
-              onTestComplete={(payload) => handleNeuroTestComplete('head_orientation', payload)}
-            />
-          </NeuroHeadPoseProvider>
-        </NeuroPanelLayoutContext.Provider>
-      )}
-      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'visual_search' && (
-        <NeuroGazeProvider gaze={gazePos}>
-          <GuidePracticeTestFlow
-            testId="visual_search"
-            guideSteps={VISUAL_SEARCH_GUIDE_STEPS}
-            enablePractice={true}
-            practiceContent={<VisualSearchPractice />}
-            practiceTitle="Practice: Visual Search"
-            testContent={<VisualSearchTest />}
-            config={(neuroConfigSnapshot?.testParameters?.visual_search as Record<string, unknown>) ?? { numberCount: DEFAULT_NUMBER_COUNT, practiceCount: PRACTICE_COUNT, aoiRadiusPx: DEFAULT_AOI_RADIUS_PX }}
-            onTestComplete={(payload) => handleNeuroTestComplete('visual_search', payload)}
-          />
-        </NeuroGazeProvider>
-      )}
-      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'memory_cards' && (
-        <NeuroGazeProvider gaze={gazePos}>
-          <GuidePracticeTestFlow
-            testId="memory_cards"
-            guideSteps={MEMORY_CARDS_GUIDE_STEPS}
-            enablePractice={true}
-            practiceContent={<MemoryCardsPractice />}
-            practiceTitle="Practice: Memory Cards (2×2)"
-            testContent={<MemoryCardsTest />}
-            config={(neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { cardCount: 16, dwellMs: DEFAULT_DWELL_MS, symbolSize: 'lg' }}
-            onTestComplete={(payload) => handleNeuroTestComplete('memory_cards', payload)}
-          />
-        </NeuroGazeProvider>
-      )}
-      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'anti_saccade' && (
-        <NeuroGazeProvider gaze={gazePos}>
-          <GuidePracticeTestFlow
-            testId="anti_saccade"
-            guideSteps={ANTI_SACCADE_GUIDE_STEPS}
-            enablePractice={true}
-            practiceContent={(config) => <AntiSaccadePractice config={config} />}
-            practiceTitle="Practice: Anti-Saccade"
-            testContent={<AntiSaccadeTest />}
-            config={
-              (neuroConfigSnapshot?.testParameters?.anti_saccade as Record<string, unknown>) ?? {
-                trialCount: DEFAULT_TRIAL_COUNT,
-                movementSpeedPxPerSec: 120,
-                intervalBetweenTrialsMs: DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
-                practiceRestartDelaySec: 3,
-                showDimRect: true,
-                stimulusShape: 'rectangle',
-                primaryRectColor: 'red',
-                dimRectColor: 'blue',
-              }
-            }
-            onTestComplete={(payload) => handleNeuroTestComplete('anti_saccade', payload)}
-          />
-        </NeuroGazeProvider>
-      )}
-      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'saccadic' && (
-        <NeuroGazeProvider gaze={gazePos}>
-          <GuidePracticeTestFlow
-            testId="saccadic"
-            guideSteps={SACCADIC_GUIDE_STEPS}
-            enablePractice={true}
-            practiceContent={<SaccadicPractice />}
-            practiceTitle="Practice: Saccadic"
-            testContent={<SaccadicTest />}
-            config={(neuroConfigSnapshot?.testParameters?.saccadic as Record<string, unknown>) ?? { targetDurationMs: DEFAULT_TARGET_DURATION_MS, totalCycles: DEFAULT_TOTAL_CYCLES }}
-            onTestComplete={(payload) => handleNeuroTestComplete('saccadic', payload)}
-          />
-        </NeuroGazeProvider>
-      )}
-      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'fixation_stability' && (
-        <NeuroGazeProvider gaze={gazePos}>
-          <GuidePracticeTestFlow
-            testId="fixation_stability"
-            guideSteps={FIXATION_STABILITY_GUIDE_STEPS}
-            enablePractice={true}
-            practiceContent={<FixationStabilityPractice />}
-            practiceTitle="Practice: Fixation Stability"
-            testContent={<FixationStabilityTest />}
-            config={(neuroConfigSnapshot?.testParameters?.fixation_stability as Record<string, unknown>) ?? { durationSec: DEFAULT_DURATION_SEC, blinkIntervalMs: DEFAULT_BLINK_INTERVAL_MS }}
-            onTestComplete={(payload) => handleNeuroTestComplete('fixation_stability', payload)}
-          />
-        </NeuroGazeProvider>
-      )}
-      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'peripheral_vision' && (
-        <NeuroGazeProvider gaze={gazePos}>
-          <GuidePracticeTestFlow
-            testId="peripheral_vision"
-            guideSteps={PERIPHERAL_VISION_GUIDE_STEPS}
-            enablePractice={true}
-            practiceContent={<PeripheralVisionPractice />}
-            practiceTitle="Practice: Peripheral Vision"
-            testContent={<PeripheralVisionTest />}
-            config={(neuroConfigSnapshot?.testParameters?.peripheral_vision as Record<string, unknown>) ?? { trialCount: PERIPHERAL_DEFAULT_TRIAL_COUNT, stimulusDurationMs: DEFAULT_STIMULUS_DURATION_MS, minDelayMs: DEFAULT_MIN_DELAY_MS, maxDelayMs: DEFAULT_MAX_DELAY_MS }}
-            onTestComplete={(payload) => handleNeuroTestComplete('peripheral_vision', payload)}
-          />
-        </NeuroGazeProvider>
-      )}
-      {/* Exit run (abandon) — visible during pre or tests */}
-      {status === 'NEURO_FLOW' && (neuroPhase === 'pre' || neuroPhase === 'tests') && (
-        <button
-          type="button"
-          onClick={async () => {
-            if (neuroRunId) {
-              try {
-                await neurologicalRunsApi.patch(neuroRunId, { status: 'abandoned' });
-              } catch (_) {}
-            }
-            startRealTimeTracking();
-          }}
-          className="fixed top-4 right-4 z-[60] px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-sm transition"
-        >
-          Exit run
-        </button>
-      )}
-      {/* Transition: tests done, moving to post (brief) */}
-      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === null && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950">
-          <p className="text-gray-400">All tests complete. Preparing post-test…</p>
-        </div>
-      )}
-      {/* Post-test */}
-      {status === 'NEURO_FLOW' && neuroPhase === 'post' && (
-        <SymptomAssessment
-          variant="post"
-          onSubmit={async (scores) => {
-            setPostSymptomScores(scores);
-            if (neuroRunId) {
-              try {
-                await neurologicalRunsApi.patch(neuroRunId, {
-                  postSymptomScores: scores,
-                  status: 'completed',
-                });
-              } catch (e) {
-                console.error('Patch post scores failed', e);
-              }
-            }
-            setNeuroPhase('done');
-            pathSyncSourceRef.current = 'internal';
-            router.push(PATHS.NEURO_DONE);
-          }}
-          onBack={async () => {
-            if (neuroRunId) {
-              try {
-                await neurologicalRunsApi.patch(neuroRunId, { status: 'abandoned' });
-              } catch (_) {}
-            }
-            startRealTimeTracking();
-          }}
-        />
-      )}
-      {/* Done: summary */}
-      {status === 'NEURO_FLOW' && neuroPhase === 'done' && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
-          <h2 className="text-xl font-bold text-white">Neurological run complete</h2>
-          <p className="text-gray-400 text-sm text-center max-w-md">
-            Pre-test and post-test scores and all test results have been saved.
-          </p>
-          {neuroRunId && (
-            <p className="text-slate-500 text-xs font-mono">Run ID: {neuroRunId}</p>
-          )}
-          <p className="text-green-500 text-xs">
-            Tests completed: {Object.keys(neuroTestResults).length}
-          </p>
-          <button
-            type="button"
-            onClick={startRealTimeTracking}
-            className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-          >
-            Back to real-time tracking
-          </button>
-        </div>
-      )}
-
-      {/* Head invalid warning during CALIBRATION / TRACKING */}
-      {((status === 'CALIBRATION' || status === 'TRACKING') && headValidation && !headValidation.valid) && (
-         <HeadPositionGuide 
-            validation={headValidation} 
-            countdown={null} 
-         />
-      )}
-
-      {/* Light level: warning when too dark (value + status shown in DiagnosticsPanel) */}
-      {(status === 'CALIBRATION' || status === 'TRACKING') && lightLevel?.status === 'too_dark' && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[181] px-4 py-2 rounded-lg bg-red-900/95 border border-red-500 text-red-100 text-sm font-medium shadow-lg flex items-center gap-2 max-w-md text-center">
-          <span aria-hidden>💡</span>
-          <span>Lighting is too low for accurate tracking. Add front light or move to a brighter area.</span>
-        </div>
-      )}
-      {status === 'CALIBRATION' && calibPhase !== CalibrationPhase.EXERCISES && (
-        <CalibrationLayer
-          points={calibPoints}
-          currentPointIndex={currentCalibIndex}
-          isCapturing={isCapturing}
-          phase={calibPhase} 
-          method={config.calibrationMethod}
-          progress={calibrationProgress}
-          onPointMouseDown={handlePointMouseDown}
-          onPointMouseUp={() => handlePointMouseUp(false)}
-        />
-      )}
-
-      {status === 'CALIBRATION' && calibPhase === CalibrationPhase.EXERCISES && (
-        <EyeMovementLayer
-          key={`exercise-${currentExerciseIndex}`}
-          kind={EXERCISE_KINDS[currentExerciseIndex]}
-          targetRef={exerciseTargetRef}
-          onComplete={handleExerciseComplete}
-        />
-      )}
-
-      {status === 'TRACKING' && (
-        <>
-           {/* When opened /tracking directly: no camera was started — show message and link to start */}
-           {!hasCameraStream && (
-             <div className="fixed inset-0 z-[250] flex flex-col items-center justify-center gap-4 bg-gray-950/95 p-6">
-               <p className="text-gray-300 text-center max-w-md">
-                 Camera is not on. Complete the calibration step before using real-time tracking.
-               </p>
-               <button
-                 type="button"
-                 onClick={() => router.push(PATHS.HOME)}
-                 className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-               >
-                 Go to home to start
-               </button>
-             </div>
-           )}
-           {/* Gaze cursor & heatmap — always visible when head is valid */}
-           {headValidation && headValidation.valid && (
-               <>
-                <HeatmapLayer ref={heatmapRef} x={gazePos.x} y={gazePos.y} enabled={showHeatmap && trackingMode === 'free_gaze'} />
-                <GazeCursor x={gazePos.x} y={gazePos.y} />
-               </>
-           )}
-
-           {/* Mode-specific overlays */}
-           {trackingMode === 'random_dots' && (
-             <RandomDotsOverlay gazeX={gazePos.x} gazeY={gazePos.y} />
-           )}
-           {trackingMode === 'article_reading' && (
-             <ArticleReadingOverlay gazeX={gazePos.x} gazeY={gazePos.y} />
-           )}
-          
-          {/* TOOLBAR — fixed layout, no jump when switching modes */}
-          <TrackingToolbar
-            isRecording={isRecording}
-            trackingMode={trackingMode}
-            onTrackingModeChange={setTrackingMode}
-            showHeatmap={showHeatmap}
-            onToggleHeatmap={() => setShowHeatmap(!showHeatmap)}
-            canToggleHeatmap={trackingMode === 'free_gaze'}
-            onClearHeatmap={() => heatmapRef.current?.reset()}
-            canClearHeatmap={trackingMode === 'free_gaze' && showHeatmap}
-            onStopSave={() => setShowStopSaveModal(true)}
-          />
-
-          {/* Stop & Save modal: choose what to download */}
-          {showStopSaveModal && (
-            <StopSaveModal
-              hasCsvData={trackingHistoryRef.current.length > 0}
-              hasVideo={isRecording || !!recordedVideoUrl}
-              hasImages={capturedImages.length > 0}
-              onConfirm={handleStopSaveConfirm}
-              onCancel={() => setShowStopSaveModal(false)}
-            />
-          )}
-          
-          {/* TRACKING SIDEBAR: CAPTURED IMAGES */}
-          {config.faceCaptureInterval > 0 && capturedImages.length > 0 && (
-              <div className="fixed right-4 top-1/2 -translate-y-1/2 flex flex-col space-y-2 z-[200] max-h-[60vh] overflow-y-auto scrollbar-thin">
-                  {capturedImages.slice(-4).map((img, i) => (
-                      <div key={i} className="relative w-24 h-24 border-2 border-gray-700 rounded-lg overflow-hidden bg-black shadow-lg">
-                          <img src={img.url} className="w-full h-full object-cover" alt="face" />
-                      </div>
-                  ))}
-              </div>
-          )}
-          
-          {accuracyScore !== null && (
-             <div className={`fixed top-20 left-1/2 -translate-x-1/2 bg-opacity-90 text-xs px-4 py-2 rounded-full pointer-events-none font-bold border ${accuracyScore < 300 ? 'bg-green-900 text-green-300 border-green-700' : 'bg-red-900 text-red-300 border-red-700'}`}>
-                {accuracyScore < 300 ? 'Good Accuracy' : 'Low Accuracy'} (Mean Error: {accuracyScore.toFixed(0)}px)
-             </div>
-          )}
-        </>
-      )}
-
-      {/* Diagnostics Panel (Now Draggable) — only when calibrating or tracking, not during load */}
-      {(status === 'CALIBRATION' || status === 'TRACKING') && (
-         <DiagnosticsPanel 
-            showCamera={showCamera}
-            setShowCamera={setShowCamera}
-            headValidation={headValidation}
-            rawFeatures={rawFeatures}
-            capturedImagesCount={capturedImages.length}
-            isBlinking={isBlinking}
-            status={status}
-            lightLevel={lightLevel}
-         />
-      )}
     </div>
   );
 }
