@@ -12,6 +12,8 @@ import {
 } from './constants';
 import { getTargetPosition } from './utils';
 
+const SACCADIC_RESULT_LS_KEY = 'neuro_saccadic_result_v1';
+
 export interface SaccadicCycleResult {
   targetSide: SaccadicTargetSide;
   onsetTime: number;
@@ -24,6 +26,9 @@ export interface SaccadicResult {
   startTime: number;
   endTime: number;
   cycles: SaccadicCycleResult[];
+  saccadeLatencyMs?: number[];
+  fixationAccuracy?: number;
+  correctiveSaccades?: number;
   metrics?: {
     avgLatency?: number;
     fixationAccuracy?: number;
@@ -87,6 +92,18 @@ export default function SaccadicTest() {
     firstFixationTimeRef.current = null;
     cycleGazeSamplesRef.current = [];
     cyclesResultsRef.current = [];
+    try {
+      localStorage.setItem(
+        SACCADIC_RESULT_LS_KEY,
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          status: 'in_progress',
+          saccadeLatencyMs: [],
+          fixationAccuracy: 0,
+          correctiveSaccades: 0,
+        })
+      );
+    } catch (_) {}
   }, []);
 
   useEffect(() => {
@@ -146,11 +163,28 @@ export default function SaccadicTest() {
               );
             }
           });
+          const saccadeLatencyMs = withLatency
+            .map((c) => c.latencyMs)
+            .filter((v): v is number => typeof v === 'number');
+          try {
+            localStorage.setItem(
+              SACCADIC_RESULT_LS_KEY,
+              JSON.stringify({
+                savedAt: new Date().toISOString(),
+                saccadeLatencyMs,
+                fixationAccuracy: fixationAccuracy ?? null,
+                correctiveSaccades: correctiveSaccadeCount,
+              })
+            );
+          } catch (_) {}
           completeTest({
             testId: 'saccadic',
             startTime: startTimeRef.current,
             endTime,
             cycles,
+            saccadeLatencyMs,
+            fixationAccuracy,
+            correctiveSaccades: correctiveSaccadeCount,
             metrics: {
               avgLatency,
               fixationAccuracy,
