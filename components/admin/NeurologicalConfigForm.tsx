@@ -309,7 +309,7 @@ export default function NeurologicalConfigForm() {
                         label="Trial count"
                         value={Number(params.trialCount) ?? 12}
                         onChange={(v) => setParam(id, 'trialCount', v)}
-                        options={[8, 10, 12, 15, 18, 20, 24, 30].map((n) => ({ value: n, label: String(n) }))}
+                        options={[2, 4, 6, 8, 10, 12, 15, 18, 20, 24, 30].map((n) => ({ value: n, label: String(n) }))}
                       />
                       <SelectNumber
                         label="Movement speed (px/s)"
@@ -406,7 +406,7 @@ export default function NeurologicalConfigForm() {
                         label="Total cycles"
                         value={Number(params.totalCycles) ?? 18}
                         onChange={(v) => setParam(id, 'totalCycles', v)}
-                        options={[10, 12, 15, 18, 20, 24, 30, 36, 40].map((n) => ({ value: n, label: String(n) }))}
+                        options={[2, 4, 6, 8, 10, 12, 15, 18, 20, 24, 30, 36, 40].map((n) => ({ value: n, label: String(n) }))}
                       />
                       <SelectNumber
                         label="Target dot size (px)"

@@ -67,7 +67,7 @@ export default function SaccadicTest() {
   const gazeRef = useRef(gaze);
   gazeRef.current = gaze;
 
-  const totalCycles = Math.max(8, Math.min(40, Number(config.totalCycles) ?? DEFAULT_TOTAL_CYCLES));
+  const totalCycles = Math.max(2, Math.min(40, Number(config.totalCycles) ?? DEFAULT_TOTAL_CYCLES));
   const targetDurationMs = Math.max(400, Number(config.targetDurationMs) ?? DEFAULT_TARGET_DURATION_MS);
   const targetDotSizePx = Math.max(16, Math.min(64, Number(config.targetDotSizePx) ?? 64));
   const targetDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.targetDotColor ?? '')) ? String(config.targetDotColor) : '#f59e0b';

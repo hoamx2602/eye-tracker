@@ -80,7 +80,7 @@ export default function AntiSaccadeTest() {
   const gazeRef = useRef(gaze);
   gazeRef.current = gaze;
 
-  const trialCount = Math.max(4, Math.min(30, Number(config.trialCount) ?? DEFAULT_TRIAL_COUNT));
+  const trialCount = Math.max(2, Math.min(30, Number(config.trialCount) ?? DEFAULT_TRIAL_COUNT));
   const speedPxPerSec = (() => {
     const v = Number(config.movementSpeedPxPerSec);
     return Number.isFinite(v) && v > 0 ? Math.min(500, v) : 0;
