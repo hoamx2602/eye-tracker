@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { PATHS } from '@/lib/paths';
-import type { SymptomScores } from '@/lib/symptomAssessment';
+import { SYMPTOM_QUESTIONS, type SymptomScores } from '@/lib/symptomAssessment';
 import { neurologicalRunsApi } from '@/services/api';
 import type { TestResultPayload } from '@/components/neurological';
 
@@ -39,6 +39,22 @@ const DEFAULT_TEST_ORDER = [
   'fixation_stability',
   'peripheral_vision',
 ];
+const NEURO_PRE_QUESTIONNAIRE_LS_KEY = 'neuro_pre_questionnaire_v1';
+const NEURO_POST_QUESTIONNAIRE_LS_KEY = 'neuro_post_questionnaire_v1';
+
+function buildQuestionnairePayload(variant: 'pre' | 'post', scores: SymptomScores) {
+  return {
+    variant,
+    submittedAt: new Date().toISOString(),
+    scores,
+    questions: SYMPTOM_QUESTIONS.map((q) => ({
+      id: q.id,
+      category: q.category,
+      question: q.question,
+      score: scores[q.id] ?? null,
+    })),
+  };
+}
 
 export function useNeuroFlowHandlers({
   neuroRunId,
@@ -123,9 +139,13 @@ export function useNeuroFlowHandlers({
   const handleNeuroPreSubmit = useCallback(
     async (scores: SymptomScores) => {
       setPreSymptomScores(scores);
+      const questionnaire = buildQuestionnairePayload('pre', scores);
+      try {
+        localStorage.setItem(NEURO_PRE_QUESTIONNAIRE_LS_KEY, JSON.stringify(questionnaire));
+      } catch (_) {}
       if (neuroRunId) {
         try {
-          await neurologicalRunsApi.patch(neuroRunId, { preSymptomScores: scores });
+          await neurologicalRunsApi.patch(neuroRunId, { preSymptomScores: questionnaire as unknown as Record<string, number> });
         } catch (e) {
           console.error('Patch pre scores failed', e);
         }
@@ -162,16 +182,21 @@ export function useNeuroFlowHandlers({
       setCurrentNeuroTestId,
       pathSyncSourceRef,
       routerPush,
+      NEURO_PRE_QUESTIONNAIRE_LS_KEY,
     ]
   );
 
   const handleNeuroPostSubmit = useCallback(
     async (scores: SymptomScores) => {
       setPostSymptomScores(scores);
+      const questionnaire = buildQuestionnairePayload('post', scores);
+      try {
+        localStorage.setItem(NEURO_POST_QUESTIONNAIRE_LS_KEY, JSON.stringify(questionnaire));
+      } catch (_) {}
       if (neuroRunId) {
         try {
           await neurologicalRunsApi.patch(neuroRunId, {
-            postSymptomScores: scores,
+            postSymptomScores: questionnaire as unknown as Record<string, number>,
             status: 'completed',
           });
         } catch (e) {
@@ -182,7 +207,14 @@ export function useNeuroFlowHandlers({
       pathSyncSourceRef.current = 'internal';
       routerPush(PATHS.NEURO_DONE);
     },
-    [neuroRunId, setPostSymptomScores, setNeuroPhase, pathSyncSourceRef, routerPush]
+    [
+      neuroRunId,
+      setPostSymptomScores,
+      setNeuroPhase,
+      pathSyncSourceRef,
+      routerPush,
+      NEURO_POST_QUESTIONNAIRE_LS_KEY,
+    ]
   );
 
   const handleNeuroExitRun = useCallback(async () => {

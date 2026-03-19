@@ -51,8 +51,8 @@ export interface NeurologicalRun {
   sessionId: string;
   configSnapshot?: { testOrder: string[]; testParameters: Record<string, unknown>; testEnabled: Record<string, boolean> } | null;
   testOrderSnapshot?: string[] | null;
-  preSymptomScores?: Record<string, number> | null;
-  postSymptomScores?: Record<string, number> | null;
+  preSymptomScores?: unknown;
+  postSymptomScores?: unknown;
   testResults?: Record<string, unknown> | null;
   status: string;
   createdAt: string;
@@ -97,8 +97,8 @@ export const neurologicalRunsApi = {
   async patch(
     id: string,
     data: Partial<{
-      preSymptomScores: Record<string, number>;
-      postSymptomScores: Record<string, number>;
+      preSymptomScores: unknown;
+      postSymptomScores: unknown;
       testResults: Record<string, unknown>;
       status: string;
     }>
