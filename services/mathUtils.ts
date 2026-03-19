@@ -97,13 +97,13 @@ export class TPSRegressor {
   private controlPoints: number[][] = []; // The 'V' (source features)
   private weights: number[][] | null = null; // The 'w' coefficients
   private regularization: number = 0.5; // lambda > 0 makes it a "smoothing" spline (robust to noise)
-  
-  // FIX: Use specific indices to avoid singularity and overfitting.
-  // 0 is Bias (Skip). 
-  // 1=lx, 2=ly, 3=rx, 4=ry. 
-  // We assume these exist in the input vector.
-  // Using only 4 dims means we need N >= 5 points, which matches our Step 1 count.
-  private featureIndices = [1, 2, 3, 4]; 
+
+  // Core eye-only features (always available).
+  private readonly baseFeatureIndices = [1, 2, 3, 4];
+  // Head-pose features for compensation (pitch, yaw, roll).
+  private readonly headFeatureIndices = [9, 10, 11];
+  // Active feature set used by current trained model.
+  private activeFeatureIndices = [...this.baseFeatureIndices];
 
   private radialBasis(r: number): number {
     if (r === 0) return 0;
@@ -115,12 +115,19 @@ export class TPSRegressor {
   }
   
   private extractFeatures(input: number[]): number[] {
-      return this.featureIndices.map(i => input[i] || 0);
+      return this.activeFeatureIndices.map(i => input[i] || 0);
   }
 
   train(fullInputs: number[][], outputs: number[][]): boolean {
+    // Use head compensation in TPS when we have enough samples.
+    // D=7 (eyes+head) needs at least 8 points for stable solve.
+    const canUseHeadComp = fullInputs.length >= (this.baseFeatureIndices.length + this.headFeatureIndices.length + 1);
+    this.activeFeatureIndices = canUseHeadComp
+      ? [...this.baseFeatureIndices, ...this.headFeatureIndices]
+      : [...this.baseFeatureIndices];
+
     // 1. Filter inputs to reduced dimensionality
-    const inputs = fullInputs.map(row => this.extractFeatures(row));
+    const inputs = fullInputs.map((row) => this.activeFeatureIndices.map((i) => row[i] || 0));
     
     const N = inputs.length; 
     const D = inputs[0].length;
