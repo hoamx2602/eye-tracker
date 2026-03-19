@@ -77,6 +77,10 @@ type NeurologicalFlowSectionProps = {
   onExitRun: () => Promise<void>;
   onTestComplete: (testId: string, payload: TestResultPayload) => void;
   onDoneBack: () => void;
+  showPostSubmitConfirm: boolean;
+  onPostSubmitConfirmSave: () => Promise<void>;
+  onPostSubmitConfirmRedo: () => void;
+  onPostSubmitConfirmCancel: () => void;
 };
 
 export default function NeurologicalFlowSection({
@@ -94,6 +98,10 @@ export default function NeurologicalFlowSection({
   onExitRun,
   onTestComplete,
   onDoneBack,
+  showPostSubmitConfirm,
+  onPostSubmitConfirmSave,
+  onPostSubmitConfirmRedo,
+  onPostSubmitConfirmCancel,
 }: NeurologicalFlowSectionProps) {
   return (
     <>
@@ -247,6 +255,39 @@ export default function NeurologicalFlowSection({
           onSubmit={onPostSubmit}
           onBack={onExitRun}
         />
+      )}
+      {status === 'NEURO_FLOW' && neuroPhase === 'post' && showPostSubmitConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-gray-800 bg-gray-950 p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-white">Post-test submitted</h3>
+            <p className="mt-2 text-sm text-gray-400">
+              Bạn muốn lưu kết quả và hoàn tất run, hay làm lại neurological tests?
+            </p>
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={onPostSubmitConfirmSave}
+                className="w-full rounded-xl bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-500 transition"
+              >
+                Lưu kết quả
+              </button>
+              <button
+                type="button"
+                onClick={onPostSubmitConfirmRedo}
+                className="w-full rounded-xl bg-amber-600 px-4 py-2.5 font-medium text-white hover:bg-amber-500 transition"
+              >
+                Làm lại neurological tests
+              </button>
+              <button
+                type="button"
+                onClick={onPostSubmitConfirmCancel}
+                className="w-full rounded-xl bg-gray-800 px-4 py-2.5 font-medium text-gray-200 hover:bg-gray-700 transition"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'done' && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">

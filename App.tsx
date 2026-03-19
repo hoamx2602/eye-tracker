@@ -39,6 +39,7 @@ import TrackingToolbar from './components/TrackingToolbar';
 import HeadPositioningScreen from './components/HeadPositioningScreen';
 import PostCalibrationChoiceScreen from './components/PostCalibrationChoiceScreen';
 import type { SymptomScores } from '@/lib/symptomAssessment';
+import { SYMPTOM_QUESTIONS } from '@/lib/symptomAssessment';
 import type { TestResultPayload } from '@/components/neurological';
 import NeurologicalFlowSection from '@/components/neurological/NeurologicalFlowSection';
 import { useNeuroFlowHandlers } from '@/components/neurological/useNeuroFlowHandlers';
@@ -80,6 +81,8 @@ function App() {
   const [currentNeuroTestIndex, setCurrentNeuroTestIndex] = useState(0);
   const [preSymptomScores, setPreSymptomScores] = useState<SymptomScores | null>(null);
   const [postSymptomScores, setPostSymptomScores] = useState<SymptomScores | null>(null);
+  const [pendingPostSymptomScores, setPendingPostSymptomScores] = useState<SymptomScores | null>(null);
+  const [showPostSubmitConfirm, setShowPostSubmitConfirm] = useState(false);
   /** Which neurological test is running; null when between tests or in post/done. */
   const [currentNeuroTestId, setCurrentNeuroTestId] = useState<string | null>(null);
   const currentNeuroTestIdRef = useRef<string | null>(null);
@@ -1541,6 +1544,95 @@ function App() {
     }
   }, [NEURO_CONFIG_LS_KEY, NEURO_TEST_PROGRESS_LS_KEY, createdSessionId, router]);
 
+  const handlePostSubmitRequested = useCallback(async (scores: SymptomScores) => {
+    setPendingPostSymptomScores(scores);
+    setShowPostSubmitConfirm(true);
+  }, []);
+
+  const buildQuestionnairePayload = useCallback((variant: 'pre' | 'post', scores: SymptomScores) => {
+    return {
+      variant,
+      submittedAt: new Date().toISOString(),
+      scores,
+      questions: SYMPTOM_QUESTIONS.map((q) => ({
+        id: q.id,
+        category: q.category,
+        question: q.question,
+        score: scores[q.id] ?? null,
+      })),
+    };
+  }, []);
+
+  const handlePostSubmitSave = useCallback(async () => {
+    if (!pendingPostSymptomScores) return;
+    const preQuestionnaire = preSymptomScores ? buildQuestionnairePayload('pre', preSymptomScores) : null;
+    const postQuestionnaire = buildQuestionnairePayload('post', pendingPostSymptomScores);
+
+    try {
+      localStorage.setItem('neuro_post_questionnaire_v1', JSON.stringify(postQuestionnaire));
+      if (preQuestionnaire) {
+        localStorage.setItem('neuro_pre_questionnaire_v1', JSON.stringify(preQuestionnaire));
+      }
+    } catch (_) {}
+
+    setPostSymptomScores(pendingPostSymptomScores);
+    if (neuroRunId) {
+      try {
+        await neurologicalRunsApi.patch(neuroRunId, {
+          preSymptomScores: (preQuestionnaire ?? preSymptomScores ?? {}) as unknown as Record<string, number>,
+          postSymptomScores: postQuestionnaire as unknown as Record<string, number>,
+          testResults: neuroTestResults,
+          status: 'completed',
+        });
+      } catch (e) {
+        console.error('Patch final run data failed', e);
+      }
+    }
+    setNeuroPhase('done');
+    pathSyncSourceRef.current = 'internal';
+    router.push(PATHS.NEURO_DONE);
+    setShowPostSubmitConfirm(false);
+    setPendingPostSymptomScores(null);
+  }, [
+    pendingPostSymptomScores,
+    preSymptomScores,
+    neuroRunId,
+    neuroTestResults,
+    buildQuestionnairePayload,
+    router,
+  ]);
+
+  const handlePostSubmitRedoTests = useCallback(() => {
+    const order = neuroTestOrder.length > 0 ? neuroTestOrder : ['head_orientation', 'visual_search', 'memory_cards', 'anti_saccade', 'saccadic', 'fixation_stability', 'peripheral_vision'];
+    const enabled = neuroConfigSnapshot?.testEnabled ?? {};
+    let idx = -1;
+    for (let i = 0; i < order.length; i++) {
+      if (enabled[order[i]] !== false) {
+        idx = i;
+        break;
+      }
+    }
+    setShowPostSubmitConfirm(false);
+    setPendingPostSymptomScores(null);
+    setPostSymptomScores(null);
+    setNeuroTestResults({});
+    try {
+      localStorage.removeItem(NEURO_TEST_PROGRESS_LS_KEY);
+    } catch (_) {}
+    if (idx < 0) {
+      setNeuroPhase('post');
+      setCurrentNeuroTestId(null);
+      pathSyncSourceRef.current = 'internal';
+      router.push(PATHS.NEURO_POST);
+      return;
+    }
+    setNeuroPhase('tests');
+    setCurrentNeuroTestIndex(idx);
+    setCurrentNeuroTestId(order[idx]);
+    pathSyncSourceRef.current = 'internal';
+    router.push(PATHS.NEURO_TEST(order[idx]));
+  }, [neuroTestOrder, neuroConfigSnapshot?.testEnabled, NEURO_TEST_PROGRESS_LS_KEY, router]);
+
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
     const inputVector = eyeTrackingService.prepareFeatureVector(features);
     
@@ -1840,10 +1932,17 @@ function App() {
         gazePos={gazePos}
         neuroTestResults={neuroTestResults}
         onPreSubmit={handleNeuroPreSubmit}
-        onPostSubmit={handleNeuroPostSubmit}
+        onPostSubmit={handlePostSubmitRequested}
         onExitRun={handleNeuroExitRun}
         onTestComplete={handleNeuroTestComplete}
         onDoneBack={startRealTimeTracking}
+        showPostSubmitConfirm={showPostSubmitConfirm}
+        onPostSubmitConfirmSave={handlePostSubmitSave}
+        onPostSubmitConfirmRedo={handlePostSubmitRedoTests}
+        onPostSubmitConfirmCancel={() => {
+          setShowPostSubmitConfirm(false);
+          setPendingPostSymptomScores(null);
+        }}
       />
 
     </div>
