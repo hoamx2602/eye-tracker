@@ -317,6 +317,9 @@ function App() {
   const heatmapRef = useRef<HeatmapRef>(null);
   
   const lastVideoTimeRef = useRef(-1);
+  const detectionFrameCounterRef = useRef(0);
+  const detectionStrideRef = useRef(1);
+  const detectionAvgMsRef = useRef(0);
   const isCollectingRef = useRef(false);
   const collectionBufferRef = useRef<number[][]>([]);
   const trainingSamplesRef = useRef<TrainingSample[]>([]);
@@ -726,8 +729,44 @@ function App() {
     const now = performance.now();
     if (videoRef.current.currentTime !== lastVideoTimeRef.current) {
       lastVideoTimeRef.current = videoRef.current.currentTime;
-      
-      const results = eyeTrackingService.detect(videoRef.current, now);
+      const currentStatus = statusRef.current;
+      const shouldAdaptDetectionLoad =
+        currentStatus === 'CALIBRATION' && (exerciseActiveRef.current || isCollectingRef.current);
+      let skipDetectionThisFrame = false;
+
+      if (shouldAdaptDetectionLoad) {
+        detectionFrameCounterRef.current += 1;
+        const stride = Math.max(1, detectionStrideRef.current);
+        if (detectionFrameCounterRef.current % stride !== 0) {
+          skipDetectionThisFrame = true;
+        }
+      } else {
+        detectionFrameCounterRef.current = 0;
+        detectionStrideRef.current = 1;
+        detectionAvgMsRef.current = 0;
+      }
+
+      // On weak devices during calibration, intentionally skip heavy processing
+      // for non-detection frames to keep visual dot movement smoother.
+      if (skipDetectionThisFrame) {
+        requestRef.current = requestAnimationFrame(processVideo);
+        return;
+      }
+
+      let results = null;
+      if (!skipDetectionThisFrame) {
+        const detectStart = performance.now();
+        results = eyeTrackingService.detect(videoRef.current, now);
+        const detectElapsed = performance.now() - detectStart;
+        if (shouldAdaptDetectionLoad) {
+          detectionAvgMsRef.current = detectionAvgMsRef.current === 0
+            ? detectElapsed
+            : detectionAvgMsRef.current * 0.8 + detectElapsed * 0.2;
+          if (detectionAvgMsRef.current > 26) detectionStrideRef.current = 3;
+          else if (detectionAvgMsRef.current > 16) detectionStrideRef.current = 2;
+          else detectionStrideRef.current = 1;
+        }
+      }
       
       // --- DRAWING LOGIC (Debug & Head Position) ---
       const ctx = debugCanvasRef.current?.getContext('2d');

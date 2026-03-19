@@ -9,7 +9,7 @@ interface EyeMovementLayerProps {
 }
 
 const COUNTDOWN_MS = 2000;
-const PAD = 4;
+const PAD = 12;
 const MIN = PAD;
 const MAX = 100 - PAD;
 const CENTER = 50;
@@ -34,6 +34,7 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
   const completedRef = useRef(false);
   const dotRef = useRef<HTMLDivElement>(null);
   const lastCountdownRef = useRef(-1);
+  const viewportRef = useRef({ width: 0, height: 0 });
   const [countdown, setCountdown] = useState(Math.ceil(COUNTDOWN_MS / 1000));
 
   const { path, durationMs } = useMemo(() => {
@@ -248,6 +249,18 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
   }, [kind]);
 
   useEffect(() => {
+    const updateViewport = () => {
+      viewportRef.current = {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
+
+  useEffect(() => {
     startRef.current = null;
     completedRef.current = false;
     lastCountdownRef.current = -1;
@@ -266,8 +279,8 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
           setCountdown(remaining);
         }
         if (dot) {
-          const cx = window.innerWidth * 0.5;
-          const cy = window.innerHeight * 0.5;
+          const cx = viewportRef.current.width * 0.5;
+          const cy = viewportRef.current.height * 0.5;
           dot.style.transform = `translate3d(${cx}px, ${cy}px, 0) translate(-50%, -50%) scale(1)`;
           dot.style.opacity = '0.3';
         }
@@ -284,17 +297,19 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
       const animElapsed = totalElapsed - COUNTDOWN_MS;
       const t = Math.max(0, Math.min(1, animElapsed / durationMs));
       const p = path(t);
+      const w = viewportRef.current.width || window.innerWidth;
+      const h = viewportRef.current.height || window.innerHeight;
+      const px = (p.x / 100) * w;
+      const py = (p.y / 100) * h;
 
       if (dot) {
-        const px = (p.x / 100) * window.innerWidth;
-        const py = (p.y / 100) * window.innerHeight;
         dot.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, -50%) scale(${p.scale})`;
         dot.style.opacity = '1';
       }
 
       targetRef.current = {
-        x: (p.x / 100) * window.innerWidth,
-        y: (p.y / 100) * window.innerHeight,
+        x: px,
+        y: py,
       };
 
       if (t >= 1) {
