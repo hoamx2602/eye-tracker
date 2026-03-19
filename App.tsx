@@ -82,6 +82,10 @@ function App() {
   const [postSymptomScores, setPostSymptomScores] = useState<SymptomScores | null>(null);
   /** Which neurological test is running; null when between tests or in post/done. */
   const [currentNeuroTestId, setCurrentNeuroTestId] = useState<string | null>(null);
+  const currentNeuroTestIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    currentNeuroTestIdRef.current = currentNeuroTestId;
+  }, [currentNeuroTestId]);
   const [neuroTestResults, setNeuroTestResults] = useState<Record<string, TestResultPayload>>({});
   /** Head pose during NEURO_FLOW for tests that need it (e.g. Head Orientation). Throttled ~15 Hz. */
   const [neuroHeadPose, setNeuroHeadPose] = useState<{ pitch: number; yaw: number; roll: number } | null>(null);
@@ -740,10 +744,14 @@ function App() {
               if (statusRef.current !== 'HEAD_POSITIONING') {
                   const shouldShowMesh = !validation.valid;
                   const shouldShowDebug = showCameraRef.current;
+                  const isHeadOrientationStep =
+                    statusRef.current === 'NEURO_FLOW' &&
+                    currentNeuroTestIdRef.current === 'head_orientation';
 
                   if (shouldShowMesh || shouldShowDebug) {
                       ctx.lineWidth = 0.5;
-                      ctx.fillStyle = validation.valid ? "#4ade80" : "#ef4444"; 
+                      // During Head Orientation test, keep face dots green for clearer user feedback.
+                      ctx.fillStyle = isHeadOrientationStep ? "#4ade80" : (validation.valid ? "#4ade80" : "#ef4444");
                       
                       for (let i = 0; i < landmarks.length; i++) {
                           const lm = landmarks[i];

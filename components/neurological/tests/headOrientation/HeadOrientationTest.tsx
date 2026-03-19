@@ -12,6 +12,7 @@ import {
 } from './constants';
 
 const SAMPLE_INTERVAL_MS = 50; // ~20 Hz head samples
+const HEAD_ORIENTATION_MAX_LS_KEY = 'neuro_head_orientation_max_v1';
 
 export default function HeadOrientationTest() {
   const { config, completeTest } = useTestRunner();
@@ -32,6 +33,37 @@ export default function HeadOrientationTest() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [phaseElapsedSec, setPhaseElapsedSec] = useState(0);
+
+  const persistDirectionMaxima = (direction: HeadOrientationDirection, samples: Array<{ t: number; yaw: number; pitch: number; roll: number }>) => {
+    if (samples.length === 0) return;
+    const maxima = samples.reduce(
+      (acc, s) => ({
+        yawAbsMax: Math.max(acc.yawAbsMax, Math.abs(s.yaw)),
+        pitchAbsMax: Math.max(acc.pitchAbsMax, Math.abs(s.pitch)),
+        rollAbsMax: Math.max(acc.rollAbsMax, Math.abs(s.roll)),
+      }),
+      { yawAbsMax: 0, pitchAbsMax: 0, rollAbsMax: 0 }
+    );
+
+    try {
+      const raw = localStorage.getItem(HEAD_ORIENTATION_MAX_LS_KEY);
+      const parsed = raw ? JSON.parse(raw) as {
+        updatedAt?: string;
+        byDirection?: Record<string, { yawAbsMax: number; pitchAbsMax: number; rollAbsMax: number }>;
+      } : {};
+
+      const byDirection = parsed.byDirection ?? {};
+      byDirection[direction] = maxima;
+
+      localStorage.setItem(
+        HEAD_ORIENTATION_MAX_LS_KEY,
+        JSON.stringify({
+          updatedAt: new Date().toISOString(),
+          byDirection,
+        })
+      );
+    } catch (_) {}
+  };
 
   // Start test on mount
   useEffect(() => {
@@ -75,12 +107,15 @@ export default function HeadOrientationTest() {
     timerRef.current = setTimeout(() => {
       clearInterval(tickInterval);
       const now = performance.now();
+      const direction = order[directionIndex];
+      const phaseSamples = [...currentSamplesRef.current];
       phasesRef.current.push({
-        direction: order[directionIndex],
+        direction,
         startTime: phaseStart,
         endTime: now,
-        headSamples: [...currentSamplesRef.current],
+        headSamples: phaseSamples,
       });
+      persistDirectionMaxima(direction, phaseSamples);
       currentSamplesRef.current = [];
 
       if (directionIndex + 1 >= order.length) {
