@@ -416,12 +416,10 @@ export default function NeurologicalConfigForm() {
                       />
                       <div>
                         <label className="block text-slate-400 text-sm mb-0.5">Target dot color (hex)</label>
-                        <input
-                          type="text"
-                          value={String(params.targetDotColor ?? '#f59e0b')}
-                          onChange={(e) => setParam(id, 'targetDotColor', e.target.value)}
-                          placeholder="#f59e0b"
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                        <DotColorPicker
+                          value={params.targetDotColor}
+                          fallback="#f59e0b"
+                          onChange={(v) => setParam(id, 'targetDotColor', v)}
                         />
                       </div>
                     </>
@@ -448,12 +446,10 @@ export default function NeurologicalConfigForm() {
                       />
                       <div>
                         <label className="block text-slate-400 text-sm mb-0.5">Center dot color (hex)</label>
-                        <input
-                          type="text"
-                          value={String(params.centerDotColor ?? '#f59e0b')}
-                          onChange={(e) => setParam(id, 'centerDotColor', e.target.value)}
-                          placeholder="#f59e0b"
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                        <DotColorPicker
+                          value={params.centerDotColor}
+                          fallback="#f59e0b"
+                          onChange={(v) => setParam(id, 'centerDotColor', v)}
                         />
                       </div>
                     </>
@@ -480,12 +476,10 @@ export default function NeurologicalConfigForm() {
                       />
                       <div>
                         <label className="block text-slate-400 text-sm mb-0.5">Center dot color (hex)</label>
-                        <input
-                          type="text"
-                          value={String(params.centerDotColor ?? '#f59e0b')}
-                          onChange={(e) => setParam(id, 'centerDotColor', e.target.value)}
-                          placeholder="#f59e0b"
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                        <DotColorPicker
+                          value={params.centerDotColor}
+                          fallback="#f59e0b"
+                          onChange={(v) => setParam(id, 'centerDotColor', v)}
                         />
                       </div>
                       <SelectNumber
@@ -496,12 +490,10 @@ export default function NeurologicalConfigForm() {
                       />
                       <div>
                         <label className="block text-slate-400 text-sm mb-0.5">Stimulus dot color (hex)</label>
-                        <input
-                          type="text"
-                          value={String(params.stimulusDotColor ?? '#ffffff')}
-                          onChange={(e) => setParam(id, 'stimulusDotColor', e.target.value)}
-                          placeholder="#ffffff"
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm font-mono"
+                        <DotColorPicker
+                          value={params.stimulusDotColor}
+                          fallback="#ffffff"
+                          onChange={(v) => setParam(id, 'stimulusDotColor', v)}
                         />
                       </div>
                       <SelectNumber
@@ -683,6 +675,92 @@ function RectColorPicker({
               type="button"
               onClick={() => {
                 onChange(hex as AntiSaccadeRectColor);
+                setOpen(false);
+              }}
+              className="flex-1 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DotColorPicker({
+  value,
+  fallback,
+  onChange,
+}: {
+  value: unknown;
+  fallback: string;
+  onChange: (v: `#${string}`) => void;
+}) {
+  const isHex = (v: unknown): v is `#${string}` =>
+    typeof v === 'string' && /^#([0-9A-Fa-f]{6})$/.test(v.trim());
+
+  const initial = isHex(value) ? value.trim().toLowerCase() : fallback.toLowerCase();
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
+
+  const [open, setOpen] = React.useState(false);
+  const [localHex, setLocalHex] = React.useState(initial);
+
+  React.useEffect(() => {
+    if (!open) setLocalHex(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial, open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const el = wrapperRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && !el.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const hex = localHex;
+  return (
+    <div className="relative" ref={wrapperRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm flex items-center justify-between gap-3"
+      >
+        <span className="flex items-center gap-2">
+          <span className="w-4 h-4 rounded border border-slate-400" style={{ backgroundColor: hex }} />
+          <span className="font-mono text-[12px] text-slate-200">{hex.toUpperCase()}</span>
+        </span>
+        <span className="text-slate-400 text-xs">{open ? 'Close' : 'Pick'}</span>
+      </button>
+
+      {open && (
+        <div className="absolute z-30 top-full mt-2 left-0 right-0 bg-slate-900 border border-slate-700 rounded-xl p-3 shadow-xl">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="text-xs text-slate-300 font-semibold">Dot color</div>
+            <div className="font-mono text-[11px] text-slate-400">{hex.toUpperCase()}</div>
+          </div>
+          <div className="w-full">
+            <HexColorPicker color={hex} onChange={setLocalHex} />
+          </div>
+          <div className="flex items-center justify-between gap-3 mt-3">
+            <button
+              type="button"
+              onClick={() => {
+                setLocalHex(initial);
+                setOpen(false);
+              }}
+              className="flex-1 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onChange(hex as `#${string}`);
                 setOpen(false);
               }}
               className="flex-1 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold"
