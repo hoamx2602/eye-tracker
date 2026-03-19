@@ -103,42 +103,34 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
 
   const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS));
   const [trialIndex, setTrialIndex] = useState(0);
-  const [progress, setProgress] = useState(0);
+  const [visualStarted, setVisualStarted] = useState(false);
   const [restartIn, setRestartIn] = useState<number | null>(null);
-  const movementStartRef = useRef(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const direction = directionsRef.current[trialIndex];
-  const primaryOff = direction ? offset(direction, progress, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
-  const dimOff = direction ? offset(OPPOSITE_DIRECTION[direction], progress, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
+  const primaryEnd = direction ? offset(direction, 1, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
+  const dimEnd = direction ? offset(OPPOSITE_DIRECTION[direction], 1, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
 
-  // Movement animation (speed from config.movementSpeedPxPerSec or movementDurationMs)
+  // High-frequency animation is handled by CSS transition (GPU-friendly).
+  // We only toggle visualStarted twice per trial (start -> animate), not every frame.
   useEffect(() => {
     if (restartIn !== null) return;
-    movementStartRef.current = performance.now();
-    const id = setInterval(() => {
-      const now = performance.now();
-      const elapsed = now - movementStartRef.current;
-      const p = Math.min(1, elapsed / movementDurationMs);
-      setProgress(p);
-      if (p >= 1) {
-        if (trialIndex + 1 >= PRACTICE_TRIALS) {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          intervalRef.current = null;
-          practiceGateRef.current?.markPracticeDone();
-          setRestartIn(restartDelaySec);
-          return;
-        }
+
+    setVisualStarted(false);
+    const raf = requestAnimationFrame(() => setVisualStarted(true));
+
+    const t = window.setTimeout(() => {
+      if (trialIndex + 1 >= PRACTICE_TRIALS) {
+        practiceGateRef.current?.markPracticeDone();
+        setRestartIn(restartDelaySec);
+      } else {
         setTrialIndex((i) => i + 1);
-        setProgress(0);
-        movementStartRef.current = performance.now();
       }
-    }, 30);
-    intervalRef.current = id;
+    }, movementDurationMs);
+
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = null;
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
     };
-  }, [trialIndex, restartIn, movementDurationMs]);
+  }, [trialIndex, restartIn, movementDurationMs, restartDelaySec]);
 
   // Countdown then restart
   useEffect(() => {
@@ -150,8 +142,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
         if (next === 0) {
           directionsRef.current = generateTrialDirections(PRACTICE_TRIALS);
           setTrialIndex(0);
-          setProgress(0);
-          movementStartRef.current = performance.now();
+          setVisualStarted(false);
           return null;
         }
         return next;
@@ -177,47 +168,56 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
         </p>
       )}
       <div className="relative rounded-xl overflow-hidden bg-gray-900" style={{ width: BOX_SIZE, height: BOX_SIZE }}>
-        {progress === 0 && direction ? (
-          showDimRect ? (
-            <StimulusShape
-              shape={stimulusShape}
-              left={isHorizontalDirection(direction) ? CENTER - RECT_HALF_PX : CENTER - RECT_HALF_PX / 2}
-              top={isHorizontalDirection(direction) ? CENTER - RECT_HALF_PX / 2 : CENTER - RECT_HALF_PX}
-              width={isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX}
-              height={isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2}
-              isPrimary={false}
-              primaryColor={primaryRectColor}
-              dimColor={dimRectColor}
-              opacity={dimOpacity}
-            />
-          ) : null
-        ) : (
+        {(!visualStarted && direction && showDimRect) ? (
+          <StimulusShape
+            shape={stimulusShape}
+            left={isHorizontalDirection(direction) ? CENTER - RECT_HALF_PX : CENTER - RECT_HALF_PX / 2}
+            top={isHorizontalDirection(direction) ? CENTER - RECT_HALF_PX / 2 : CENTER - RECT_HALF_PX}
+            width={isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX}
+            height={isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2}
+            isPrimary={false}
+            primaryColor={primaryRectColor}
+            dimColor={dimRectColor}
+            opacity={dimOpacity}
+          />
+        ) : null}
+
+        {direction ? (
           <>
             <StimulusShape
               shape={stimulusShape}
-              left={CENTER - RECT_HALF_PX / 2 + primaryOff.x}
-              top={CENTER - RECT_HALF_PX / 2 + primaryOff.y}
+              left={CENTER - RECT_HALF_PX / 2}
+              top={CENTER - RECT_HALF_PX / 2}
               width={RECT_HALF_PX}
               height={RECT_HALF_PX}
               isPrimary={true}
               primaryColor={primaryRectColor}
               dimColor={dimRectColor}
+              opacity={visualStarted ? 1 : 0}
+              style={{
+                transition: visualStarted ? `transform ${movementDurationMs}ms linear` : 'none',
+                transform: `translate(${visualStarted ? primaryEnd.x : 0}px, ${visualStarted ? primaryEnd.y : 0}px)`,
+              }}
             />
             {showDimRect && (
               <StimulusShape
                 shape={stimulusShape}
-                left={CENTER - RECT_HALF_PX / 2 + dimOff.x}
-                top={CENTER - RECT_HALF_PX / 2 + dimOff.y}
+                left={CENTER - RECT_HALF_PX / 2}
+                top={CENTER - RECT_HALF_PX / 2}
                 width={RECT_HALF_PX}
                 height={RECT_HALF_PX}
                 isPrimary={false}
                 primaryColor={primaryRectColor}
                 dimColor={dimRectColor}
-                opacity={dimOpacity}
+                opacity={visualStarted ? dimOpacity : 0}
+                style={{
+                  transition: visualStarted ? `transform ${movementDurationMs}ms linear` : 'none',
+                  transform: `translate(${visualStarted ? dimEnd.x : 0}px, ${visualStarted ? dimEnd.y : 0}px)`,
+                }}
               />
             )}
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );

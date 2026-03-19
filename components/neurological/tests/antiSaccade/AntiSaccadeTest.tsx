@@ -101,7 +101,7 @@ export default function AntiSaccadeTest() {
   const startTimeRef = useRef(0);
   const [trialIndex, setTrialIndex] = useState(0);
   const [phase, setPhase] = useState<'moving' | 'between'>('moving');
-  const [progress, setProgress] = useState(0);
+  const [visualStarted, setVisualStarted] = useState(false);
   const movementStartRef = useRef(0);
   const firstCorrectGazeTimeRef = useRef<number | null>(null);
   const trialGazeSamplesRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
@@ -112,14 +112,23 @@ export default function AntiSaccadeTest() {
   const { travelX, travelY } = getTravelToEdges();
   const direction = directions[trialIndex];
   const travelPx = direction ? (isHorizontalDirection(direction) ? travelX : travelY) : TRAVEL_DISTANCE_PX;
-  const primaryPos = useMemo(
-    () => (direction ? primaryPosition(direction, center.x, center.y, progress, travelPx) : center),
-    [direction, center.x, center.y, progress, travelPx]
+
+  const trialDurationMs =
+    speedPxPerSec > 0
+      ? Math.max(300, Math.min(15000, (1000 * travelPx) / speedPxPerSec))
+      : fallbackDurationMs;
+
+  const primaryEndPos = useMemo(
+    () => (direction ? primaryPosition(direction, center.x, center.y, 1, travelPx) : center),
+    [direction, center.x, center.y, travelPx]
   );
-  const dimPos = useMemo(
-    () => (direction ? dimPosition(direction, center.x, center.y, progress, travelPx) : center),
-    [direction, center.x, center.y, progress, travelPx]
+  const dimEndPos = useMemo(
+    () => (direction ? dimPosition(direction, center.x, center.y, 1, travelPx) : center),
+    [direction, center.x, center.y, travelPx]
   );
+
+  const primaryTranslate = { x: primaryEndPos.x - center.x, y: primaryEndPos.y - center.y };
+  const dimTranslate = { x: dimEndPos.x - center.x, y: dimEndPos.y - center.y };
 
   useEffect(() => {
     startTimeRef.current = performance.now();
@@ -128,6 +137,16 @@ export default function AntiSaccadeTest() {
     trialGazeSamplesRef.current = [];
     trialsResultsRef.current = [];
   }, []);
+
+  // Visual movement is driven by CSS transitions (no React setState per frame).
+  // We only toggle visualStarted at the start of each trial movement phase.
+  useEffect(() => {
+    if (phase !== 'moving') return;
+    if (trialIndex >= trialCount) return;
+    setVisualStarted(false);
+    const raf = requestAnimationFrame(() => setVisualStarted(true));
+    return () => cancelAnimationFrame(raf);
+  }, [phase, trialIndex, trialCount]);
 
   useEffect(() => {
     if (trialIndex >= trialCount) return;
@@ -138,17 +157,10 @@ export default function AntiSaccadeTest() {
       if (!dir) return;
 
       if (phase === 'moving') {
-        const { travelX: tx, travelY: ty } = getTravelToEdges();
-        const travelPxNow = isHorizontalDirection(dir) ? tx : ty;
-        const trialDurationMs =
-          speedPxPerSec > 0
-            ? Math.max(300, Math.min(15000, (1000 * travelPxNow) / speedPxPerSec))
-            : fallbackDurationMs;
         const elapsed = now - movementStartRef.current;
         const p = Math.min(1, elapsed / trialDurationMs);
-        setProgress(p);
 
-        const dimPosNow = dimPosition(dir, center.x, center.y, p, travelPxNow);
+        const dimPosNow = dimPosition(dir, center.x, center.y, p, travelPx);
         const g = gazeRef.current;
         const tRel = (now - movementStartRef.current) / 1000;
         trialGazeSamplesRef.current.push({ t: tRel, x: g.x, y: g.y });
@@ -195,7 +207,6 @@ export default function AntiSaccadeTest() {
           }
           setTrialIndex((i) => i + 1);
           setPhase('moving');
-          setProgress(0);
           movementStartRef.current = performance.now();
           firstCorrectGazeTimeRef.current = null;
           trialGazeSamplesRef.current = [];
@@ -204,7 +215,7 @@ export default function AntiSaccadeTest() {
     }, GAZE_SAMPLE_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [trialIndex, trialCount, phase, directions, speedPxPerSec, fallbackDurationMs, intervalMs, center.x, center.y, completeTest]);
+  }, [trialIndex, trialCount, phase, directions, speedPxPerSec, fallbackDurationMs, intervalMs, center.x, center.y, trialDurationMs, travelPx, completeTest]);
 
   if (trialIndex >= trialCount) {
     return (
@@ -228,50 +239,60 @@ export default function AntiSaccadeTest() {
           </>
         ) : null}
       </p>
-      {progress === 0 && direction ? (
-        showDimRect ? (
-          <StimulusShape
-            shape={stimulusShape}
-            left={isHorizontalDirection(direction) ? center.x - RECT_HALF_PX : center.x - RECT_HALF_PX / 2}
-            top={isHorizontalDirection(direction) ? center.y - RECT_HALF_PX / 2 : center.y - RECT_HALF_PX}
-            width={isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX}
-            height={isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2}
-            isPrimary={false}
-            primaryColor={primaryRectColor}
-            dimColor={dimRectColor}
-            opacity={dimRectOpacity}
-            ariaHidden
-          />
-        ) : null
-      ) : (
+      {direction ? (
         <>
-          <StimulusShape
-            shape={stimulusShape}
-            left={primaryPos.x - RECT_HALF_PX / 2}
-            top={primaryPos.y - RECT_HALF_PX / 2}
-            width={RECT_HALF_PX}
-            height={RECT_HALF_PX}
-            isPrimary={true}
-            primaryColor={primaryRectColor}
-            dimColor={dimRectColor}
-            ariaHidden
-          />
-          {showDimRect && (
+          {!visualStarted && showDimRect ? (
             <StimulusShape
               shape={stimulusShape}
-              left={dimPos.x - RECT_HALF_PX / 2}
-              top={dimPos.y - RECT_HALF_PX / 2}
-              width={RECT_HALF_PX}
-              height={RECT_HALF_PX}
+              left={isHorizontalDirection(direction) ? center.x - RECT_HALF_PX : center.x - RECT_HALF_PX / 2}
+              top={isHorizontalDirection(direction) ? center.y - RECT_HALF_PX / 2 : center.y - RECT_HALF_PX}
+              width={isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX}
+              height={isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2}
               isPrimary={false}
               primaryColor={primaryRectColor}
               dimColor={dimRectColor}
               opacity={dimRectOpacity}
               ariaHidden
             />
+          ) : null}
+
+          <StimulusShape
+            shape={stimulusShape}
+            left={center.x - RECT_HALF_PX / 2}
+            top={center.y - RECT_HALF_PX / 2}
+            width={RECT_HALF_PX}
+            height={RECT_HALF_PX}
+            isPrimary={true}
+            primaryColor={primaryRectColor}
+            dimColor={dimRectColor}
+            opacity={visualStarted ? 1 : 0}
+            ariaHidden
+            style={{
+              transition: visualStarted ? `transform ${trialDurationMs}ms linear` : 'none',
+              transform: `translate(${visualStarted ? primaryTranslate.x : 0}px, ${visualStarted ? primaryTranslate.y : 0}px)`,
+            }}
+          />
+
+          {showDimRect && (
+            <StimulusShape
+              shape={stimulusShape}
+              left={center.x - RECT_HALF_PX / 2}
+              top={center.y - RECT_HALF_PX / 2}
+              width={RECT_HALF_PX}
+              height={RECT_HALF_PX}
+              isPrimary={false}
+              primaryColor={primaryRectColor}
+              dimColor={dimRectColor}
+              opacity={visualStarted ? dimRectOpacity : 0}
+              ariaHidden
+              style={{
+                transition: visualStarted ? `transform ${trialDurationMs}ms linear` : 'none',
+                transform: `translate(${visualStarted ? dimTranslate.x : 0}px, ${visualStarted ? dimTranslate.y : 0}px)`,
+              }}
+            />
           )}
         </>
-      )}
+      ) : null}
     </div>
   );
 }
