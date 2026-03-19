@@ -16,6 +16,8 @@ import {
 } from './constants';
 import { createBoard } from './utils';
 
+const MEMORY_CARDS_RESULT_LS_KEY = 'neuro_memory_cards_result_v1';
+
 export interface MemoryCardsMove {
   card1Index: number;
   card2Index: number;
@@ -30,6 +32,7 @@ export interface MemoryCardsResult {
   cols: number;
   rows: number;
   moves: MemoryCardsMove[];
+  numberOfMoves: number;
   correctPairsCount: number;
   completionTimeMs: number;
   gazePath: Array<{ t: number; x: number; y: number }>;
@@ -134,6 +137,19 @@ export default function MemoryCardsTest() {
     startTimeRef.current = performance.now();
     movesRef.current = [];
     gazePathRef.current = [];
+    try {
+      localStorage.setItem(
+        MEMORY_CARDS_RESULT_LS_KEY,
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          status: 'in_progress',
+          numberOfMoves: 0,
+          correctPairsCount: 0,
+          completionTimeMs: 0,
+          gazePath: [],
+        })
+      );
+    } catch (_) {}
     pathIntervalRef.current = setInterval(() => {
       const g = gazeRef.current;
       const t = (performance.now() - startTimeRef.current) / 1000;
@@ -186,7 +202,22 @@ export default function MemoryCardsTest() {
       clearInterval(pathIntervalRef.current);
       pathIntervalRef.current = null;
     }
+    const numberOfMoves = movesRef.current.length;
     const correctPairsCount = movesRef.current.filter((m) => m.match).length;
+    const completionTimeMs = endTime - startTimeRef.current;
+    const gazePath = [...gazePathRef.current];
+    try {
+      localStorage.setItem(
+        MEMORY_CARDS_RESULT_LS_KEY,
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          numberOfMoves,
+          correctPairsCount,
+          completionTimeMs,
+          gazePath,
+        })
+      );
+    } catch (_) {}
     completeTest({
       testId: 'memory_cards',
       startTime: startTimeRef.current,
@@ -195,9 +226,10 @@ export default function MemoryCardsTest() {
       cols,
       rows,
       moves: [...movesRef.current],
+      numberOfMoves,
       correctPairsCount,
-      completionTimeMs: endTime - startTimeRef.current,
-      gazePath: [...gazePathRef.current],
+      completionTimeMs,
+      gazePath,
     });
   }, [allMatched, completeTest, cardCount, cols, rows]);
 
