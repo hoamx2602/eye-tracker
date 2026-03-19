@@ -10,6 +10,7 @@ import {
   TRAVEL_DISTANCE_PX,
   STIMULUS_SHAPE_OPTIONS,
   type AntiSaccadeDirection,
+  type AntiSaccadeRectColor,
   type AntiSaccadeStimulusShape,
 } from './constants';
 import StimulusShape from './StimulusShape';
@@ -50,7 +51,7 @@ function getMovementDurationMs(config?: Record<string, unknown>, travelPx: numbe
   return Math.min(10000, v);
 }
 
-const DIM_OPACITY_MIN = 0.1;
+const DIM_OPACITY_MIN = 0;
 const DIM_OPACITY_MAX = 0.9;
 const DIM_OPACITY_DEFAULT = 0.1;
 
@@ -64,16 +65,21 @@ function isHorizontalDirection(d: AntiSaccadeDirection): boolean {
   return d === 'left' || d === 'right';
 }
 
-function getShowDimRect(config?: Record<string, unknown>): boolean {
-  if (config?.showDimRect === false) return false;
-  return true;
-}
-
 const VALID_SHAPES = new Set(STIMULUS_SHAPE_OPTIONS.map((o) => o.value));
 
 function getStimulusShape(config?: Record<string, unknown>): AntiSaccadeStimulusShape {
   const v = String(config?.stimulusShape ?? 'rectangle').toLowerCase();
   return VALID_SHAPES.has(v as AntiSaccadeStimulusShape) ? (v as AntiSaccadeStimulusShape) : 'rectangle';
+}
+
+function getRectColor(
+  config: Record<string, unknown> | undefined,
+  key: string,
+  defaultColor: AntiSaccadeRectColor
+): AntiSaccadeRectColor {
+  const v = String(config?.[key] ?? defaultColor).toLowerCase();
+  if (v === 'red' || v === 'blue') return v;
+  return defaultColor;
 }
 
 /**
@@ -87,8 +93,14 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   const restartDelaySec = getRestartDelaySec(config);
   const movementDurationMs = getMovementDurationMs(config, TRAVEL_DISTANCE_PX);
   const dimOpacity = getDimRectOpacity(config);
-  const showDimRect = getShowDimRect(config);
+  const showDimRect = dimOpacity > 0;
   const stimulusShape = getStimulusShape(config);
+  const primaryRectColor = getRectColor(config, 'primaryRectColor', 'red');
+  const dimRectColor = getRectColor(config, 'dimRectColor', 'blue');
+
+  const primaryColorLabel = primaryRectColor === 'red' ? 'red' : 'blue';
+  const dimColorLabel = dimRectColor === 'red' ? 'red' : 'blue';
+
   const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS));
   const [trialIndex, setTrialIndex] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -156,7 +168,12 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
         </p>
       ) : (
         <p className="text-gray-400 text-sm mb-4">
-          Follow the <strong className="text-slate-300">dim</strong> rectangle with your eyes. Trial {trialIndex + 1} of {PRACTICE_TRIALS}.
+          Look in the opposite direction from the <strong className="text-slate-300">{primaryColorLabel}</strong> square
+          {showDimRect ? (
+            <>
+              . Follow the <strong className="text-slate-300">{dimColorLabel}</strong> square instead.
+            </>
+          ) : null}
         </p>
       )}
       <div className="relative rounded-xl overflow-hidden bg-gray-900" style={{ width: BOX_SIZE, height: BOX_SIZE }}>
@@ -169,6 +186,8 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
               width={isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX}
               height={isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2}
               isPrimary={false}
+              primaryColor={primaryRectColor}
+              dimColor={dimRectColor}
               opacity={dimOpacity}
             />
           ) : null
@@ -181,6 +200,8 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
               width={RECT_HALF_PX}
               height={RECT_HALF_PX}
               isPrimary={true}
+              primaryColor={primaryRectColor}
+              dimColor={dimRectColor}
             />
             {showDimRect && (
               <StimulusShape
@@ -190,6 +211,8 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
                 width={RECT_HALF_PX}
                 height={RECT_HALF_PX}
                 isPrimary={false}
+                primaryColor={primaryRectColor}
+                dimColor={dimRectColor}
                 opacity={dimOpacity}
               />
             )}

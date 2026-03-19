@@ -13,6 +13,7 @@ import {
   TRAVEL_DISTANCE_PX,
   STIMULUS_SHAPE_OPTIONS,
   type AntiSaccadeDirection,
+  type AntiSaccadeRectColor,
   type AntiSaccadeStimulusShape,
 } from './constants';
 import StimulusShape from './StimulusShape';
@@ -27,6 +28,12 @@ const VALID_SHAPES = new Set(STIMULUS_SHAPE_OPTIONS.map((o) => o.value));
 function getStimulusShape(config: Record<string, unknown>): AntiSaccadeStimulusShape {
   const v = String(config?.stimulusShape ?? 'rectangle').toLowerCase();
   return VALID_SHAPES.has(v as AntiSaccadeStimulusShape) ? (v as AntiSaccadeStimulusShape) : 'rectangle';
+}
+
+function getRectColor(config: Record<string, unknown> | undefined, key: string, defaultColor: AntiSaccadeRectColor): AntiSaccadeRectColor {
+  const v = String(config?.[key] ?? defaultColor).toLowerCase();
+  if (v === 'red' || v === 'blue') return v;
+  return defaultColor;
 }
 
 export interface AntiSaccadeTrialResult {
@@ -80,10 +87,15 @@ export default function AntiSaccadeTest() {
   const intervalMs = Math.max(200, Number(config.intervalBetweenTrialsMs) ?? DEFAULT_INTERVAL_BETWEEN_TRIALS_MS);
   const dimRectOpacity = (() => {
     const v = Number(config.dimRectOpacity);
-    return Number.isFinite(v) ? Math.max(0.1, Math.min(0.9, v)) : 0.1;
+    return Number.isFinite(v) ? Math.max(0, Math.min(0.9, v)) : 0.1;
   })();
-  const showDimRect = config.showDimRect !== false;
+  const showDimRect = dimRectOpacity > 0;
   const stimulusShape = getStimulusShape(config);
+  const primaryRectColor = getRectColor(config, 'primaryRectColor', 'red');
+  const dimRectColor = getRectColor(config, 'dimRectColor', 'blue');
+
+  const primaryColorLabel = primaryRectColor === 'red' ? 'red' : 'blue';
+  const dimColorLabel = dimRectColor === 'red' ? 'red' : 'blue';
 
   const directions = useMemo(() => generateTrialDirections(trialCount), [trialCount]);
   const startTimeRef = useRef(0);
@@ -206,10 +218,15 @@ export default function AntiSaccadeTest() {
     <div
       className="fixed inset-0 z-50 bg-gray-950"
       role="region"
-      aria-label="Anti-saccade: look at the dim rectangle"
+      aria-label="Anti-saccade: look opposite direction from the primary square"
     >
       <p className="text-center text-gray-400 text-sm pt-4 pb-2">
-        Look at the <strong className="text-gray-300">dim</strong> rectangle.
+        Look in the opposite direction from the <strong className="text-gray-300">{primaryColorLabel}</strong> square
+        {showDimRect ? (
+          <>
+            . Follow the <strong className="text-gray-300">{dimColorLabel}</strong> square instead.
+          </>
+        ) : null}
       </p>
       {progress === 0 && direction ? (
         showDimRect ? (
@@ -220,6 +237,8 @@ export default function AntiSaccadeTest() {
             width={isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX}
             height={isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2}
             isPrimary={false}
+            primaryColor={primaryRectColor}
+            dimColor={dimRectColor}
             opacity={dimRectOpacity}
             ariaHidden
           />
@@ -233,6 +252,8 @@ export default function AntiSaccadeTest() {
             width={RECT_HALF_PX}
             height={RECT_HALF_PX}
             isPrimary={true}
+            primaryColor={primaryRectColor}
+            dimColor={dimRectColor}
             ariaHidden
           />
           {showDimRect && (
@@ -243,6 +264,8 @@ export default function AntiSaccadeTest() {
               width={RECT_HALF_PX}
               height={RECT_HALF_PX}
               isPrimary={false}
+              primaryColor={primaryRectColor}
+              dimColor={dimRectColor}
               opacity={dimRectOpacity}
               ariaHidden
             />

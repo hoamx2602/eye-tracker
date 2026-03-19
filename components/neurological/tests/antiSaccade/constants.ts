@@ -65,3 +65,10 @@ export const STIMULUS_SHAPE_OPTIONS: { value: AntiSaccadeStimulusShape; label: s
   { value: 'table', label: 'Table' },
   { value: 'chair', label: 'Chair' },
 ];
+
+export type AntiSaccadeRectColor = 'red' | 'blue';
+
+export const RECT_COLOR_OPTIONS: { value: AntiSaccadeRectColor; label: string }[] = [
+  { value: 'red', label: 'Red' },
+  { value: 'blue', label: 'Blue' },
+];

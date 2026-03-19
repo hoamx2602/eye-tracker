@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { STIMULUS_SHAPE_OPTIONS } from '@/components/neurological/tests/antiSaccade/constants';
+import { RECT_COLOR_OPTIONS, STIMULUS_SHAPE_OPTIONS } from '@/components/neurological/tests/antiSaccade/constants';
 
 const TEST_LABELS: Record<string, string> = {
   head_orientation: 'Head Orientation',
@@ -34,7 +34,17 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
     head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
     visual_search: { numberCount: 8, practiceCount: 4, aoiRadiusPx: 80 },
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
-    anti_saccade: { trialCount: 12, movementSpeedPxPerSec: 120, intervalBetweenTrialsMs: 800, practiceRestartDelaySec: 3, dimRectOpacity: 0.1, showDimRect: true, stimulusShape: 'rectangle' },
+    anti_saccade: {
+      trialCount: 12,
+      movementSpeedPxPerSec: 120,
+      intervalBetweenTrialsMs: 800,
+      practiceRestartDelaySec: 3,
+      dimRectOpacity: 0.1,
+      showDimRect: true,
+      stimulusShape: 'rectangle',
+      primaryRectColor: 'red',
+      dimRectColor: 'blue',
+    },
     saccadic: { targetDurationMs: 1000, totalCycles: 18, targetDotSizePx: 64, targetDotColor: '#f59e0b' },
     fixation_stability: { durationSec: 5, blinkIntervalMs: 600, centerDotSizePx: 12, centerDotColor: '#f59e0b' },
     peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000, centerDotSizePx: 8, centerDotColor: '#f59e0b', stimulusDotSizePx: 16, stimulusDotColor: '#ffffff' },
@@ -315,23 +325,64 @@ export default function NeurologicalConfigForm() {
                           ))}
                         </select>
                       </div>
-                      <SelectNumber
-                        label="Dim rectangle opacity"
-                        value={Number(params.dimRectOpacity) ?? 0.1}
-                        onChange={(v) => setParam(id, 'dimRectOpacity', v)}
-                        options={[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8].map((n) => ({ value: n, label: `${Math.round(n * 100)}%` }))}
-                      />
                       <div>
-                        <label className="block text-slate-400 text-sm mb-0.5">Show dim rectangle</label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={params.showDimRect !== false}
-                            onChange={(e) => setParam(id, 'showDimRect', e.target.checked)}
-                            className="rounded border-slate-500 bg-slate-800"
-                          />
-                          <span className="text-xs text-slate-400">On — when off: dim rectangle is hidden and user looks by eye only</span>
-                        </label>
+                        <label className="block text-slate-400 text-sm mb-0.5">Primary rectangle color</label>
+                        <select
+                          value={String(params.primaryRectColor ?? 'red')}
+                          onChange={(e) => setParam(id, 'primaryRectColor', e.target.value)}
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
+                        >
+                          {RECT_COLOR_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Dim rectangle color</label>
+                        <select
+                          value={String(params.dimRectColor ?? 'blue')}
+                          onChange={(e) => setParam(id, 'dimRectColor', e.target.value)}
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
+                        >
+                          {RECT_COLOR_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Dim rectangle opacity</label>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="text-slate-500">Opacity</span>
+                          <span className="font-mono text-slate-200">
+                            {Math.round(
+                              Math.max(
+                                0,
+                                Math.min(
+                                  0.9,
+                                  Number(params.dimRectOpacity) ?? 0.1
+                                )
+                              ) * 100
+                            )}
+                            %
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={0.9}
+                          step={0.01}
+                          value={Math.max(0, Math.min(0.9, Number(params.dimRectOpacity) ?? 0.1))}
+                          onChange={(e) => {
+                            const raw = Number(e.target.value);
+                            const v = Math.max(0, Math.min(0.9, Math.round(raw * 100) / 100));
+                            setParam(id, 'dimRectOpacity', v);
+                          }}
+                          className="w-full accent-blue-500 h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer"
+                        />
                       </div>
                       <SelectNumber
                         label="Interval between trials (ms)"

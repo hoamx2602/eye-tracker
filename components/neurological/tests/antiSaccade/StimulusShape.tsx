@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import type { AntiSaccadeStimulusShape } from './constants';
+import type { AntiSaccadeRectColor, AntiSaccadeStimulusShape } from './constants';
 
 export type StimulusShapeProps = {
   shape: AntiSaccadeStimulusShape;
@@ -10,6 +10,8 @@ export type StimulusShapeProps = {
   width: number;
   height: number;
   isPrimary: boolean;
+  primaryColor?: AntiSaccadeRectColor;
+  dimColor?: AntiSaccadeRectColor;
   opacity?: number;
   className?: string;
   style?: React.CSSProperties;
@@ -24,14 +26,26 @@ export default function StimulusShape({
   width,
   height,
   isPrimary,
+  primaryColor = 'red',
+  dimColor = 'blue',
   opacity = 1,
   className = '',
   style = {},
   ariaHidden,
 }: StimulusShapeProps) {
   const baseClass = 'absolute flex items-center justify-center';
-  const primaryClass = 'bg-blue-400 border-2 border-blue-300';
-  const dimClass = 'border-2 border-dashed border-slate-400 bg-slate-500';
+
+  const PRIMARY: Record<AntiSaccadeRectColor, { fill: string; border: string }> = {
+    red: { fill: 'bg-red-400', border: 'border-red-300' },
+    blue: { fill: 'bg-blue-400', border: 'border-blue-300' },
+  };
+  const DIM: Record<AntiSaccadeRectColor, { fill: string; border: string }> = {
+    red: { fill: 'bg-red-500', border: 'border-red-300' },
+    blue: { fill: 'bg-blue-500', border: 'border-blue-300' },
+  };
+
+  const primaryClass = `${PRIMARY[primaryColor].fill} border-2 ${PRIMARY[primaryColor].border}`;
+  const dimClass = `border-2 border-dashed ${DIM[dimColor].border} ${DIM[dimColor].fill}`;
 
   const commonStyle: React.CSSProperties = {
     left,
@@ -55,7 +69,7 @@ export default function StimulusShape({
   if (shape === 'circle' || shape === 'ball') {
     return (
       <div
-        className={`${baseClass} rounded-full ${isPrimary ? 'bg-blue-400 border-2 border-blue-300' : 'border-2 border-dashed border-slate-400 bg-slate-500'} ${className}`}
+        className={`${baseClass} rounded-full ${isPrimary ? primaryClass : dimClass} ${className}`}
         style={commonStyle}
         aria-hidden={ariaHidden}
       />
@@ -66,7 +80,7 @@ export default function StimulusShape({
     const clip = 'polygon(50% 0%, 0% 100%, 100% 100%)';
     return (
       <div
-        className={`${baseClass} ${isPrimary ? 'bg-blue-400 border-2 border-blue-300' : 'border-2 border-dashed border-slate-400 bg-slate-500'} ${className}`}
+        className={`${baseClass} ${isPrimary ? primaryClass : dimClass} ${className}`}
         style={{ ...commonStyle, clipPath: clip, WebkitClipPath: clip, borderRadius: 2 }}
         aria-hidden={ariaHidden}
       />

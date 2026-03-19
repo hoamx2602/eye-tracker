@@ -2137,7 +2137,18 @@ function App() {
             practiceContent={(config) => <AntiSaccadePractice config={config} />}
             practiceTitle="Practice: Anti-Saccade"
             testContent={<AntiSaccadeTest />}
-            config={(neuroConfigSnapshot?.testParameters?.anti_saccade as Record<string, unknown>) ?? { trialCount: DEFAULT_TRIAL_COUNT, movementSpeedPxPerSec: 120, intervalBetweenTrialsMs: DEFAULT_INTERVAL_BETWEEN_TRIALS_MS, practiceRestartDelaySec: 3, showDimRect: true, stimulusShape: 'rectangle' }}
+            config={
+              (neuroConfigSnapshot?.testParameters?.anti_saccade as Record<string, unknown>) ?? {
+                trialCount: DEFAULT_TRIAL_COUNT,
+                movementSpeedPxPerSec: 120,
+                intervalBetweenTrialsMs: DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
+                practiceRestartDelaySec: 3,
+                showDimRect: true,
+                stimulusShape: 'rectangle',
+                primaryRectColor: 'red',
+                dimRectColor: 'blue',
+              }
+            }
             onTestComplete={(payload) => handleNeuroTestComplete('anti_saccade', payload)}
           />
         </NeuroGazeProvider>
