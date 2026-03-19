@@ -167,9 +167,6 @@ export default function FixationStabilityTest() {
       role="region"
       aria-label="Fixation stability: keep gaze on the dot"
     >
-      <p className="text-gray-400 text-sm mb-4">
-        Keep your gaze on the dot.
-      </p>
       <div
         className="absolute rounded-full shadow-lg"
         style={{
