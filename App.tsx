@@ -222,6 +222,7 @@ function App() {
     testEnabled: Record<string, boolean>;
   } | null>(null);
   const NEURO_CONFIG_LS_KEY = 'neuro_config_snapshot_v1';
+  const NEURO_TEST_PROGRESS_LS_KEY = 'neuro_test_progress_v1';
   const [currentNeuroTestIndex, setCurrentNeuroTestIndex] = useState(0);
   const [preSymptomScores, setPreSymptomScores] = useState<SymptomScores | null>(null);
   const [postSymptomScores, setPostSymptomScores] = useState<SymptomScores | null>(null);
@@ -1615,7 +1616,8 @@ function App() {
 
   const handleNeuroTestComplete = useCallback(
     async (testId: string, payload: TestResultPayload) => {
-      setNeuroTestResults((prev) => ({ ...prev, [testId]: payload }));
+      const nextResults = { ...neuroTestResults, [testId]: payload };
+      setNeuroTestResults(nextResults);
       if (neuroRunId) {
         try {
           await neurologicalRunsApi.patch(neuroRunId, {
@@ -1634,6 +1636,19 @@ function App() {
           break;
         }
       }
+      try {
+        localStorage.setItem(
+          NEURO_TEST_PROGRESS_LS_KEY,
+          JSON.stringify({
+            runId: neuroRunId,
+            phase: nextIdx >= 0 ? 'tests' : 'post',
+            currentTestId: nextIdx >= 0 ? order[nextIdx] : null,
+            currentTestIndex: nextIdx >= 0 ? nextIdx : order.length,
+            testResults: nextResults,
+            savedAt: new Date().toISOString(),
+          })
+        );
+      } catch (_) {}
       if (nextIdx >= 0) {
         setCurrentNeuroTestIndex(nextIdx);
         setCurrentNeuroTestId(order[nextIdx]);
@@ -1646,7 +1661,15 @@ function App() {
         router.push(PATHS.NEURO_POST);
       }
     },
-    [neuroRunId, neuroTestOrder, neuroConfigSnapshot?.testEnabled, currentNeuroTestIndex, router]
+    [
+      neuroRunId,
+      neuroTestOrder,
+      neuroConfigSnapshot?.testEnabled,
+      currentNeuroTestIndex,
+      neuroTestResults,
+      router,
+      NEURO_TEST_PROGRESS_LS_KEY,
+    ]
   );
 
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
@@ -2017,6 +2040,9 @@ function App() {
             setNeuroTestResults({});
             setCurrentNeuroTestId(null);
             setCurrentNeuroTestIndex(0);
+            try {
+              localStorage.removeItem(NEURO_TEST_PROGRESS_LS_KEY);
+            } catch (_) {}
             try {
               const configSnapshot = await getNeurologicalConfig();
               const source = (configSnapshot as { _source?: string })._source;
