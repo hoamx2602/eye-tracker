@@ -12,6 +12,7 @@ import {
   RECT_HALF_PX,
   TRAVEL_DISTANCE_PX,
   STIMULUS_SHAPE_OPTIONS,
+  RECT_COLOR_PALETTE,
   type AntiSaccadeDirection,
   type AntiSaccadeRectColor,
   type AntiSaccadeStimulusShape,
@@ -32,7 +33,8 @@ function getStimulusShape(config: Record<string, unknown>): AntiSaccadeStimulusS
 
 function getRectColor(config: Record<string, unknown> | undefined, key: string, defaultColor: AntiSaccadeRectColor): AntiSaccadeRectColor {
   const v = String(config?.[key] ?? defaultColor).toLowerCase();
-  if (v === 'red' || v === 'blue') return v;
+  if (/^#([0-9A-Fa-f]{6})$/.test(v)) return v as AntiSaccadeRectColor;
+  if (Object.prototype.hasOwnProperty.call(RECT_COLOR_PALETTE, v)) return v as AntiSaccadeRectColor;
   return defaultColor;
 }
 
@@ -93,9 +95,6 @@ export default function AntiSaccadeTest() {
   const stimulusShape = getStimulusShape(config);
   const primaryRectColor = getRectColor(config, 'primaryRectColor', 'red');
   const dimRectColor = getRectColor(config, 'dimRectColor', 'blue');
-
-  const primaryColorLabel = primaryRectColor === 'red' ? 'red' : 'blue';
-  const dimColorLabel = dimRectColor === 'red' ? 'red' : 'blue';
 
   const directions = useMemo(() => generateTrialDirections(trialCount), [trialCount]);
   const startTimeRef = useRef(0);
@@ -232,10 +231,10 @@ export default function AntiSaccadeTest() {
       aria-label="Anti-saccade: look opposite direction from the primary square"
     >
       <p className="text-center text-gray-400 text-sm pt-4 pb-2">
-        Look in the opposite direction from the <strong className="text-gray-300">{primaryColorLabel}</strong> square
+        Look in the opposite direction from the <strong className="text-gray-300">primary</strong> square
         {showDimRect ? (
           <>
-            . Follow the <strong className="text-gray-300">{dimColorLabel}</strong> square instead.
+            . Follow the <strong className="text-gray-300">dim</strong> square instead.
           </>
         ) : null}
       </p>

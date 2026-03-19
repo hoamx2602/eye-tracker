@@ -1,7 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RECT_COLOR_OPTIONS, STIMULUS_SHAPE_OPTIONS } from '@/components/neurological/tests/antiSaccade/constants';
+import {
+  STIMULUS_SHAPE_OPTIONS,
+  resolveAntiSaccadeRectHex,
+  type AntiSaccadeRectColor,
+  type AntiSaccadeRectColorToken,
+} from '@/components/neurological/tests/antiSaccade/constants';
+import { HexColorPicker } from 'react-colorful';
 
 const TEST_LABELS: Record<string, string> = {
   head_orientation: 'Head Orientation',
@@ -327,31 +333,21 @@ export default function NeurologicalConfigForm() {
                       </div>
                       <div>
                         <label className="block text-slate-400 text-sm mb-0.5">Primary rectangle color</label>
-                        <select
-                          value={String(params.primaryRectColor ?? 'red')}
-                          onChange={(e) => setParam(id, 'primaryRectColor', e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
-                        >
-                          {RECT_COLOR_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
+                        <RectColorPicker
+                          value={params.primaryRectColor}
+                          fallback="red"
+                          variant="primary"
+                          onChange={(v) => setParam(id, 'primaryRectColor', v)}
+                        />
                       </div>
                       <div>
                         <label className="block text-slate-400 text-sm mb-0.5">Dim rectangle color</label>
-                        <select
-                          value={String(params.dimRectColor ?? 'blue')}
-                          onChange={(e) => setParam(id, 'dimRectColor', e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
-                        >
-                          {RECT_COLOR_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
+                        <RectColorPicker
+                          value={params.dimRectColor}
+                          fallback="blue"
+                          variant="dim"
+                          onChange={(v) => setParam(id, 'dimRectColor', v)}
+                        />
                       </div>
                       <div>
                         <label className="block text-slate-400 text-sm mb-0.5">Dim rectangle opacity</label>
@@ -605,6 +601,97 @@ function SelectNumber({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function RectColorPicker({
+  value,
+  fallback,
+  variant,
+  onChange,
+}: {
+  value: unknown;
+  fallback: AntiSaccadeRectColorToken;
+  variant: 'primary' | 'dim';
+  onChange: (v: AntiSaccadeRectColor) => void;
+}) {
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
+
+  const resolved = resolveAntiSaccadeRectHex(
+    (value as AntiSaccadeRectColor | undefined) ?? fallback,
+    variant,
+    fallback
+  );
+
+  const [open, setOpen] = React.useState(false);
+  const [localHex, setLocalHex] = React.useState(resolved.fillHex);
+
+  React.useEffect(() => {
+    if (!open) setLocalHex(resolved.fillHex);
+  }, [resolved.fillHex, open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const el = wrapperRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && !el.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const hex = localHex;
+  return (
+    <div className="relative" ref={wrapperRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm flex items-center justify-between gap-3"
+      >
+        <span className="flex items-center gap-2">
+          <span className="w-4 h-4 rounded border border-slate-400" style={{ backgroundColor: hex }} />
+          <span className="font-mono text-[12px] text-slate-200">{hex.toUpperCase()}</span>
+        </span>
+        <span className="text-slate-400 text-xs">{open ? 'Close' : 'Pick'}</span>
+      </button>
+
+      {open && (
+        <div className="absolute z-30 top-full mt-2 left-0 right-0 bg-slate-900 border border-slate-700 rounded-xl p-3 shadow-xl">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="text-xs text-slate-300 font-semibold">
+              {variant === 'primary' ? 'Primary' : 'Dim'} color
+            </div>
+            <div className="font-mono text-[11px] text-slate-400">{hex.toUpperCase()}</div>
+          </div>
+          <div className="w-full">
+            <HexColorPicker color={hex} onChange={setLocalHex} />
+          </div>
+          <div className="flex items-center justify-between gap-3 mt-3">
+            <button
+              type="button"
+              onClick={() => {
+                setLocalHex(resolved.fillHex);
+                setOpen(false);
+              }}
+              className="flex-1 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onChange(hex as AntiSaccadeRectColor);
+                setOpen(false);
+              }}
+              className="flex-1 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

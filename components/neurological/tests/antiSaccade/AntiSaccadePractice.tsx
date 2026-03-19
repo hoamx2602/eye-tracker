@@ -9,6 +9,7 @@ import {
   RECT_HALF_PX,
   TRAVEL_DISTANCE_PX,
   STIMULUS_SHAPE_OPTIONS,
+  RECT_COLOR_PALETTE,
   type AntiSaccadeDirection,
   type AntiSaccadeRectColor,
   type AntiSaccadeStimulusShape,
@@ -78,7 +79,8 @@ function getRectColor(
   defaultColor: AntiSaccadeRectColor
 ): AntiSaccadeRectColor {
   const v = String(config?.[key] ?? defaultColor).toLowerCase();
-  if (v === 'red' || v === 'blue') return v;
+  if (/^#([0-9A-Fa-f]{6})$/.test(v)) return v as AntiSaccadeRectColor;
+  if (Object.prototype.hasOwnProperty.call(RECT_COLOR_PALETTE, v)) return v as AntiSaccadeRectColor;
   return defaultColor;
 }
 
@@ -97,9 +99,6 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   const stimulusShape = getStimulusShape(config);
   const primaryRectColor = getRectColor(config, 'primaryRectColor', 'red');
   const dimRectColor = getRectColor(config, 'dimRectColor', 'blue');
-
-  const primaryColorLabel = primaryRectColor === 'red' ? 'red' : 'blue';
-  const dimColorLabel = dimRectColor === 'red' ? 'red' : 'blue';
 
   const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS));
   const [trialIndex, setTrialIndex] = useState(0);
@@ -159,10 +158,10 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
         </p>
       ) : (
         <p className="text-gray-400 text-sm mb-4">
-          Look in the opposite direction from the <strong className="text-slate-300">{primaryColorLabel}</strong> square
+          Look in the opposite direction from the <strong className="text-slate-300">primary</strong> square
           {showDimRect ? (
             <>
-              . Follow the <strong className="text-slate-300">{dimColorLabel}</strong> square instead.
+              . Follow the <strong className="text-slate-300">dim</strong> square instead.
             </>
           ) : null}
         </p>
