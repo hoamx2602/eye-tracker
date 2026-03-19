@@ -33,6 +33,7 @@ export default function HeadOrientationTest() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [phaseElapsedSec, setPhaseElapsedSec] = useState(0);
+  const directionMaxRef = useRef<Record<string, { yawAbsMax: number; pitchAbsMax: number; rollAbsMax: number }>>({});
 
   const persistDirectionMaxima = (direction: HeadOrientationDirection, samples: Array<{ t: number; yaw: number; pitch: number; roll: number }>) => {
     if (samples.length === 0) return;
@@ -46,20 +47,16 @@ export default function HeadOrientationTest() {
     );
 
     try {
-      const raw = localStorage.getItem(HEAD_ORIENTATION_MAX_LS_KEY);
-      const parsed = raw ? JSON.parse(raw) as {
-        updatedAt?: string;
-        byDirection?: Record<string, { yawAbsMax: number; pitchAbsMax: number; rollAbsMax: number }>;
-      } : {};
-
-      const byDirection = parsed.byDirection ?? {};
-      byDirection[direction] = maxima;
+      directionMaxRef.current = {
+        ...directionMaxRef.current,
+        [direction]: maxima,
+      };
 
       localStorage.setItem(
         HEAD_ORIENTATION_MAX_LS_KEY,
         JSON.stringify({
           updatedAt: new Date().toISOString(),
-          byDirection,
+          byDirection: directionMaxRef.current,
         })
       );
     } catch (_) {}
@@ -72,6 +69,16 @@ export default function HeadOrientationTest() {
     setDirectionIndex(0);
     phasesRef.current = [];
     currentSamplesRef.current = [];
+    directionMaxRef.current = {};
+    try {
+      localStorage.setItem(
+        HEAD_ORIENTATION_MAX_LS_KEY,
+        JSON.stringify({
+          updatedAt: new Date().toISOString(),
+          byDirection: {},
+        })
+      );
+    } catch (_) {}
 
     const sampleInterval = setInterval(() => {
       const pose = headPoseRef.current;
@@ -124,10 +131,20 @@ export default function HeadOrientationTest() {
           intervalRef.current = null;
         }
         completeTestRef.current({
+          testId: 'head_orientation',
           startTime: startTimeRef.current,
           endTime: performance.now(),
           phases: phasesRef.current,
         });
+        try {
+          localStorage.setItem(
+            HEAD_ORIENTATION_MAX_LS_KEY,
+            JSON.stringify({
+              updatedAt: new Date().toISOString(),
+              byDirection: directionMaxRef.current,
+            })
+          );
+        } catch (_) {}
         return;
       }
 

@@ -10,6 +10,8 @@ import {
 } from './constants';
 import { generateNumberPositions } from './utils';
 
+const VISUAL_SEARCH_RESULT_LS_KEY = 'neuro_visual_search_result_v1';
+
 export interface NumberPosition {
   number: number;
   x: number;
@@ -31,6 +33,9 @@ export interface VisualSearchResult {
   sequence: number[];
   completionTimeMs: number;
   gazePath: Array<{ t: number; x: number; y: number }>;
+  gazeFixationPerNumber: Record<number, number>;
+  gazeSequence: number[];
+  scanningPath: Array<{ t: number; x: number; y: number }>;
 }
 
 export default function VisualSearchTest() {
@@ -59,16 +64,38 @@ export default function VisualSearchTest() {
       if (e.code !== 'Space' || e.repeat) return;
       e.preventDefault();
       const endTime = performance.now();
+      const fixationPerNumber = fixationsRef.current.reduce<Record<number, number>>((acc, fx) => {
+        acc[fx.number] = (acc[fx.number] ?? 0) + 1;
+        return acc;
+      }, {});
+      const gazeSequence = [...sequenceRef.current];
+      const scanningPath = [...gazePathRef.current];
+      const completionTimeMs = endTime - startTimeRef.current;
       const payload = {
         testId: 'visual_search',
         startTime: startTimeRef.current,
         endTime,
         numberPositions: positions,
         fixations: [...fixationsRef.current],
-        sequence: [...sequenceRef.current],
-        completionTimeMs: endTime - startTimeRef.current,
-        gazePath: [...gazePathRef.current],
+        sequence: gazeSequence,
+        completionTimeMs,
+        gazePath: scanningPath,
+        gazeFixationPerNumber: fixationPerNumber,
+        gazeSequence,
+        scanningPath,
       };
+      try {
+        localStorage.setItem(
+          VISUAL_SEARCH_RESULT_LS_KEY,
+          JSON.stringify({
+            savedAt: new Date().toISOString(),
+            completionTimeMs,
+            gazeFixationPerNumber: fixationPerNumber,
+            gazeSequence,
+            scanningPath,
+          })
+        );
+      } catch (_) {}
       completeTest(payload);
     },
     [completeTest, positions]
@@ -80,6 +107,19 @@ export default function VisualSearchTest() {
     sequenceRef.current = [];
     gazePathRef.current = [];
     lastInNumberRef.current = null;
+    try {
+      localStorage.setItem(
+        VISUAL_SEARCH_RESULT_LS_KEY,
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          status: 'in_progress',
+          completionTimeMs: 0,
+          gazeFixationPerNumber: {},
+          gazeSequence: [],
+          scanningPath: [],
+        })
+      );
+    } catch (_) {}
 
     pathIntervalRef.current = setInterval(() => {
       const g = gazeRef.current;
