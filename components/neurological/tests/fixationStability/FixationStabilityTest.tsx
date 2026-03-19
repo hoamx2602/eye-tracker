@@ -11,11 +11,16 @@ import {
   MIN_DURATION_SEC,
 } from './constants';
 
+const FIXATION_STABILITY_RESULT_LS_KEY = 'neuro_fixation_stability_result_v1';
+
 export interface FixationStabilityResult {
   startTime: number;
   endTime: number;
   durationMs: number;
   gazeSamples: Array<{ t: number; x: number; y: number }>;
+  microSaccades?: number;
+  gazeDispersion?: number;
+  deviationFromCenter?: number;
   metrics?: {
     microSaccadeCount?: number;
     dispersionPx?: number;
@@ -80,6 +85,18 @@ export default function FixationStabilityTest() {
   useEffect(() => {
     startTimeRef.current = performance.now();
     gazeSamplesRef.current = [];
+    try {
+      localStorage.setItem(
+        FIXATION_STABILITY_RESULT_LS_KEY,
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          status: 'in_progress',
+          microSaccades: 0,
+          gazeDispersion: 0,
+          deviationFromCenter: 0,
+        })
+      );
+    } catch (_) {}
 
     intervalRef.current = setInterval(() => {
       const now = performance.now();
@@ -103,6 +120,17 @@ export default function FixationStabilityTest() {
         distances.length > 0 ? distances.reduce((a, b) => a + b, 0) / distances.length : 0;
       const dispersionPx = std(distances);
       const microSaccadeCount = countMicroSaccades(samples, 50);
+      try {
+        localStorage.setItem(
+          FIXATION_STABILITY_RESULT_LS_KEY,
+          JSON.stringify({
+            savedAt: new Date().toISOString(),
+            microSaccades: microSaccadeCount,
+            gazeDispersion: dispersionPx,
+            deviationFromCenter: meanDeviationPx,
+          })
+        );
+      } catch (_) {}
 
       completeTestRef.current({
         testId: 'fixation_stability',
@@ -110,6 +138,9 @@ export default function FixationStabilityTest() {
         endTime,
         durationMs: endTime - startTimeRef.current,
         gazeSamples: samples,
+        microSaccades: microSaccadeCount,
+        gazeDispersion: dispersionPx,
+        deviationFromCenter: meanDeviationPx,
         metrics: {
           microSaccadeCount,
           dispersionPx,
