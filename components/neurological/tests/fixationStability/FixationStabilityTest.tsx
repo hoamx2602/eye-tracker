@@ -10,6 +10,7 @@ import {
   MAX_DURATION_SEC,
   MIN_DURATION_SEC,
 } from './constants';
+import { computeBceaForSamples } from '@/lib/bivariateEllipse';
 
 const FIXATION_STABILITY_RESULT_LS_KEY = 'neuro_fixation_stability_result_v1';
 
@@ -18,13 +19,21 @@ export interface FixationStabilityResult {
   endTime: number;
   durationMs: number;
   gazeSamples: Array<{ t: number; x: number; y: number }>;
+  /** Viewport at run time — for replaying gaze / ellipse in screen space */
+  viewportWidth?: number;
+  viewportHeight?: number;
   microSaccades?: number;
   gazeDispersion?: number;
   deviationFromCenter?: number;
+  /** Bivariate Contour Ellipse Area (px²) */
+  bcea68Px2?: number;
+  bcea95Px2?: number;
   metrics?: {
     microSaccadeCount?: number;
     dispersionPx?: number;
     meanDeviationPx?: number;
+    bcea68Px2?: number;
+    bcea95Px2?: number;
   };
 }
 
@@ -120,6 +129,13 @@ export default function FixationStabilityTest() {
         distances.length > 0 ? distances.reduce((a, b) => a + b, 0) / distances.length : 0;
       const dispersionPx = std(distances);
       const microSaccadeCount = countMicroSaccades(samples, 50);
+      const xy = samples.map((s) => ({ x: s.x, y: s.y }));
+      const b68 = computeBceaForSamples(xy, '68');
+      const b95 = computeBceaForSamples(xy, '95');
+      const bcea68Px2 = b68.areaPx2;
+      const bcea95Px2 = b95.areaPx2;
+      const vw = typeof window !== 'undefined' ? window.innerWidth : undefined;
+      const vh = typeof window !== 'undefined' ? window.innerHeight : undefined;
       try {
         localStorage.setItem(
           FIXATION_STABILITY_RESULT_LS_KEY,
@@ -128,6 +144,8 @@ export default function FixationStabilityTest() {
             microSaccades: microSaccadeCount,
             gazeDispersion: dispersionPx,
             deviationFromCenter: meanDeviationPx,
+            bcea68Px2,
+            bcea95Px2,
           })
         );
       } catch (_) {}
@@ -138,13 +156,19 @@ export default function FixationStabilityTest() {
         endTime,
         durationMs: endTime - startTimeRef.current,
         gazeSamples: samples,
+        viewportWidth: vw,
+        viewportHeight: vh,
         microSaccades: microSaccadeCount,
         gazeDispersion: dispersionPx,
         deviationFromCenter: meanDeviationPx,
+        bcea68Px2,
+        bcea95Px2,
         metrics: {
           microSaccadeCount,
           dispersionPx,
           meanDeviationPx,
+          bcea68Px2,
+          bcea95Px2,
         },
       });
     }, durationSec * 1000);

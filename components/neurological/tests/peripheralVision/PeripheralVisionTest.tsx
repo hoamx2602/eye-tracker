@@ -27,6 +27,8 @@ export interface PeripheralVisionResult {
   startTime: number;
   endTime: number;
   trials: PeripheralVisionTrialResult[];
+  viewportWidth?: number;
+  viewportHeight?: number;
   metrics?: {
     avgRT?: number;
     accuracy?: number;
@@ -170,6 +172,8 @@ export default function PeripheralVisionTest() {
               startTime: startTimeRef.current,
               endTime: endTime,
               trials,
+              viewportWidth: viewport.w,
+              viewportHeight: viewport.h,
               metrics: { avgRT, accuracy, centerStability },
             });
             return;

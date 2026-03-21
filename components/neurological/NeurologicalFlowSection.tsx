@@ -56,6 +56,7 @@ import {
   DEFAULT_MIN_DELAY_MS,
   DEFAULT_MAX_DELAY_MS,
 } from '@/components/neurological/tests/peripheralVision/constants';
+import NeurologicalRunResults from '@/components/neurological/results/NeurologicalRunResults';
 
 type NeurologicalFlowSectionProps = {
   status: string;
@@ -89,6 +90,7 @@ export default function NeurologicalFlowSection({
   neuroPhase,
   currentNeuroTestId,
   neuroRunId,
+  neuroTestOrder,
   neuroConfigSnapshot,
   neuroHeadPose,
   gazePos,
@@ -290,21 +292,28 @@ export default function NeurologicalFlowSection({
         </div>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'done' && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 bg-gray-950">
-          <h2 className="text-xl font-bold text-white">Neurological run complete</h2>
-          <p className="text-gray-400 text-sm text-center max-w-md">
-            Pre-test and post-test scores and all test results have been saved.
-          </p>
-          {neuroRunId && (
-            <p className="text-slate-500 text-xs font-mono">Run ID: {neuroRunId}</p>
-          )}
-          <p className="text-green-500 text-xs">
-            Tests completed: {Object.keys(neuroTestResults).length}
-          </p>
+        <div className="fixed inset-0 z-50 flex flex-col items-center gap-4 overflow-y-auto bg-gray-950 p-4 pb-8">
+          <div className="flex w-full max-w-3xl flex-col items-center gap-3 pt-6 text-center">
+            <h2 className="text-xl font-bold text-white">Neurological run complete</h2>
+            <p className="text-gray-400 text-sm max-w-md">
+              Pre-test and post-test scores and all test results have been saved.
+            </p>
+            {neuroRunId && (
+              <p className="text-slate-500 text-xs font-mono">Run ID: {neuroRunId}</p>
+            )}
+            <p className="text-green-500 text-xs">
+              Tests completed: {Object.keys(neuroTestResults).length}
+            </p>
+          </div>
+          <NeurologicalRunResults
+            neuroTestOrder={neuroTestOrder}
+            neuroTestResults={neuroTestResults}
+            neuroRunId={neuroRunId}
+          />
           <button
             type="button"
             onClick={onDoneBack}
-            className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+            className="mt-2 shrink-0 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
           >
             Back to real-time tracking
           </button>

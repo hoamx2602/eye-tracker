@@ -29,6 +29,8 @@ export interface SaccadicResult {
   saccadeLatencyMs?: number[];
   fixationAccuracy?: number;
   correctiveSaccades?: number;
+  viewportWidth?: number;
+  viewportHeight?: number;
   metrics?: {
     avgLatency?: number;
     fixationAccuracy?: number;
@@ -185,6 +187,8 @@ export default function SaccadicTest() {
             saccadeLatencyMs,
             fixationAccuracy,
             correctiveSaccades: correctiveSaccadeCount,
+            viewportWidth: viewport.w,
+            viewportHeight: viewport.h,
             metrics: {
               avgLatency,
               fixationAccuracy,

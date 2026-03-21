@@ -20,6 +20,23 @@ import {
 import StimulusShape from './StimulusShape';
 import { dimPosition, generateTrialDirections, primaryPosition } from './utils';
 
+function mean(nums: number[]): number {
+  if (nums.length === 0) return 0;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+function degFromRad(r: number): number {
+  return (r * 180) / Math.PI;
+}
+
+/** Shortest signed difference between two directions in degrees. */
+function shortestAngularDiffDeg(fromDeg: number, toDeg: number): number {
+  let d = fromDeg - toDeg;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
+
 function isHorizontalDirection(d: AntiSaccadeDirection): boolean {
   return d === 'left' || d === 'right';
 }
@@ -44,6 +61,14 @@ export interface AntiSaccadeTrialResult {
   firstCorrectGazeTime?: number;
   latencyMs?: number;
   gazeSamples: Array<{ t: number; x: number; y: number }>;
+  /** Mean gaze position during movement phase */
+  gazeMean?: { x: number; y: number };
+  /** Direction from screen center to mean gaze (°), 0 = +x, 90 = up (negative y in screen coords — atan2 handles) */
+  gazeDirectionDeg?: number;
+  /** Direction from center to correct anti-saccade target (dim AOI at end of travel) */
+  targetDirectionDeg?: number;
+  /** Signed angular error: gazeDirectionDeg − targetDirectionDeg wrapped to [−180, 180] */
+  angularErrorDeg?: number;
 }
 
 export interface AntiSaccadeResult {
@@ -172,12 +197,31 @@ export default function AntiSaccadeTest() {
         if (p >= 1) {
           const trialStart = movementStartRef.current;
           const firstCorrect = firstCorrectGazeTimeRef.current;
+          const gs = [...trialGazeSamplesRef.current];
+          const dimPos = dimPosition(dir, center.x, center.y, 1, travelPx);
+          const gazeMean =
+            gs.length > 0
+              ? { x: mean(gs.map((s) => s.x)), y: mean(gs.map((s) => s.y)) }
+              : undefined;
+          const gazeDirectionDeg =
+            gazeMean != null ? degFromRad(Math.atan2(gazeMean.y - center.y, gazeMean.x - center.x)) : undefined;
+          const targetDirectionDeg = degFromRad(
+            Math.atan2(dimPos.y - center.y, dimPos.x - center.x)
+          );
+          const angularErrorDeg =
+            gazeDirectionDeg != null
+              ? shortestAngularDiffDeg(gazeDirectionDeg, targetDirectionDeg)
+              : undefined;
           trialsResultsRef.current.push({
             direction: dir,
             startTime: trialStart,
             firstCorrectGazeTime: firstCorrect ?? undefined,
             latencyMs: firstCorrect != null ? firstCorrect - trialStart : undefined,
-            gazeSamples: [...trialGazeSamplesRef.current],
+            gazeSamples: gs,
+            gazeMean,
+            gazeDirectionDeg,
+            targetDirectionDeg,
+            angularErrorDeg,
           });
           setPhase('between');
           betweenStartRef.current = now;

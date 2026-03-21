@@ -78,6 +78,8 @@ function App() {
   } | null>(null);
   const NEURO_CONFIG_LS_KEY = 'neuro_config_snapshot_v1';
   const NEURO_TEST_PROGRESS_LS_KEY = 'neuro_test_progress_v1';
+  /** Survives full page reload so /neuro/done can re-fetch run results. */
+  const NEURO_LAST_RUN_ID_SS_KEY = 'neuro_last_run_id';
   const [currentNeuroTestIndex, setCurrentNeuroTestIndex] = useState(0);
   const [preSymptomScores, setPreSymptomScores] = useState<SymptomScores | null>(null);
   const [postSymptomScores, setPostSymptomScores] = useState<SymptomScores | null>(null);
@@ -1525,6 +1527,9 @@ function App() {
       } catch (_) {}
       const run = await neurologicalRunsApi.create(createdSessionId!, configSnapshot);
       setNeuroRunId(run.id);
+      try {
+        sessionStorage.setItem(NEURO_LAST_RUN_ID_SS_KEY, run.id);
+      } catch (_) {}
       const order = Array.isArray(run.testOrderSnapshot) ? run.testOrderSnapshot : [];
       setNeuroTestOrder(order);
       const snap = run.configSnapshot as { testOrder: string[]; testParameters: Record<string, Record<string, unknown>>; testEnabled: Record<string, boolean> } | undefined;
@@ -1543,6 +1548,66 @@ function App() {
       setNeuroRunStatus('error');
     }
   }, [NEURO_CONFIG_LS_KEY, NEURO_TEST_PROGRESS_LS_KEY, createdSessionId, router]);
+
+  /** Progress LS stores merged testResults during the run — use if React state is empty at final save. */
+  const readNeuroTestResultsFromProgressLs = useCallback((): Record<string, TestResultPayload> | null => {
+    try {
+      const raw = localStorage.getItem(NEURO_TEST_PROGRESS_LS_KEY);
+      if (!raw) return null;
+      const p = JSON.parse(raw) as { testResults?: Record<string, TestResultPayload> };
+      if (p.testResults && typeof p.testResults === 'object' && Object.keys(p.testResults).length > 0) {
+        return p.testResults;
+      }
+    } catch (_) {}
+    return null;
+  }, [NEURO_TEST_PROGRESS_LS_KEY]);
+
+  /** Restore run id after refresh on /neuro/done. */
+  useEffect(() => {
+    const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
+    if (parsed.screen !== 'neuro_done') return;
+    if (neuroRunId) return;
+    try {
+      const id = sessionStorage.getItem(NEURO_LAST_RUN_ID_SS_KEY);
+      if (id) setNeuroRunId(id);
+    } catch (_) {}
+  }, [pathname, neuroRunId]);
+
+  /** Hydrate test results on done screen when state is empty (reload or navigation). */
+  useEffect(() => {
+    if (neuroPhase !== 'done') return;
+    if (!neuroRunId) return;
+    if (Object.keys(neuroTestResults).length > 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = localStorage.getItem(NEURO_TEST_PROGRESS_LS_KEY);
+        if (raw) {
+          const p = JSON.parse(raw) as { runId?: string; testResults?: Record<string, TestResultPayload> };
+          if (
+            p.runId === neuroRunId &&
+            p.testResults &&
+            typeof p.testResults === 'object' &&
+            Object.keys(p.testResults).length > 0
+          ) {
+            if (!cancelled) setNeuroTestResults(p.testResults);
+            return;
+          }
+        }
+        const run = await neurologicalRunsApi.get(neuroRunId);
+        if (cancelled) return;
+        const tr = run.testResults;
+        if (tr && typeof tr === 'object' && Object.keys(tr as object).length > 0) {
+          setNeuroTestResults(tr as Record<string, TestResultPayload>);
+        }
+      } catch (e) {
+        console.error('[Neuro] hydrate test results failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [neuroPhase, neuroRunId, neuroTestResults]);
 
   const handlePostSubmitRequested = useCallback(async (scores: SymptomScores) => {
     setPendingPostSymptomScores(scores);
@@ -1576,14 +1641,26 @@ function App() {
     } catch (_) {}
 
     setPostSymptomScores(pendingPostSymptomScores);
+
+    const mergedResults =
+      Object.keys(neuroTestResults).length > 0
+        ? neuroTestResults
+        : readNeuroTestResultsFromProgressLs() ?? neuroTestResults;
+    if (Object.keys(mergedResults).length > 0) {
+      setNeuroTestResults(mergedResults);
+    }
+
     if (neuroRunId) {
       try {
-        await neurologicalRunsApi.patch(neuroRunId, {
+        const updated = await neurologicalRunsApi.patch(neuroRunId, {
           preSymptomScores: (preQuestionnaire ?? preSymptomScores ?? {}) as unknown as Record<string, number>,
           postSymptomScores: postQuestionnaire as unknown as Record<string, number>,
-          testResults: neuroTestResults,
+          testResults: mergedResults,
           status: 'completed',
         });
+        if (updated.testResults && Object.keys(updated.testResults as object).length > 0) {
+          setNeuroTestResults(updated.testResults as Record<string, TestResultPayload>);
+        }
       } catch (e) {
         console.error('Patch final run data failed', e);
       }
@@ -1598,6 +1675,7 @@ function App() {
     preSymptomScores,
     neuroRunId,
     neuroTestResults,
+    readNeuroTestResultsFromProgressLs,
     buildQuestionnairePayload,
     router,
   ]);
@@ -1805,6 +1883,9 @@ function App() {
     setPreSymptomScores(null);
     setCurrentNeuroTestId(null);
     setNeuroTestResults({});
+    try {
+      sessionStorage.removeItem(NEURO_LAST_RUN_ID_SS_KEY);
+    } catch (_) {}
     demographicsRef.current = null;
     setTrainingData([]);
     trainingSamplesRef.current = [];

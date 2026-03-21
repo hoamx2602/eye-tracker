@@ -36,6 +36,8 @@ export interface VisualSearchResult {
   gazeFixationPerNumber: Record<number, number>;
   gazeSequence: number[];
   scanningPath: Array<{ t: number; x: number; y: number }>;
+  viewportWidth?: number;
+  viewportHeight?: number;
 }
 
 export default function VisualSearchTest() {
@@ -83,6 +85,8 @@ export default function VisualSearchTest() {
         gazeFixationPerNumber: fixationPerNumber,
         gazeSequence,
         scanningPath,
+        viewportWidth: typeof window !== 'undefined' ? window.innerWidth : undefined,
+        viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
       };
       try {
         localStorage.setItem(

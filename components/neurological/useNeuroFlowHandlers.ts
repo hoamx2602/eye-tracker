@@ -75,8 +75,11 @@ export function useNeuroFlowHandlers({
 }: UseNeuroFlowHandlersParams) {
   const handleNeuroTestComplete = useCallback(
     async (testId: string, payload: TestResultPayload) => {
-      const nextResults = { ...neuroTestResults, [testId]: payload };
-      setNeuroTestResults(nextResults);
+      let nextResults: Record<string, TestResultPayload> = {};
+      setNeuroTestResults((prev) => {
+        nextResults = { ...prev, [testId]: payload };
+        return nextResults;
+      });
       if (neuroRunId) {
         try {
           await neurologicalRunsApi.patch(neuroRunId, {
@@ -125,7 +128,6 @@ export function useNeuroFlowHandlers({
       neuroTestOrder,
       neuroConfigSnapshot?.testEnabled,
       currentNeuroTestIndex,
-      neuroTestResults,
       NEURO_TEST_PROGRESS_LS_KEY,
       setNeuroTestResults,
       setCurrentNeuroTestIndex,

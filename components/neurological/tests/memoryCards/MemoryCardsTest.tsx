@@ -36,6 +36,8 @@ export interface MemoryCardsResult {
   correctPairsCount: number;
   completionTimeMs: number;
   gazePath: Array<{ t: number; x: number; y: number }>;
+  viewportWidth?: number;
+  viewportHeight?: number;
 }
 
 const SYMBOL_BASE_REM = 1.25;
@@ -230,6 +232,8 @@ export default function MemoryCardsTest() {
       correctPairsCount,
       completionTimeMs,
       gazePath,
+      viewportWidth: typeof window !== 'undefined' ? window.innerWidth : undefined,
+      viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
     });
   }, [allMatched, completeTest, cardCount, cols, rows]);
 
