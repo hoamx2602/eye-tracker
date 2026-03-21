@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { TestResultPayload } from '../types';
 import type { AntiSaccadeTrialResult } from '../tests/antiSaccade/AntiSaccadeTest';
 import type { PeripheralVisionTrialResult } from '../tests/peripheralVision/PeripheralVisionTest';
@@ -12,6 +12,8 @@ import HeadOrientationResultsPreview from './HeadOrientationResultsPreview';
 import VisualSearchResultsPreview from './VisualSearchResultsPreview';
 import SaccadicResultsPreview from './SaccadicResultsPreview';
 import PeripheralVisionResultsPreview from './PeripheralVisionResultsPreview';
+import NeurologicalResultParamsDrawer from './NeurologicalResultParamsDrawer';
+import { RESULT_CHART_PANEL_MIN } from './resultVizLayout';
 
 const DEFAULT_ORDER = [
   'head_orientation',
@@ -23,162 +25,277 @@ const DEFAULT_ORDER = [
   'peripheral_vision',
 ] as const;
 
+const TEST_LABELS: Record<string, string> = {
+  head_orientation: 'Head orientation',
+  visual_search: 'Visual search',
+  memory_cards: 'Memory cards',
+  anti_saccade: 'Anti-saccade',
+  saccadic: 'Saccadic',
+  fixation_stability: 'Fixation stability',
+  peripheral_vision: 'Peripheral vision',
+};
+
 type Props = {
   neuroTestOrder: string[];
   neuroTestResults: Record<string, TestResultPayload>;
-  /** When set, empty results may be loading after refresh — show hint */
   neuroRunId?: string | null;
+  loading: boolean;
+  loadError: string | null;
+  onRetry: () => void;
 };
 
 function asRecord(r: TestResultPayload): Record<string, unknown> {
   return r as Record<string, unknown>;
 }
 
-export default function NeurologicalRunResults({ neuroTestOrder, neuroTestResults, neuroRunId }: Props) {
+function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly = false): React.ReactNode {
+  if (testId === 'head_orientation') {
+    const phases =
+      (r.phases as Array<{
+        direction: string;
+        startTime: number;
+        endTime: number;
+        headSamples: Array<{ t: number; yaw: number; pitch: number; roll: number }>;
+      }>) ?? [];
+    return <HeadOrientationResultsPreview phases={phases} visualOnly={visualOnly} />;
+  }
+
+  if (testId === 'visual_search') {
+    const scanningPath =
+      (r.scanningPath as Array<{ t: number; x: number; y: number }>) ??
+      (r.gazePath as Array<{ t: number; x: number; y: number }>) ??
+      [];
+    const numberPositions = (r.numberPositions as Array<{ number: number; x: number; y: number }>) ?? [];
+    const gazeFixationPerNumber = (r.gazeFixationPerNumber as Record<number, number>) ?? {};
+    const sequence = (r.sequence as number[]) ?? (r.gazeSequence as number[]) ?? [];
+    const completionTimeMs = Number(r.completionTimeMs ?? 0);
+    return (
+      <VisualSearchResultsPreview
+        completionTimeMs={completionTimeMs}
+        numberPositions={numberPositions}
+        scanningPath={scanningPath}
+        gazeFixationPerNumber={gazeFixationPerNumber}
+        sequence={sequence}
+        viewportWidth={r.viewportWidth as number | undefined}
+        viewportHeight={r.viewportHeight as number | undefined}
+        visualOnly={visualOnly}
+      />
+    );
+  }
+
+  if (testId === 'memory_cards') {
+    const gazePath = (r.gazePath as Array<{ t: number; x: number; y: number }>) ?? [];
+    return (
+      <MemoryCardsGazePathPreview
+        gazePath={gazePath}
+        viewportWidth={r.viewportWidth as number | undefined}
+        viewportHeight={r.viewportHeight as number | undefined}
+        visualOnly={visualOnly}
+      />
+    );
+  }
+
+  if (testId === 'anti_saccade') {
+    const trials = (r.trials as AntiSaccadeTrialResult[]) ?? [];
+    return <AntiSaccadeGazeDirectionPreview trials={trials} visualOnly={visualOnly} />;
+  }
+
+  if (testId === 'saccadic') {
+    const cycles = (r.cycles as SaccadicCycleResult[]) ?? [];
+    const metrics = r.metrics as
+      | { avgLatency?: number; fixationAccuracy?: number; correctiveSaccadeCount?: number }
+      | undefined;
+    return (
+      <SaccadicResultsPreview
+        cycles={cycles}
+        saccadeLatencyMs={r.saccadeLatencyMs as number[] | undefined}
+        fixationAccuracy={r.fixationAccuracy as number | undefined}
+        correctiveSaccades={r.correctiveSaccades as number | undefined}
+        metrics={metrics}
+        viewportWidth={r.viewportWidth as number | undefined}
+        viewportHeight={r.viewportHeight as number | undefined}
+        visualOnly={visualOnly}
+      />
+    );
+  }
+
+  if (testId === 'fixation_stability') {
+    const gazeSamples = (r.gazeSamples as Array<{ t: number; x: number; y: number }>) ?? [];
+    return (
+      <FixationBceaPreview
+        gazeSamples={gazeSamples}
+        viewportWidth={r.viewportWidth as number | undefined}
+        viewportHeight={r.viewportHeight as number | undefined}
+        bcea68Px2={r.bcea68Px2 as number | undefined}
+        bcea95Px2={r.bcea95Px2 as number | undefined}
+        visualOnly={visualOnly}
+      />
+    );
+  }
+
+  if (testId === 'peripheral_vision') {
+    const trials = (r.trials as PeripheralVisionTrialResult[]) ?? [];
+    const metrics = r.metrics as { avgRT?: number; accuracy?: number; centerStability?: number } | undefined;
+    return (
+      <PeripheralVisionResultsPreview
+        trials={trials}
+        metrics={metrics}
+        viewportWidth={r.viewportWidth as number | undefined}
+        viewportHeight={r.viewportHeight as number | undefined}
+        visualOnly={visualOnly}
+      />
+    );
+  }
+
+  return null;
+}
+
+export default function NeurologicalRunResults({
+  neuroTestOrder,
+  neuroTestResults,
+  neuroRunId,
+  loading,
+  loadError,
+  onRetry,
+}: Props) {
   const order = neuroTestOrder.length > 0 ? neuroTestOrder : [...DEFAULT_ORDER];
   const resultCount = Object.keys(neuroTestResults).length;
 
+  const steps = useMemo(() => order.filter((testId) => neuroTestResults[testId] != null), [order, neuroTestResults]);
+
+  const [stepIdx, setStepIdx] = useState(0);
+  /** Thu gọn panel tham số để vùng kết quả (gaze path) dùng full chiều ngang. */
+  const [paramsDrawerCollapsed, setParamsDrawerCollapsed] = useState(false);
+
+  useEffect(() => {
+    setStepIdx((i) => {
+      if (steps.length === 0) return 0;
+      return Math.min(i, steps.length - 1);
+    });
+  }, [steps.length]);
+
+  const currentTestId = steps[stepIdx];
+  const currentRaw = currentTestId ? neuroTestResults[currentTestId] : undefined;
+  const totalSteps = steps.length;
+  const isFirst = stepIdx <= 0;
+  const isLast = stepIdx >= totalSteps - 1;
+
   return (
-    <div className="w-full max-w-3xl space-y-10 overflow-y-auto pr-1 max-h-[min(70vh,720px)] text-left">
-      <h3 className="text-lg font-semibold text-white">Result details</h3>
+    <div className="flex h-full min-h-0 w-full max-w-[min(96rem,100%)] flex-col text-left">
+      {loadError && (
+        <div className="mt-4 rounded-lg border border-red-900/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">
+          <p>Could not load test results from the server: {loadError}</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-2 rounded-lg bg-red-900/80 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
-      {resultCount === 0 && neuroRunId && (
-        <p className="text-sm text-amber-400/95">
-          Đang tải hoặc khôi phục kết quả… Nếu bạn vừa refresh trang, dữ liệu sẽ được lấy từ bộ nhớ trình duyệt hoặc máy chủ trong giây lát.
+      {loading && !loadError && (
+        <div className="mt-4 flex items-center gap-3 text-sm text-slate-400">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-600 border-t-sky-500" />
+          <span>Loading test results from the database…</span>
+        </div>
+      )}
+
+      {!loading && !loadError && resultCount === 0 && neuroRunId && (
+        <p className="mt-4 text-sm text-slate-500">
+          No per-test data is stored for this run in the database. Complete the neurological tests and use
+          &quot;Lưu kết quả&quot; after the post-test so results are saved.
         </p>
       )}
-      {resultCount === 0 && !neuroRunId && (
-        <p className="text-sm text-slate-500">
-          Chưa có dữ liệu bài test trong phiên này (ví dụ: chưa chạy neurological run, hoặc đã đóng tab trước khi lưu).
-        </p>
+      {!loading && !loadError && resultCount === 0 && !neuroRunId && (
+        <p className="mt-4 text-sm text-slate-500">No run id — cannot load results.</p>
       )}
 
-      {order.map((testId) => {
-        const raw = neuroTestResults[testId];
-        if (!raw) return null;
-        const r = asRecord(raw);
+      {!loading && !loadError && totalSteps > 0 && currentTestId && currentRaw && (
+        <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3 sm:gap-4">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pb-1 sm:pb-2">
+            <h4 className="min-w-0 text-lg font-semibold text-white">
+              {TEST_LABELS[currentTestId] ?? currentTestId}
+            </h4>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => setStepIdx((i) => Math.max(0, i - 1))}
+                disabled={isFirst}
+                className="rounded-xl border border-gray-700 bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40 sm:px-5 sm:py-2.5"
+              >
+                Previous
+              </button>
+              {isLast ? (
+                <span className="text-sm text-slate-500">Last test</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setStepIdx((i) => Math.min(totalSteps - 1, i + 1))}
+                  className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-500 sm:px-6 sm:py-2.5"
+                >
+                  Next test
+                </button>
+              )}
+            </div>
+          </div>
 
-        if (testId === 'head_orientation') {
-          const phases = (r.phases as Array<{
-            direction: string;
-            startTime: number;
-            endTime: number;
-            headSamples: Array<{ t: number; yaw: number; pitch: number; roll: number }>;
-          }>) ?? [];
-          return (
-            <section key={testId} className="rounded-xl border border-gray-800 bg-gray-950/80 p-4">
-              <h4 className="mb-3 text-base font-medium text-white">Head orientation</h4>
-              <HeadOrientationResultsPreview phases={phases} />
-            </section>
-          );
-        }
+          <div className="flex min-h-0 flex-1 flex-col gap-2 sm:gap-3 lg:flex-row lg:items-stretch">
+            <div
+              className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-950/80 ${RESULT_CHART_PANEL_MIN}`}
+            >
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-2 sm:p-4">
+                <div className="flex w-full min-h-full flex-col justify-center">
+                  {renderTestPanel(currentTestId, asRecord(currentRaw), true)}
+                </div>
+              </div>
+            </div>
 
-        if (testId === 'visual_search') {
-          const scanningPath =
-            (r.scanningPath as Array<{ t: number; x: number; y: number }>) ??
-            (r.gazePath as Array<{ t: number; x: number; y: number }>) ??
-            [];
-          const numberPositions = (r.numberPositions as Array<{ number: number; x: number; y: number }>) ?? [];
-          const gazeFixationPerNumber = (r.gazeFixationPerNumber as Record<number, number>) ?? {};
-          const sequence = (r.sequence as number[]) ?? (r.gazeSequence as number[]) ?? [];
-          const completionTimeMs = Number(r.completionTimeMs ?? 0);
-          return (
-            <section key={testId} className="rounded-xl border border-gray-800 bg-gray-950/80 p-4">
-              <h4 className="mb-3 text-base font-medium text-white">Visual search</h4>
-              <VisualSearchResultsPreview
-                completionTimeMs={completionTimeMs}
-                numberPositions={numberPositions}
-                scanningPath={scanningPath}
-                gazeFixationPerNumber={gazeFixationPerNumber}
-                sequence={sequence}
-                viewportWidth={r.viewportWidth as number | undefined}
-                viewportHeight={r.viewportHeight as number | undefined}
+            {paramsDrawerCollapsed ? (
+              <button
+                type="button"
+                onClick={() => setParamsDrawerCollapsed(false)}
+                className="flex w-full shrink-0 flex-row items-center justify-center gap-2 rounded-lg border border-gray-800 bg-gray-900/95 py-2.5 text-xs font-medium text-slate-400 hover:bg-gray-800 hover:text-slate-200 lg:w-10 lg:max-w-[2.75rem] lg:flex-col lg:self-stretch lg:rounded-l-lg lg:rounded-r-none lg:py-4 lg:text-[10px] lg:uppercase lg:tracking-wide"
+                title="Mở panel tham số"
+              >
+                <span className="text-base leading-none" aria-hidden>
+                  ▼
+                </span>
+                <span className="lg:max-w-[2.5rem] lg:text-center lg:leading-tight">Tham số</span>
+              </button>
+            ) : (
+              <NeurologicalResultParamsDrawer
+                testId={currentTestId}
+                raw={asRecord(currentRaw)}
+                onCollapse={() => setParamsDrawerCollapsed(true)}
               />
-            </section>
-          );
-        }
+            )}
+          </div>
 
-        if (testId === 'memory_cards') {
-          const gazePath = (r.gazePath as Array<{ t: number; x: number; y: number }>) ?? [];
-          const viewportWidth = r.viewportWidth as number | undefined;
-          const viewportHeight = r.viewportHeight as number | undefined;
-          return (
-            <section key={testId} className="rounded-xl border border-gray-800 bg-gray-950/80 p-4">
-              <h4 className="mb-3 text-base font-medium text-white">Memory cards</h4>
-              <MemoryCardsGazePathPreview gazePath={gazePath} viewportWidth={viewportWidth} viewportHeight={viewportHeight} />
-            </section>
-          );
-        }
-
-        if (testId === 'anti_saccade') {
-          const trials = (r.trials as AntiSaccadeTrialResult[]) ?? [];
-          return (
-            <section key={testId} className="rounded-xl border border-gray-800 bg-gray-950/80 p-4">
-              <h4 className="mb-3 text-base font-medium text-white">Anti-saccade — gaze direction</h4>
-              <AntiSaccadeGazeDirectionPreview trials={trials} />
-            </section>
-          );
-        }
-
-        if (testId === 'saccadic') {
-          const cycles = (r.cycles as SaccadicCycleResult[]) ?? [];
-          const metrics = r.metrics as
-            | { avgLatency?: number; fixationAccuracy?: number; correctiveSaccadeCount?: number }
-            | undefined;
-          return (
-            <section key={testId} className="rounded-xl border border-gray-800 bg-gray-950/80 p-4">
-              <h4 className="mb-3 text-base font-medium text-white">Saccadic</h4>
-              <SaccadicResultsPreview
-                cycles={cycles}
-                saccadeLatencyMs={r.saccadeLatencyMs as number[] | undefined}
-                fixationAccuracy={r.fixationAccuracy as number | undefined}
-                correctiveSaccades={r.correctiveSaccades as number | undefined}
-                metrics={metrics}
-                viewportWidth={r.viewportWidth as number | undefined}
-                viewportHeight={r.viewportHeight as number | undefined}
-              />
-            </section>
-          );
-        }
-
-        if (testId === 'fixation_stability') {
-          const gazeSamples = (r.gazeSamples as Array<{ t: number; x: number; y: number }>) ?? [];
-          const viewportWidth = r.viewportWidth as number | undefined;
-          const viewportHeight = r.viewportHeight as number | undefined;
-          const bcea68Px2 = r.bcea68Px2 as number | undefined;
-          const bcea95Px2 = r.bcea95Px2 as number | undefined;
-          return (
-            <section key={testId} className="rounded-xl border border-gray-800 bg-gray-950/80 p-4">
-              <h4 className="mb-3 text-base font-medium text-white">Fixation stability — BCEA</h4>
-              <FixationBceaPreview
-                gazeSamples={gazeSamples}
-                viewportWidth={viewportWidth}
-                viewportHeight={viewportHeight}
-                bcea68Px2={bcea68Px2}
-                bcea95Px2={bcea95Px2}
-              />
-            </section>
-          );
-        }
-
-        if (testId === 'peripheral_vision') {
-          const trials = (r.trials as PeripheralVisionTrialResult[]) ?? [];
-          const metrics = r.metrics as { avgRT?: number; accuracy?: number; centerStability?: number } | undefined;
-          return (
-            <section key={testId} className="rounded-xl border border-gray-800 bg-gray-950/80 p-4">
-              <h4 className="mb-3 text-base font-medium text-white">Peripheral vision</h4>
-              <PeripheralVisionResultsPreview
-                trials={trials}
-                metrics={metrics}
-                viewportWidth={r.viewportWidth as number | undefined}
-                viewportHeight={r.viewportHeight as number | undefined}
-              />
-            </section>
-          );
-        }
-
-        return null;
-      })}
+          <div className="flex shrink-0 justify-center px-2 pt-2 pb-1 sm:px-4 sm:pt-3">
+            <div
+              className="flex h-2 min-w-[140px] w-full max-w-md gap-1 rounded-full bg-gray-800 px-0.5 py-0.5 sm:max-w-lg"
+              role="tablist"
+              aria-label="Test steps"
+            >
+              {steps.map((id, i) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setStepIdx(i)}
+                  className={`h-full min-w-0 flex-1 rounded-full transition ${
+                    i === stepIdx ? 'bg-sky-500' : i < stepIdx ? 'bg-slate-600' : 'bg-gray-700'
+                  }`}
+                  title={TEST_LABELS[id] ?? id}
+                  aria-label={`Go to ${TEST_LABELS[id] ?? id}`}
+                  aria-current={i === stepIdx ? 'step' : undefined}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

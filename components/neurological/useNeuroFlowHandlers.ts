@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import { PATHS } from '@/lib/paths';
 import { SYMPTOM_QUESTIONS, type SymptomScores } from '@/lib/symptomAssessment';
 import { neurologicalRunsApi } from '@/services/api';
+import { neuroDebugLog } from '@/lib/neuroDebugLog';
 import type { TestResultPayload } from '@/components/neurological';
 
 type NeuroConfigSnapshot = {
@@ -80,6 +81,7 @@ export function useNeuroFlowHandlers({
         nextResults = { ...prev, [testId]: payload };
         return nextResults;
       });
+      neuroDebugLog('test complete', testId, '→ merged keys', Object.keys(nextResults));
       if (neuroRunId) {
         try {
           await neurologicalRunsApi.patch(neuroRunId, {

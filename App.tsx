@@ -1,9 +1,16 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { flushSync } from 'react-dom';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PATHS, parsePathname } from '@/lib/paths';
+import { neuroDebugLog } from '@/lib/neuroDebugLog';
+import {
+  NEURO_PREVIEW_RUN_ID,
+  getNeuroResultsPreviewMock,
+  neuroDevPreviewEnabled,
+  DEFAULT_NEURO_TEST_ORDER,
+} from '@/lib/neuroDevPreviewMock';
 import { 
   AppState, 
   CalibrationPhase,
@@ -92,6 +99,10 @@ function App() {
     currentNeuroTestIdRef.current = currentNeuroTestId;
   }, [currentNeuroTestId]);
   const [neuroTestResults, setNeuroTestResults] = useState<Record<string, TestResultPayload>>({});
+  /** Refetch trigger for /neuro/done screen */
+  const [neuroResultsFetchKey, setNeuroResultsFetchKey] = useState(0);
+  const [neuroResultsLoading, setNeuroResultsLoading] = useState(false);
+  const [neuroResultsLoadError, setNeuroResultsLoadError] = useState<string | null>(null);
   /** Head pose during NEURO_FLOW for tests that need it (e.g. Head Orientation). Throttled ~15 Hz. */
   const [neuroHeadPose, setNeuroHeadPose] = useState<{ pitch: number; yaw: number; roll: number } | null>(null);
   const lastNeuroHeadPoseTimeRef = useRef<number>(0);
@@ -117,6 +128,7 @@ function App() {
   const configRef = useRef<AppConfig>(DEFAULT_CONFIG);
 
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const pathnameRef = useRef<string>(typeof pathname === 'string' ? pathname : '/');
   pathnameRef.current = typeof pathname === 'string' ? pathname : '/';
@@ -1567,47 +1579,89 @@ function App() {
     const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
     if (parsed.screen !== 'neuro_done') return;
     if (neuroRunId) return;
+    if (typeof window !== 'undefined' && neuroDevPreviewEnabled()) {
+      try {
+        const q = new URLSearchParams(window.location.search);
+        if (q.get('preview') === '1') return;
+      } catch (_) {}
+    }
     try {
       const id = sessionStorage.getItem(NEURO_LAST_RUN_ID_SS_KEY);
       if (id) setNeuroRunId(id);
     } catch (_) {}
   }, [pathname, neuroRunId]);
 
-  /** Hydrate test results on done screen when state is empty (reload or navigation). */
+  /** Dev only: /neuro/done?preview=1 — mock data, skip DB (needs NEXT_PUBLIC_NEURO_DEV_PREVIEW=1). */
   useEffect(() => {
-    if (neuroPhase !== 'done') return;
-    if (!neuroRunId) return;
-    if (Object.keys(neuroTestResults).length > 0) return;
+    if (typeof window === 'undefined' || !neuroDevPreviewEnabled()) return;
+    if (searchParams.get('preview') !== '1') return;
+    const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
+    if (parsed.screen !== 'neuro_done') return;
+    neuroDebugLog('dev preview (?preview=1): mock only, no DB fetch');
+    setStatus('NEURO_FLOW');
+    statusRef.current = 'NEURO_FLOW';
+    setNeuroRunStatus('ready');
+    setNeuroPhase('done');
+    setNeuroRunId(NEURO_PREVIEW_RUN_ID);
+    setNeuroTestOrder([...DEFAULT_NEURO_TEST_ORDER]);
+    setNeuroTestResults(getNeuroResultsPreviewMock());
+    setNeuroResultsLoading(false);
+    setNeuroResultsLoadError(null);
+  }, [pathname, searchParams]);
+
+  /** Done screen: load test results from DB (source of truth for UI). */
+  useLayoutEffect(() => {
+    if (neuroPhase !== 'done') {
+      setNeuroResultsLoading(false);
+      setNeuroResultsLoadError(null);
+      return;
+    }
+    if (!neuroRunId) {
+      setNeuroResultsLoading(false);
+      return;
+    }
+    if (neuroRunId === NEURO_PREVIEW_RUN_ID) {
+      setNeuroResultsLoading(false);
+      setNeuroResultsLoadError(null);
+      neuroDebugLog('skip DB fetch (preview run id)');
+      return;
+    }
     let cancelled = false;
+    setNeuroResultsLoading(true);
+    setNeuroResultsLoadError(null);
+    neuroDebugLog('fetch run from DB', neuroRunId);
     (async () => {
       try {
-        const raw = localStorage.getItem(NEURO_TEST_PROGRESS_LS_KEY);
-        if (raw) {
-          const p = JSON.parse(raw) as { runId?: string; testResults?: Record<string, TestResultPayload> };
-          if (
-            p.runId === neuroRunId &&
-            p.testResults &&
-            typeof p.testResults === 'object' &&
-            Object.keys(p.testResults).length > 0
-          ) {
-            if (!cancelled) setNeuroTestResults(p.testResults);
-            return;
-          }
-        }
         const run = await neurologicalRunsApi.get(neuroRunId);
         if (cancelled) return;
-        const tr = run.testResults;
-        if (tr && typeof tr === 'object' && Object.keys(tr as object).length > 0) {
-          setNeuroTestResults(tr as Record<string, TestResultPayload>);
+        const raw = run.testResults;
+        const tr: Record<string, TestResultPayload> =
+          raw && typeof raw === 'object' && !Array.isArray(raw)
+            ? (raw as Record<string, TestResultPayload>)
+            : {};
+        neuroDebugLog('GET run testResults keys', Object.keys(tr));
+        if (Object.keys(tr).length === 0 && neuroDevPreviewEnabled()) {
+          neuroDebugLog(
+            'DB testResults empty — showing dev mock. Tip: use /neuro/done?preview=1 to skip DB entirely.'
+          );
+          setNeuroTestResults(getNeuroResultsPreviewMock());
+        } else {
+          setNeuroTestResults(tr);
         }
       } catch (e) {
-        console.error('[Neuro] hydrate test results failed', e);
+        console.error('[Neuro] load test results from DB failed', e);
+        neuroDebugLog('GET run failed', e);
+        if (!cancelled) {
+          setNeuroResultsLoadError(e instanceof Error ? e.message : 'Failed to load results');
+        }
+      } finally {
+        if (!cancelled) setNeuroResultsLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [neuroPhase, neuroRunId, neuroTestResults]);
+  }, [neuroPhase, neuroRunId, neuroResultsFetchKey]);
 
   const handlePostSubmitRequested = useCallback(async (scores: SymptomScores) => {
     setPendingPostSymptomScores(scores);
@@ -1646,6 +1700,7 @@ function App() {
       Object.keys(neuroTestResults).length > 0
         ? neuroTestResults
         : readNeuroTestResultsFromProgressLs() ?? neuroTestResults;
+    neuroDebugLog('post-save: keys in memory/LS merge', Object.keys(mergedResults));
     if (Object.keys(mergedResults).length > 0) {
       setNeuroTestResults(mergedResults);
     }
@@ -1658,11 +1713,16 @@ function App() {
           testResults: mergedResults,
           status: 'completed',
         });
+        neuroDebugLog(
+          'post-save: PATCH returned testResults keys',
+          updated.testResults ? Object.keys(updated.testResults as object) : []
+        );
         if (updated.testResults && Object.keys(updated.testResults as object).length > 0) {
           setNeuroTestResults(updated.testResults as Record<string, TestResultPayload>);
         }
       } catch (e) {
         console.error('Patch final run data failed', e);
+        neuroDebugLog('post-save: PATCH failed', e);
       }
     }
     setNeuroPhase('done');
@@ -2012,6 +2072,9 @@ function App() {
         neuroHeadPose={neuroHeadPose}
         gazePos={gazePos}
         neuroTestResults={neuroTestResults}
+        neuroResultsLoading={neuroResultsLoading}
+        neuroResultsLoadError={neuroResultsLoadError}
+        onNeuroResultsRetry={() => setNeuroResultsFetchKey((k) => k + 1)}
         onPreSubmit={handleNeuroPreSubmit}
         onPostSubmit={handlePostSubmitRequested}
         onExitRun={handleNeuroExitRun}

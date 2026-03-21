@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
+import { RESULT_VIZ_INNER, RESULT_VIZ_OUTER } from './resultVizLayout';
 
 type HeadSample = { t: number; yaw: number; pitch: number; roll: number };
 
@@ -13,6 +14,8 @@ type Phase = {
 
 type Props = {
   phases: Phase[];
+  /** When true, main area shows a hint — full table is intended for the parameters panel. */
+  visualOnly?: boolean;
 };
 
 function phaseStats(samples: HeadSample[]) {
@@ -30,7 +33,8 @@ function phaseStats(samples: HeadSample[]) {
   return { n: samples.length, yawMax, pitchMax, rollMax, durationMs: 0 };
 }
 
-export default function HeadOrientationResultsPreview({ phases }: Props) {
+/** Metrics table + caption — shown in the side parameters drawer. */
+export function HeadOrientationParamsSection({ phases }: { phases: Phase[] }) {
   const rows = useMemo(() => {
     if (!phases?.length) return [];
     return phases.map((ph, i) => {
@@ -87,4 +91,24 @@ export default function HeadOrientationResultsPreview({ phases }: Props) {
       </div>
     </div>
   );
+}
+
+export default function HeadOrientationResultsPreview({ phases, visualOnly }: Props) {
+  if (!phases?.length) {
+    return <p className="text-slate-500 text-sm">No head orientation data.</p>;
+  }
+
+  if (visualOnly) {
+    return (
+      <div className={RESULT_VIZ_OUTER}>
+        <div className={`${RESULT_VIZ_INNER} flex items-center justify-center px-4`}>
+          <p className="text-center text-slate-500 text-sm">
+            Không có đồ thị không gian cho bài này — xem bảng số liệu trong panel <strong>Tham số</strong>.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return <HeadOrientationParamsSection phases={phases} />;
 }

@@ -73,6 +73,9 @@ type NeurologicalFlowSectionProps = {
   neuroHeadPose: { pitch: number; yaw: number; roll: number } | null;
   gazePos: { x: number; y: number };
   neuroTestResults: Record<string, TestResultPayload>;
+  neuroResultsLoading: boolean;
+  neuroResultsLoadError: string | null;
+  onNeuroResultsRetry: () => void;
   onPreSubmit: (scores: SymptomScores) => Promise<void>;
   onPostSubmit: (scores: SymptomScores) => Promise<void>;
   onExitRun: () => Promise<void>;
@@ -95,6 +98,9 @@ export default function NeurologicalFlowSection({
   neuroHeadPose,
   gazePos,
   neuroTestResults,
+  neuroResultsLoading,
+  neuroResultsLoadError,
+  onNeuroResultsRetry,
   onPreSubmit,
   onPostSubmit,
   onExitRun,
@@ -292,31 +298,17 @@ export default function NeurologicalFlowSection({
         </div>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'done' && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center gap-4 overflow-y-auto bg-gray-950 p-4 pb-8">
-          <div className="flex w-full max-w-3xl flex-col items-center gap-3 pt-6 text-center">
-            <h2 className="text-xl font-bold text-white">Neurological run complete</h2>
-            <p className="text-gray-400 text-sm max-w-md">
-              Pre-test and post-test scores and all test results have been saved.
-            </p>
-            {neuroRunId && (
-              <p className="text-slate-500 text-xs font-mono">Run ID: {neuroRunId}</p>
-            )}
-            <p className="text-green-500 text-xs">
-              Tests completed: {Object.keys(neuroTestResults).length}
-            </p>
+        <div className="fixed inset-0 z-50 flex h-[100dvh] max-h-[100dvh] flex-col bg-gray-950">
+          <div className="min-h-0 flex flex-1 flex-col px-3 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-5">
+            <NeurologicalRunResults
+              neuroTestOrder={neuroTestOrder}
+              neuroTestResults={neuroTestResults}
+              neuroRunId={neuroRunId}
+              loading={neuroResultsLoading}
+              loadError={neuroResultsLoadError}
+              onRetry={onNeuroResultsRetry}
+            />
           </div>
-          <NeurologicalRunResults
-            neuroTestOrder={neuroTestOrder}
-            neuroTestResults={neuroTestResults}
-            neuroRunId={neuroRunId}
-          />
-          <button
-            type="button"
-            onClick={onDoneBack}
-            className="mt-2 shrink-0 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-          >
-            Back to real-time tracking
-          </button>
         </div>
       )}
     </>

@@ -1,0 +1,154 @@
+/**
+ * Dev-only: minimal payloads so the results UI mounts without running tests.
+ * Enable with NEXT_PUBLIC_NEURO_DEV_PREVIEW=1 and open /neuro/done?preview=1
+ */
+import type { TestResultPayload } from '@/components/neurological';
+
+export const NEURO_PREVIEW_RUN_ID = '__neuro_preview__';
+
+export const DEFAULT_NEURO_TEST_ORDER = [
+  'head_orientation',
+  'visual_search',
+  'memory_cards',
+  'anti_saccade',
+  'saccadic',
+  'fixation_stability',
+  'peripheral_vision',
+] as const;
+
+export function neuroDevPreviewEnabled(): boolean {
+  return (
+    typeof process !== 'undefined' && process.env.NEXT_PUBLIC_NEURO_DEV_PREVIEW === '1'
+  );
+}
+
+/** Small synthetic dataset — enough for each preview component to render. */
+export function getNeuroResultsPreviewMock(): Record<string, TestResultPayload> {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  const now = t0 + 60_000;
+
+  const gazeLine = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      t: i * 0.05,
+      x: 400 + i * 3,
+      y: 300 + Math.sin(i * 0.2) * 20,
+    }));
+
+  return {
+    head_orientation: {
+      testId: 'head_orientation',
+      startTime: t0,
+      endTime: now,
+      phases: [
+        {
+          direction: 'left',
+          startTime: t0,
+          endTime: t0 + 4000,
+          headSamples: [
+            { t: 0, yaw: -5, pitch: 0, roll: 0 },
+            { t: 0.1, yaw: -12, pitch: 1, roll: 0 },
+          ],
+        },
+      ],
+    } as TestResultPayload,
+    visual_search: {
+      testId: 'visual_search',
+      startTime: t0,
+      endTime: now,
+      completionTimeMs: 12000,
+      numberPositions: [
+        { number: 1, x: 200, y: 200 },
+        { number: 2, x: 600, y: 400 },
+      ],
+      fixations: [],
+      sequence: [1, 2],
+      gazePath: gazeLine(20),
+      gazeFixationPerNumber: { 1: 2, 2: 1 },
+      gazeSequence: [1, 2],
+      scanningPath: gazeLine(20),
+      viewportWidth: 1200,
+      viewportHeight: 800,
+    } as TestResultPayload,
+    memory_cards: {
+      testId: 'memory_cards',
+      startTime: t0,
+      endTime: now,
+      cardCount: 4,
+      cols: 2,
+      rows: 2,
+      moves: [],
+      numberOfMoves: 4,
+      correctPairsCount: 2,
+      completionTimeMs: 8000,
+      gazePath: gazeLine(30),
+      viewportWidth: 1200,
+      viewportHeight: 800,
+    } as TestResultPayload,
+    anti_saccade: {
+      testId: 'anti_saccade',
+      startTime: t0,
+      endTime: now,
+      trials: [
+        {
+          direction: 'left',
+          startTime: t0,
+          latencyMs: 220,
+          gazeSamples: gazeLine(10),
+          gazeMean: { x: 420, y: 310 },
+          gazeDirectionDeg: 5,
+          targetDirectionDeg: 180,
+          angularErrorDeg: -175,
+        },
+      ],
+      metrics: { avgLatency: 220, directionAccuracy: 100 },
+    } as TestResultPayload,
+    saccadic: {
+      testId: 'saccadic',
+      startTime: t0,
+      endTime: now,
+      cycles: [
+        {
+          targetSide: 'left',
+          onsetTime: t0,
+          latencyMs: 180,
+          gazeSamples: gazeLine(15),
+        },
+      ],
+      saccadeLatencyMs: [180],
+      fixationAccuracy: 100,
+      correctiveSaccades: 0,
+      viewportWidth: 1200,
+      viewportHeight: 800,
+      metrics: { avgLatency: 180, fixationAccuracy: 100, correctiveSaccadeCount: 0 },
+    } as TestResultPayload,
+    fixation_stability: {
+      testId: 'fixation_stability',
+      startTime: t0,
+      endTime: now,
+      durationMs: 5000,
+      gazeSamples: gazeLine(80),
+      viewportWidth: 1200,
+      viewportHeight: 800,
+      bcea68Px2: 120,
+      bcea95Px2: 340,
+      metrics: { bcea68Px2: 120, bcea95Px2: 340 },
+    } as TestResultPayload,
+    peripheral_vision: {
+      testId: 'peripheral_vision',
+      startTime: t0,
+      endTime: now,
+      trials: [
+        {
+          stimulusOnsetTime: t0,
+          stimulusPosition: 'top',
+          rtMs: 280,
+          hit: true,
+          gazeSamples: gazeLine(8),
+        },
+      ],
+      viewportWidth: 1200,
+      viewportHeight: 800,
+      metrics: { avgRT: 280, accuracy: 100, centerStability: 40 },
+    } as TestResultPayload,
+  };
+}
