@@ -245,6 +245,8 @@ export default function AntiSaccadeTest() {
               endTime,
               trials,
               metrics: { avgLatency, directionAccuracy, fixationStability },
+              viewportWidth: typeof window !== 'undefined' ? window.innerWidth : undefined,
+              viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
             });
             return;
           }

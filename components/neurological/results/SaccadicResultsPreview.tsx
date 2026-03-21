@@ -191,7 +191,7 @@ export default function SaccadicResultsPreview({
 
   if (visualOnly) {
     return (
-      <div className="relative flex min-h-0 w-full shrink-0 flex-col">
+      <div className="relative flex min-h-0 max-h-full w-full min-w-0 shrink flex-col overflow-hidden">
         {svgBlock}
         <p className="pointer-events-none absolute bottom-2 left-2 right-2 text-center text-[10px] leading-snug text-slate-500/95 sm:text-xs">
           Vòng cam = target; các đường màu = gaze theo từng chu kỳ.

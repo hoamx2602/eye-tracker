@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { RESULT_VIZ_INNER, RESULT_VIZ_OUTER } from './resultVizLayout';
+import { RESULT_VIZ_OUTER, useResultVizInnerFrameStyle } from './resultVizLayout';
 
 type HeadSample = { t: number; yaw: number; pitch: number; roll: number };
 
@@ -94,6 +94,8 @@ export function HeadOrientationParamsSection({ phases }: { phases: Phase[] }) {
 }
 
 export default function HeadOrientationResultsPreview({ phases, visualOnly }: Props) {
+  const innerFrame = useResultVizInnerFrameStyle();
+
   if (!phases?.length) {
     return <p className="text-slate-500 text-sm">No head orientation data.</p>;
   }
@@ -101,7 +103,10 @@ export default function HeadOrientationResultsPreview({ phases, visualOnly }: Pr
   if (visualOnly) {
     return (
       <div className={RESULT_VIZ_OUTER}>
-        <div className={`${RESULT_VIZ_INNER} flex items-center justify-center px-4`}>
+        <div
+          className={`${innerFrame.className} flex items-center justify-center px-4`}
+          style={innerFrame.style}
+        >
           <p className="text-center text-slate-500 text-sm">
             Không có đồ thị không gian cho bài này — xem bảng số liệu trong panel <strong>Tham số</strong>.
           </p>

@@ -6,8 +6,8 @@ import React, { createContext, useContext, useLayoutEffect, useMemo, useRef, use
  * Chiều cao thống nhất cho vùng show kết quả test (mọi bài, mọi kích thước màn hình trong ngưỡng hợp lý).
  * Một biểu thức duy nhất — không sm/lg khác nhau.
  */
-/** Cùng một chiều cao cho mọi bài (dvh + cap px). */
-export const RESULT_VIZ_BOX_CLASS = 'h-[min(62dvh,680px)] max-h-[85vh]';
+/** Cùng một chiều cao cho mọi bài (dvh + cap px), luôn co theo panel — không vượt khung cha. */
+export const RESULT_VIZ_BOX_CLASS = 'h-[min(62dvh,680px)] max-h-[min(100%,min(85vh,680px))]';
 
 /** Panel trái trong NeurologicalRunResults: cùng chiều cao tối thiểu với canvas. */
 export const RESULT_CHART_PANEL_MIN = 'min-h-[min(62dvh,680px)]';
@@ -15,15 +15,66 @@ export const RESULT_CHART_PANEL_MIN = 'min-h-[min(62dvh,680px)]';
 /** Cùng min-height cho drawer tham số (lg) để khớp cột biểu đồ. */
 export const RESULT_CHART_PANEL_MIN_LG = 'lg:min-h-[min(62dvh,680px)]';
 
+/** Viewport lúc làm bài (lưu trong payload) — dùng để khung kết quả giữ đúng tỉ lệ; chiều cao tăng khi cột rộng hơn (vd. drawer thu gọn). */
+export type ResultVizSessionViewport = { viewportWidth: number; viewportHeight: number };
+
+const ResultVizSessionViewportContext = createContext<ResultVizSessionViewport | null>(null);
+
+export function ResultVizSessionViewportProvider({
+  children,
+  viewportWidth,
+  viewportHeight,
+}: {
+  children: React.ReactNode;
+  viewportWidth?: number;
+  viewportHeight?: number;
+}) {
+  const value = useMemo<ResultVizSessionViewport | null>(() => {
+    if (
+      viewportWidth != null &&
+      viewportHeight != null &&
+      viewportWidth > 0 &&
+      viewportHeight > 0
+    ) {
+      return { viewportWidth, viewportHeight };
+    }
+    return null;
+  }, [viewportWidth, viewportHeight]);
+  return (
+    <ResultVizSessionViewportContext.Provider value={value}>{children}</ResultVizSessionViewportContext.Provider>
+  );
+}
+
+export function useResultVizSessionViewport(): ResultVizSessionViewport | null {
+  return useContext(ResultVizSessionViewportContext);
+}
+
+/**
+ * Khung đo SVG: cố định chiều cao (fallback) hoặc aspect-ratio = viewport bài test (rộng hơn → cao hơn).
+ */
+export function useResultVizInnerFrameStyle(): { className: string; style?: React.CSSProperties } {
+  const session = useResultVizSessionViewport();
+  if (session) {
+    return {
+      className:
+        'relative mx-auto h-full min-h-0 w-auto max-w-full min-w-0 shrink overflow-hidden max-h-[min(100%,min(85vh,680px))]',
+      style: { aspectRatio: `${session.viewportWidth} / ${session.viewportHeight}` },
+    };
+  }
+  return {
+    className: RESULT_VIZ_INNER,
+  };
+}
+
 /**
  * Khung bọc SVG — không flex-1 để tránh kéo giãn thừa khi inner đã cố định chiều cao.
  */
-export const RESULT_VIZ_OUTER = 'flex w-full shrink-0 flex-col items-stretch';
+export const RESULT_VIZ_OUTER = 'flex h-full min-h-0 w-full max-h-full shrink flex-col items-stretch';
 
 /**
  * Vùng canvas cố định — cùng kích thước cho mọi preview dùng ResultVizMaxFrame / RESULT_VIZ_INNER.
  */
-export const RESULT_VIZ_INNER = `relative w-full shrink-0 overflow-hidden ${RESULT_VIZ_BOX_CLASS}`;
+export const RESULT_VIZ_INNER = `relative w-full min-w-0 shrink overflow-hidden min-h-0 ${RESULT_VIZ_BOX_CLASS}`;
 
 /** SVG lấp đầy vùng, giữ tỉ lệ viewBox (meet). */
 export const RESULT_VIZ_SVG = 'absolute inset-0 block h-full w-full';
@@ -116,6 +167,7 @@ type Props = {
 export function ResultVizMaxFrame({ children }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<Readonly<{ width: number; height: number }> | null>(null);
+  const innerFrame = useResultVizInnerFrameStyle();
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -134,7 +186,7 @@ export function ResultVizMaxFrame({ children }: Props) {
 
   return (
     <div className={RESULT_VIZ_OUTER}>
-      <div ref={ref} className={RESULT_VIZ_INNER}>
+      <div ref={ref} className={innerFrame.className} style={innerFrame.style}>
         <ResultVizSizeContext.Provider value={size}>
           <div className="absolute inset-0 overflow-hidden">{children}</div>
         </ResultVizSizeContext.Provider>

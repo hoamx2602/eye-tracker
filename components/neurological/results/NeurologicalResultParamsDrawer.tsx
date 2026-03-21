@@ -103,6 +103,8 @@ export type NeurologicalResultParamsDrawerProps = {
   testId: string;
   raw: Record<string, unknown>;
   onCollapse?: () => void;
+  /** Khi khung biểu đồ dùng aspect viewport — bỏ min-height cố định để cột tham số stretch theo chiều cao thật. */
+  omitFixedMinHeightLg?: boolean;
 };
 
 /**
@@ -112,12 +114,13 @@ export default function NeurologicalResultParamsDrawer({
   testId,
   raw,
   onCollapse,
+  omitFixedMinHeightLg = false,
 }: NeurologicalResultParamsDrawerProps) {
   const label = TEST_LABELS[testId] ?? testId;
 
   return (
     <aside
-      className={`flex h-full min-h-0 w-full max-w-full shrink-0 flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-950/80 lg:max-w-[min(18rem,34vw)] lg:min-w-[14rem] ${RESULT_CHART_PANEL_MIN_LG}`}
+      className={`flex h-full min-h-0 w-full max-w-full shrink-0 flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-950/80 lg:max-w-[min(18rem,34vw)] lg:min-w-[14rem] ${omitFixedMinHeightLg ? '' : RESULT_CHART_PANEL_MIN_LG}`}
       aria-label="Tham số kết quả"
     >
       <div className="flex shrink-0 items-start justify-between gap-2 border-b border-gray-800 px-3 py-2 sm:px-4">

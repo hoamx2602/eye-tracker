@@ -2,7 +2,7 @@
 
 import React from 'react';
 import type { AntiSaccadeTrialResult } from '../tests/antiSaccade/AntiSaccadeTest';
-import { RESULT_VIZ_INNER, RESULT_VIZ_OUTER } from './resultVizLayout';
+import { RESULT_VIZ_OUTER, useResultVizInnerFrameStyle } from './resultVizLayout';
 
 type Props = {
   trials: AntiSaccadeTrialResult[];
@@ -98,6 +98,8 @@ export function AntiSaccadeParamsSection({ trials }: { trials: AntiSaccadeTrialR
  * Mean gaze vs anti-saccade target direction per trial — compasses in main area; table in parameters panel when split.
  */
 export default function AntiSaccadeGazeDirectionPreview({ trials, visualOnly }: Props) {
+  const innerFrame = useResultVizInnerFrameStyle();
+
   if (!trials?.length) {
     return <p className="text-slate-500 text-sm">No anti-saccade trials.</p>;
   }
@@ -105,7 +107,10 @@ export default function AntiSaccadeGazeDirectionPreview({ trials, visualOnly }: 
   if (visualOnly) {
     return (
       <div className={RESULT_VIZ_OUTER}>
-        <div className={`${RESULT_VIZ_INNER} relative flex flex-col overflow-hidden`}>
+        <div
+          className={`${innerFrame.className} relative flex flex-col overflow-hidden`}
+          style={innerFrame.style}
+        >
           <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
             Xanh = target; vàng = gaze. Chi tiết số trong panel <strong>Tham số</strong>.
           </p>

@@ -13,7 +13,7 @@ import VisualSearchResultsPreview from './VisualSearchResultsPreview';
 import SaccadicResultsPreview from './SaccadicResultsPreview';
 import PeripheralVisionResultsPreview from './PeripheralVisionResultsPreview';
 import NeurologicalResultParamsDrawer from './NeurologicalResultParamsDrawer';
-import { RESULT_CHART_PANEL_MIN } from './resultVizLayout';
+import { RESULT_CHART_PANEL_MIN, ResultVizSessionViewportProvider } from './resultVizLayout';
 
 const DEFAULT_ORDER = [
   'head_orientation',
@@ -176,6 +176,12 @@ export default function NeurologicalRunResults({
 
   const currentTestId = steps[stepIdx];
   const currentRaw = currentTestId ? neuroTestResults[currentTestId] : undefined;
+  const currentRecord = currentRaw ? asRecord(currentRaw) : null;
+  const vpW = currentRecord?.viewportWidth as number | undefined;
+  const vpH = currentRecord?.viewportHeight as number | undefined;
+  /** Có kích thước viewport lúc test → khung biểu đồ dùng aspect-ratio; cột rộng hơn khi đóng drawer thì cao theo. */
+  const hasViewportAspect =
+    typeof vpW === 'number' && typeof vpH === 'number' && vpW > 0 && vpH > 0;
   const totalSteps = steps.length;
   const isFirst = stepIdx <= 0;
   const isLast = stepIdx >= totalSteps - 1;
@@ -243,11 +249,17 @@ export default function NeurologicalRunResults({
 
           <div className="flex min-h-0 flex-1 flex-col gap-2 sm:gap-3 lg:flex-row lg:items-stretch">
             <div
-              className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-950/80 ${RESULT_CHART_PANEL_MIN}`}
+              className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-950/80 ${
+                hasViewportAspect ? 'min-h-0' : RESULT_CHART_PANEL_MIN
+              }`}
             >
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-                <div className="flex w-full min-h-full flex-col justify-center">
-                  {renderTestPanel(currentTestId, asRecord(currentRaw), true)}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 sm:p-4">
+                <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center overflow-hidden">
+                  <div className="flex min-h-0 max-h-full w-full min-w-0 flex-1 flex-col items-stretch justify-center overflow-hidden">
+                    <ResultVizSessionViewportProvider viewportWidth={vpW} viewportHeight={vpH}>
+                      {renderTestPanel(currentTestId, asRecord(currentRaw), true)}
+                    </ResultVizSessionViewportProvider>
+                  </div>
                 </div>
               </div>
             </div>
@@ -269,6 +281,7 @@ export default function NeurologicalRunResults({
                 testId={currentTestId}
                 raw={asRecord(currentRaw)}
                 onCollapse={() => setParamsDrawerCollapsed(true)}
+                omitFixedMinHeightLg={hasViewportAspect}
               />
             )}
           </div>
