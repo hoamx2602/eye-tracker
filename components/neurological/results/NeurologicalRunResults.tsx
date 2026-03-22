@@ -48,7 +48,7 @@ function NeurologicalResultsChartToolbar() {
           checked={showStimulusReplay}
           onChange={(e) => setShowStimulusReplay(e.target.checked)}
         />
-        <span>Tái hiện stimulus</span>
+        <span>Show stimulus</span>
       </label>
       <label className="flex cursor-pointer items-center gap-2 select-none">
         <input
@@ -57,7 +57,7 @@ function NeurologicalResultsChartToolbar() {
           checked={showGazeHeatmap}
           onChange={(e) => setShowGazeHeatmap(e.target.checked)}
         />
-        <span>Heatmap gaze</span>
+        <span>Gaze heatmap</span>
       </label>
     </div>
   );
@@ -312,7 +312,7 @@ export default function NeurologicalRunResults({
       {!loading && !loadError && resultCount === 0 && neuroRunId && (
         <p className="mt-4 text-sm text-slate-500">
           No per-test data is stored for this run in the database. Complete the neurological tests and use
-          &quot;Lưu kết quả&quot; after the post-test so results are saved.
+          &quot;Save results&quot; after the post-test so results are saved.
         </p>
       )}
       {!loading && !loadError && resultCount === 0 && !neuroRunId && (
@@ -373,12 +373,12 @@ export default function NeurologicalRunResults({
                 type="button"
                 onClick={() => setParamsDrawerCollapsed(false)}
                 className="flex w-full shrink-0 flex-row items-center justify-center gap-2 rounded-lg border border-gray-800 bg-gray-900/95 py-2.5 text-xs font-medium text-slate-400 hover:bg-gray-800 hover:text-slate-200 lg:w-10 lg:max-w-[2.75rem] lg:flex-col lg:self-stretch lg:rounded-l-lg lg:rounded-r-none lg:py-4 lg:text-[10px] lg:uppercase lg:tracking-wide"
-                title="Mở panel tham số"
+                title="Open parameters panel"
               >
                 <span className="text-base leading-none" aria-hidden>
                   ▼
                 </span>
-                <span className="lg:max-w-[2.5rem] lg:text-center lg:leading-tight">Tham số</span>
+                <span className="lg:max-w-[2.5rem] lg:text-center lg:leading-tight">Params</span>
               </button>
             ) : (
               <NeurologicalResultParamsDrawer

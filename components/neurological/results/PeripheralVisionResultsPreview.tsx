@@ -382,13 +382,13 @@ export default function PeripheralVisionResultsPreview({
           style={innerFrame.style}
         >
           <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
-            <span className="text-slate-400">Nét màu = gaze theo trial.</span> Vòng sáng = vị trí flash (ngẫu nhiên theo trial). Ổn định tâm (delay) trong{' '}
-            <strong>Tham số</strong>.
+            <span className="text-slate-400">Colored lines = gaze per trial.</span> Bright ring = flash location (random per trial). Center stability (delay) is in{' '}
+            <strong>Parameters</strong>.
           </p>
           {totalGazeSamples === 0 && (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4 pt-10">
               <p className="max-w-md rounded-lg border border-amber-800/60 bg-amber-950/90 px-3 py-2.5 text-center text-xs text-amber-50/95 shadow-lg">
-                Không có mẫu gaze — không thể vẽ đường đi.
+                No gaze samples — path cannot be drawn.
               </p>
             </div>
           )}
@@ -397,7 +397,7 @@ export default function PeripheralVisionResultsPreview({
           </div>
           {durationSec > 0 && (
             <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-800 bg-gray-900/40 px-3 pb-3 pt-3 text-xs text-slate-400 sm:px-4 sm:pb-4">
-              <span className="shrink-0 w-28 whitespace-nowrap">Thời điểm tái hiện</span>
+              <span className="shrink-0 w-28 whitespace-nowrap">Replay time</span>
               <input
                 type="range"
                 min={0}

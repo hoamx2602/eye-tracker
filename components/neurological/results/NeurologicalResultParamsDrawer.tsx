@@ -88,7 +88,7 @@ function renderParamsForTest(testId: string, r: Record<string, unknown>): React.
   if (testId === 'fixation_stability') {
     const gazeSamples = (r.gazeSamples as Array<{ t: number; x: number; y: number }>) ?? [];
     if (gazeSamples.length < 2) {
-      return <p className="text-slate-500 text-sm">Không đủ mẫu để tính BCEA.</p>;
+      return <p className="text-slate-500 text-sm">Not enough samples to compute BCEA.</p>;
     }
     const xy = gazeSamples.map((s) => ({ x: s.x, y: s.y }));
     const b68 = computeBceaForSamples(xy, '68');
@@ -121,7 +121,7 @@ function renderParamsForTest(testId: string, r: Record<string, unknown>): React.
     );
   }
 
-  return <p className="text-slate-500 text-sm">Không có tham số cho bài này.</p>;
+  return <p className="text-slate-500 text-sm">No parameters for this test.</p>;
 }
 
 export type NeurologicalResultParamsDrawerProps = {
@@ -146,11 +146,11 @@ export default function NeurologicalResultParamsDrawer({
   return (
     <aside
       className={`flex h-full min-h-0 w-full max-w-full shrink-0 flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-950/80 lg:max-w-[min(18rem,34vw)] lg:min-w-[14rem] ${omitFixedMinHeightLg ? '' : RESULT_CHART_PANEL_MIN_LG}`}
-      aria-label="Tham số kết quả"
+      aria-label="Result parameters"
     >
       <div className="flex shrink-0 items-start justify-between gap-2 border-b border-gray-800 px-3 py-2 sm:px-4">
         <div className="min-w-0 flex-1">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Tham số</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Parameters</h3>
           <p className="mt-0.5 truncate text-sm font-medium text-slate-200">{label}</p>
         </div>
         {onCollapse && (
@@ -158,8 +158,8 @@ export default function NeurologicalResultParamsDrawer({
             type="button"
             onClick={onCollapse}
             className="shrink-0 rounded-lg p-2 text-slate-400 transition hover:bg-gray-800 hover:text-white"
-            title="Thu gọn — xem full kết quả"
-            aria-label="Thu gọn panel tham số"
+            title="Collapse — show full chart"
+            aria-label="Collapse parameters panel"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />

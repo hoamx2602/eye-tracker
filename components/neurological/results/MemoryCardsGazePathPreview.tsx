@@ -397,7 +397,7 @@ export default function MemoryCardsGazePathPreview({
       </ResultVizMaxFrame>
       {showReplaySlider && (
         <label className="flex shrink-0 flex-col gap-1 px-1 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:gap-3">
-          <span className="whitespace-nowrap">Thời điểm tái hiện</span>
+          <span className="whitespace-nowrap">Replay time</span>
           <input
             type="range"
             min={0}
@@ -423,9 +423,9 @@ export default function MemoryCardsGazePathPreview({
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       {chart}
       <p className="shrink-0 text-xs text-slate-500">
-        {layout.sampleCount} samples · path = gaze đến mốc thời gian · dot = điểm cuối
-        {!layout.hasSavedGrid && ' · ước lượng lưới (thiếu gridRect)'}
-        {!layout.board && ' · dữ liệu cũ không có board'}
+        {layout.sampleCount} samples · path = gaze up to scrub time · dot = last point
+        {!layout.hasSavedGrid && ' · estimated grid (missing gridRect)'}
+        {!layout.board && ' · legacy data has no board'}
       </p>
     </div>
   );

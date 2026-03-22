@@ -1317,9 +1317,9 @@ function App() {
         
         // If Hybrid CV is extremely bad (worse than Ridge or just crazy high), force fallback to Ridge.
         if (cvHybrid > 150 || (cvHybrid > cvRidge + 50 && cvHybrid > 100)) {
-            console.warn("⚠️ Báo động Overfitting cấp tính ở k-NN! Lưới tọa độ đang bị vặn xoắn. Bắt buộc hạ cấp xuống thuật toán Ridge Tuyến tính.");
+            console.warn("⚠️ Severe k-NN overfitting: coordinate grid warping. Forcing fallback to linear Ridge.");
             configRef.current.regressionMethod = RegressionMethod.RIDGE;
-            alert(`Cảnh báo: Phát hiện dấu hiệu Overfitting (Méo lưới nội suy). Hệ thống đã tự động chuyển sang chế độ Linear Ridge để đảm bảo an toàn thao tác! (Lỗi nội suy: ${cvHybrid.toFixed(0)}px)`);
+            alert(`Warning: Possible overfitting (warped interpolation grid). Switched to Linear Ridge for safety. (Interpolation error: ${cvHybrid.toFixed(0)} px)`);
         }
         
         setGazeModelReady(true);
@@ -1729,12 +1729,12 @@ function App() {
       setNeuroResultsLoading(false);
       const fromLsNoId = readNeuroTestResultsFromProgressLs();
       if (fromLsNoId && Object.keys(fromLsNoId).length > 0) {
-        neuroPersistWarn('done screen: không có run id — hiển thị tạm từ localStorage (không đồng bộ DB)', {
+        neuroPersistWarn('done screen: no run id — showing temporary data from localStorage (not synced to DB)', {
           keys: Object.keys(fromLsNoId),
         });
         setNeuroTestResults(fromLsNoId);
       } else {
-        neuroPersistWarn('done screen: không có run id và không có neuro_test_progress_v1 — không tải được kết quả');
+        neuroPersistWarn('done screen: no run id and no neuro_test_progress_v1 — cannot load results');
       }
       return;
     }
@@ -1769,7 +1769,7 @@ function App() {
               await neurologicalRunsApi.patch(neuroRunId, { testResults: fromLs });
               neuroDebugLog('GET empty DB — synced LS fallback to DB ok', { runId: neuroRunId });
             } catch (syncErr) {
-              neuroPersistWarn('GET empty DB — không sync được LS lên DB', syncErr);
+              neuroPersistWarn('GET empty DB — could not sync localStorage fallback to DB', syncErr);
             }
           } else if (neuroDevPreviewEnabled()) {
             neuroDebugLog(
@@ -1881,14 +1881,14 @@ function App() {
           setNeuroTestResults(updated.testResults as Record<string, TestResultPayload>);
         }
       } catch (e) {
-        neuroPersistWarn('post-save: PATCH failed — không ghi được DB', e);
+        neuroPersistWarn('post-save: PATCH failed — could not write to DB', e);
         alert(
-          'Không lưu được kết quả lên server (lỗi mạng hoặc máy chủ). Kiểm tra kết nối và bấm Lưu kết quả lại. (Xem console [Neuro])'
+          'Could not save results to the server (network or server error). Check your connection and tap Save results again. (See console [Neuro])'
         );
         return;
       }
     } else {
-      neuroPersistWarn('post-save: không có run id — bỏ qua PATCH; chỉ có dữ liệu local nếu trong LS', {
+      neuroPersistWarn('post-save: no run id — skipping PATCH; local data only if present in LS', {
         mergedKeys: Object.keys(mergedResults),
       });
     }

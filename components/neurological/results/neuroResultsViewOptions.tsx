@@ -3,10 +3,10 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 export type NeurologicalResultsViewOptions = {
-  /** Hiển thị lại stimulus (số, card, target…) giống lúc test. Tắt = chỉ gaze / heatmap. */
+  /** Overlay stimulus (numbers, cards, targets…) like during the test. Off = gaze / heatmap only. */
   showStimulusReplay: boolean;
   setShowStimulusReplay: (v: boolean) => void;
-  /** Heatmap gaze (tích lũy độ mờ). */
+  /** Gaze heatmap (accumulated blur). */
   showGazeHeatmap: boolean;
   setShowGazeHeatmap: (v: boolean) => void;
 };
@@ -39,7 +39,7 @@ export function NeurologicalResultsViewProvider({ children }: { children: React.
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-/** Toggle tái hiện stimulus + heatmap — ngoài provider thì mặc định (nút không hoạt động). */
+/** Toggle stimulus replay + heatmap — outside provider, defaults apply (controls no-op). */
 export function useNeurologicalResultsViewOptions(): NeurologicalResultsViewOptions {
   return useContext(Ctx) ?? DEFAULT_OPTIONS;
 }

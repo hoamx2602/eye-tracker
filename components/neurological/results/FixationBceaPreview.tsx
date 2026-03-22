@@ -40,7 +40,7 @@ export function FixationParamsSection({ area68, area95 }: { area68: number; area
         </span>
       </div>
       <p className="text-xs text-slate-500 leading-relaxed">
-        Bivariate Contour Ellipse Area (BCEA) từ hiệp phương sai (x, y). Cyan = 95%, xanh = 68%; xám = gaze (subsample).
+        Bivariate Contour Ellipse Area (BCEA) from covariance (x, y). Cyan = 95%, green = 68%; gray = gaze (subsample).
       </p>
     </div>
   );
@@ -313,15 +313,15 @@ export default function FixationBceaPreview({
           style={innerFrame.style}
         >
           <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
-            <span className="text-slate-400">Kéo thanh để replay gaze.</span> Ellipse BCEA tính trên mẫu tính đến thời điểm đó. Số liệu đầy đủ trong{' '}
-            <strong>Tham số</strong>.
+            <span className="text-slate-400">Scrub the slider to replay gaze.</span> BCEA ellipse uses samples up to that time. Full metrics in{' '}
+            <strong>Parameters</strong>.
           </p>
           <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 pt-9 sm:px-3">
             <div className="min-h-0 flex-1 overflow-hidden">{svgBlock}</div>
           </div>
           {durationSec > 0 && (
             <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-800 bg-gray-900/40 px-3 pb-3 pt-3 text-xs text-slate-400 sm:px-4 sm:pb-4">
-              <span className="shrink-0 w-28 whitespace-nowrap">Thời điểm tái hiện</span>
+              <span className="shrink-0 w-28 whitespace-nowrap">Replay time</span>
               <input
                 type="range"
                 min={0}
@@ -347,7 +347,7 @@ export default function FixationBceaPreview({
       <FixationParamsSection area68={layout.area68} area95={layout.area95} />
       {svgBlock}
       <p className="text-xs text-slate-500">
-        {totalSamples} samples · BCEA trong biểu đồ phản ánh mẫu đến thanh replay (khác số tổng hợp khi chưa kéo hết).
+        {totalSamples} samples · BCEA in the chart reflects samples up to the replay slider (may differ from summary totals before scrubbing to the end).
       </p>
     </div>
   );

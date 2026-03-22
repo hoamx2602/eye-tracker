@@ -278,7 +278,7 @@ export default function NeurologicalFlowSection({
           <div className="w-full max-w-md rounded-2xl border border-gray-800 bg-gray-950 p-6 shadow-2xl">
             <h3 className="text-lg font-semibold text-white">Post-test submitted</h3>
             <p className="mt-2 text-sm text-gray-400">
-              Bạn muốn lưu kết quả và hoàn tất run, hay làm lại neurological tests?
+              Save results and finish this run, or redo the neurological tests?
             </p>
             <div className="mt-6 flex flex-col gap-3">
               <button
@@ -286,21 +286,21 @@ export default function NeurologicalFlowSection({
                 onClick={onPostSubmitConfirmSave}
                 className="w-full rounded-xl bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-500 transition"
               >
-                Lưu kết quả
+                Save results
               </button>
               <button
                 type="button"
                 onClick={onPostSubmitConfirmRedo}
                 className="w-full rounded-xl bg-amber-600 px-4 py-2.5 font-medium text-white hover:bg-amber-500 transition"
               >
-                Làm lại neurological tests
+                Redo neurological tests
               </button>
               <button
                 type="button"
                 onClick={onPostSubmitConfirmCancel}
                 className="w-full rounded-xl bg-gray-800 px-4 py-2.5 font-medium text-gray-200 hover:bg-gray-700 transition"
               >
-                Hủy
+                Cancel
               </button>
             </div>
           </div>
@@ -312,11 +312,11 @@ export default function NeurologicalFlowSection({
             <div className="shrink-0 border-b border-amber-500/40 bg-amber-950/50 px-3 py-3 text-sm text-amber-100 sm:px-4">
               <div className="mx-auto flex max-w-[min(96rem,100%)] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <strong className="text-amber-300">Chế độ verify:</strong> xem kết quả thật của bài vừa xong. Bật lâu dài:{' '}
+                  <strong className="text-amber-300">Verify mode:</strong> review results for the test you just finished. To keep this on:{' '}
                   <code className="rounded bg-black/30 px-1.5 py-0.5 text-xs text-slate-300">
                     NEXT_PUBLIC_NEURO_VERIFY_AFTER_EACH=1
                   </code>{' '}
-                  hoặc trong DevTools:{' '}
+                  or in DevTools:{' '}
                   <code className="rounded bg-black/30 px-1.5 py-0.5 text-xs text-slate-300">
                     sessionStorage.setItem(&apos;neuro_verify_after_each&apos;,&apos;1&apos;)
                   </code>
@@ -326,7 +326,7 @@ export default function NeurologicalFlowSection({
                   onClick={neuroVerifyBanner.onContinue}
                   className="shrink-0 rounded-xl bg-amber-600 px-4 py-2.5 font-medium text-white transition hover:bg-amber-500"
                 >
-                  Tiếp tục (bài tiếp theo hoặc post-test)
+                  Continue (next test or post-test)
                 </button>
               </div>
             </div>

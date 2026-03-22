@@ -71,11 +71,11 @@ export function SaccadicParamsSection({
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-500 leading-relaxed">
-        Mẫu gaze: <span className="font-mono text-slate-300">{trialSamples}</span> (tổng trong cycles)
+        Gaze samples: <span className="font-mono text-slate-300">{trialSamples}</span> (total across cycles)
         {scanningPath != null ? (
           <>
             {' '}
-            · <span className="font-mono text-slate-300">{scanningPath.length}</span> điểm{' '}
+            · <span className="font-mono text-slate-300">{scanningPath.length}</span> points in{' '}
             <code className="text-slate-400">scanningPath</code>
           </>
         ) : null}
@@ -378,13 +378,13 @@ export default function SaccadicResultsPreview({
           style={innerFrame.style}
         >
           <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
-            <span className="text-slate-400">Nét màu = gaze theo từng chu kỳ.</span> Vòng cam = target (sáng hơn = chu kỳ đang replay). Chi tiết latency trong{' '}
-            <strong>Tham số</strong>.
+            <span className="text-slate-400">Colored lines = gaze per cycle.</span> Orange ring = target (brighter = cycle at replay). Latency details in{' '}
+            <strong>Parameters</strong>.
           </p>
           {totalGazeSamples === 0 && (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4 pt-10">
               <p className="max-w-md rounded-lg border border-amber-800/60 bg-amber-950/90 px-3 py-2.5 text-center text-xs leading-relaxed text-amber-50/95 shadow-lg">
-                Không có mẫu gaze trong kết quả — không thể vẽ đường đi. Chạy lại bài với tracking gaze.
+                No gaze samples in results — path cannot be drawn. Re-run the test with gaze tracking.
               </p>
             </div>
           )}
@@ -393,7 +393,7 @@ export default function SaccadicResultsPreview({
           </div>
           {durationSec > 0 && (
             <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-800 bg-gray-900/40 px-3 pb-3 pt-3 text-xs text-slate-400 sm:px-4 sm:pb-4">
-              <span className="shrink-0 w-28 whitespace-nowrap">Thời điểm tái hiện</span>
+              <span className="shrink-0 w-28 whitespace-nowrap">Replay time</span>
               <input
                 type="range"
                 min={0}

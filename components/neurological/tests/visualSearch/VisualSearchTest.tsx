@@ -206,7 +206,7 @@ export default function VisualSearchTest() {
       </p>
       {!gazeModelReady && (
         <div className="mx-auto mb-2 max-w-xl rounded-lg border border-amber-700/55 bg-amber-950/45 px-3 py-2 text-center text-[11px] leading-relaxed text-amber-100">
-          Chưa có mô hình gaze trong session này — ứng dụng không ước lượng được tọa độ màn hình, chỉ ghi nhận (0,0), nên không có scanpath/AOI đúng nghĩa. Hoàn thành calibration (tracking) trước khi làm bài neurological.
+          No gaze model in this session yet — screen coordinates are not estimated; only (0,0) is recorded, so scanpath/AOIs are not meaningful. Complete calibration (tracking) before neurological tests.
         </div>
       )}
       <div ref={stimulusAreaRef} className="flex-1 relative min-h-0">

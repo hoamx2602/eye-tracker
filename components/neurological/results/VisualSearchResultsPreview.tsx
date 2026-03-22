@@ -314,19 +314,19 @@ export default function VisualSearchResultsPreview({
     if (raw === 0 && numberPositions.length > 0 && !warnedEmptyRef.current) {
       warnedEmptyRef.current = true;
       neuroPersistWarn(
-        '[VisualSearch] scanningPath rỗng — không có đường gaze. Kiểm tra: (1) bấm SPACE sau vài giây, (2) PATCH neurological run có testResults.visual_search.scanningPath, (3) filter console [Neuro] lúc hoàn thành bài.'
+        '[VisualSearch] scanningPath empty — no gaze path. Check: (1) press SPACE after a few seconds, (2) PATCH neurological run includes testResults.visual_search.scanningPath, (3) filter console [Neuro] when finishing the test.'
       );
     }
     if (layout.gazeMode !== 'pixels' && !warnedModeRef.current) {
       warnedModeRef.current = true;
       neuroPersistWarn(
-        `[VisualSearch] Đã map tọa độ gaze từ ${layout.gazeMode} → pixel viewport (${viewportWidth ?? '?'}×${viewportHeight ?? '?'}). Nếu vẫn sai, kiểm tra calibration.`
+        `[VisualSearch] Mapped gaze coords from ${layout.gazeMode} → viewport pixels (${viewportWidth ?? '?'}×${viewportHeight ?? '?'}). If still wrong, check calibration.`
       );
     }
     if (layout.noValidGazeCoords && raw > 0 && !warnedNoValidGazeRef.current) {
       warnedNoValidGazeRef.current = true;
       neuroPersistWarn(
-        '[VisualSearch] Các mẫu lưu được gần (0,0) — thường không phải “nhìn góc màn” mà là chưa có dữ liệu gaze hợp lệ (regressor chưa train / chưa calibration trong session, hoặc pipeline không đưa ra tọa độ). Calibration xong rồi chạy lại neurological; nếu đã calibrate mà vẫn vậy, báo dev (gazeModelReady).'
+        '[VisualSearch] Saved samples cluster near (0,0) — usually not “looking at a corner” but missing valid gaze (regressor not trained / not calibrated this session, or pipeline returns no coords). Calibrate, then re-run neurological; if still broken after calibration, tell dev (gazeModelReady).'
       );
     }
   }, [layout, scanningPath?.length, numberPositions.length, fixations.length, scanplot.nodes.length, viewportWidth, viewportHeight]);
@@ -491,7 +491,7 @@ export default function VisualSearchResultsPreview({
     </ResultVizMaxFrame>
     {durationSec > 0 && layout && (
       <label className="flex shrink-0 flex-col gap-1 px-1 mt-2 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:gap-3">
-        <span className="whitespace-nowrap">Thời điểm tái hiện</span>
+        <span className="whitespace-nowrap">Replay time</span>
         <input
           type="range"
           min={0}
@@ -521,24 +521,24 @@ export default function VisualSearchResultsPreview({
         gazeFixationPerNumber={gazeFixationPerNumber}
       />
       <p className="text-[11px] leading-relaxed text-slate-500">
-        Đường nhạt + mũi tên = toàn bộ mẫu gaze; đường đậm màu + vòng số 1…N = các fixation (AOI) theo thời gian — giống scanpath tham chiếu.
+        Faint line + arrows = full gaze trace; bold colored line + numbered circles = fixations (AOIs) in time order — classic scanpath layout.
       </p>
       {noPath && (
         <div className="rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-100">
-          <strong className="text-amber-300">Không có mẫu gaze (scanningPath rỗng).</strong> Màn chỉ hiện stimulus. Mở console (filter{' '}
-          <code className="rounded bg-black/40 px-1">[Neuro]</code>) khi hoàn thành bài — phải thấy{' '}
-          <code className="rounded bg-black/40 px-1">scanningPathLen &gt; 0</code>. Nếu = 0: thử lại bài vài giây trước khi SPACE; đảm bảo eye
-          tracking chạy (NEURO_FLOW).
+          <strong className="text-amber-300">No gaze samples (scanningPath empty).</strong> Only the stimulus is shown. Open the console (filter{' '}
+          <code className="rounded bg-black/40 px-1">[Neuro]</code>) when finishing the test — you should see{' '}
+          <code className="rounded bg-black/40 px-1">scanningPathLen &gt; 0</code>. If 0: run the test a few seconds before SPACE; ensure eye
+          tracking is active (NEURO_FLOW).
         </div>
       )}
       {layout.noValidGazeCoords && !noPath && (
         <div className="rounded-lg border border-rose-800/60 bg-rose-950/35 px-3 py-2 text-xs text-rose-100">
-          <strong className="text-rose-300">Không có tọa độ gaze hợp lệ trong các mẫu đã lưu.</strong> Thường là pipeline chỉ trả giá trị mặc định (0,0) khi mô hình chưa calibration trong session này — không phải do “nhìn một điểm trên màn”. Làm calibration (tracking) rồi chạy lại bài; nếu đã calibrate mà vẫn vậy, báo dev.
+          <strong className="text-rose-300">No valid gaze coordinates in saved samples.</strong> Usually the pipeline returns default (0,0) when the model is not calibrated this session — not because you “looked at one spot”. Run calibration (tracking) then repeat the test; if it persists after calibration, tell dev.
         </div>
       )}
       {layout.gazeMode !== 'pixels' && !noPath && (
         <p className="text-[11px] text-sky-300/95">
-          Đã tự nhận dạng tọa độ gaze dạng {layout.gazeMode} và nhân lên kích thước viewport — nếu vị trí sai, báo dev.
+          Gaze coordinates were auto-detected as {layout.gazeMode} and scaled to viewport — if positions look wrong, tell dev.
         </p>
       )}
       {svgBlock}

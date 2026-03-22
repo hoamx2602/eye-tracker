@@ -108,7 +108,7 @@ export default function HeadOrientationResultsPreview({ phases, visualOnly }: Pr
           style={innerFrame.style}
         >
           <p className="text-center text-slate-500 text-sm">
-            Không có đồ thị không gian cho bài này — xem bảng số liệu trong panel <strong>Tham số</strong>.
+            No spatial plot for this test — see the metrics table in the <strong>Parameters</strong> panel.
           </p>
         </div>
       </div>
