@@ -51,7 +51,10 @@ function renderParamsForTest(testId: string, r: Record<string, unknown>): React.
 
   if (testId === 'memory_cards') {
     const gazePath = (r.gazePath as Array<{ t: number; x: number; y: number }>) ?? [];
-    return <MemoryCardsParamsSection sampleCount={gazePath.length} />;
+    const moves = (r.moves as Array<{ match: boolean }>) ?? [];
+    const matchedCount = moves.filter((m) => m.match).length;
+    const wrongCount = moves.length - matchedCount;
+    return <MemoryCardsParamsSection sampleCount={gazePath.length} moveCount={moves.length} matchedCount={matchedCount} wrongCount={wrongCount} />;
   }
 
   if (testId === 'anti_saccade') {

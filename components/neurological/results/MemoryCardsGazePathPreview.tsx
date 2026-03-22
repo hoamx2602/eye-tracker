@@ -69,14 +69,15 @@ type Props = {
   visualOnly?: boolean;
 };
 
-export function MemoryCardsParamsSection({ sampleCount }: { sampleCount: number }) {
+export function MemoryCardsParamsSection({ sampleCount, moveCount = 0, matchedCount = 0, wrongCount = 0 }: { sampleCount: number; moveCount?: number; matchedCount?: number; wrongCount?: number }) {
   return (
-    <p className="text-xs text-slate-400 leading-relaxed">
-      <span className="text-slate-500">Samples:</span>{' '}
-      <span className="font-mono text-slate-200">{sampleCount}</span>
-      <br />
-      <span className="text-slate-500">Path</span> = gaze trace; <span className="text-slate-500">dot</span> = last point.
-    </p>
+    <div className="text-xs text-slate-400 leading-relaxed space-y-0.5">
+      <div><span className="text-slate-500">Samples:</span> <span className="font-mono text-slate-200">{sampleCount}</span></div>
+      <div><span className="text-slate-500">Number of moves:</span> <span className="font-mono text-slate-200">{moveCount}</span></div>
+      <div><span className="text-slate-500">Correct pairs:</span> <span className="font-mono font-bold text-emerald-400">{matchedCount}</span></div>
+      <div><span className="text-slate-500">Wrong pairs:</span> <span className="font-mono font-bold text-rose-400">{wrongCount}</span></div>
+      <div className="text-[11px] text-slate-500 pt-1 border-t border-gray-800/80 mt-1.5 inline-block w-full">Path = gaze trace; circle = fixation</div>
+    </div>
   );
 }
 
