@@ -26,5 +26,5 @@ export const PRACTICE_COUNT = 4;
 export const DEFAULT_AOI_RADIUS_PX = 80;
 /** Minimum distance between number centers (as fraction of min(width,height)) so they don't overlap. */
 export const MIN_SPACING_FRACTION = 0.15;
-/** Gaze path sample interval (ms). */
-export const GAZE_PATH_INTERVAL_MS = 50;
+/** Gaze path sample interval (ms) — 0.1s cố định, đồng bộ với yêu cầu lưu scanpath. */
+export const GAZE_PATH_INTERVAL_MS = 100;

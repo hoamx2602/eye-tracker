@@ -59,7 +59,10 @@ function renderParamsForTest(testId: string, r: Record<string, unknown>): React.
 
   if (testId === 'anti_saccade') {
     const trials = (r.trials as AntiSaccadeTrialResult[]) ?? [];
-    return <AntiSaccadeParamsSection trials={trials} />;
+    const scanningPath =
+      (r.scanningPath as Array<{ t: number; x: number; y: number }> | undefined) ??
+      (r.gazePath as Array<{ t: number; x: number; y: number }> | undefined);
+    return <AntiSaccadeParamsSection trials={trials} scanningPath={scanningPath} />;
   }
 
   if (testId === 'saccadic') {

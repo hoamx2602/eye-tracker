@@ -26,6 +26,8 @@ function getTravelToEdges(vw: number, vh: number): { travelX: number; travelY: n
 
 type Props = {
   trials: AntiSaccadeTrialResult[];
+  /** Giống visual_search: toàn bộ mẫu gaze, `t` (s) từ lúc bắt đầu bài test — lưu kèm payload để replay/debug. */
+  scanningPath?: Array<{ t: number; x: number; y: number }>;
   viewportWidth?: number;
   viewportHeight?: number;
   visualOnly?: boolean;
@@ -70,13 +72,31 @@ function MiniCompass({
 }
 
 /** Trial table + legend — parameters drawer. */
-export function AntiSaccadeParamsSection({ trials }: { trials: AntiSaccadeTrialResult[] }) {
+export function AntiSaccadeParamsSection({
+  trials,
+  scanningPath,
+}: {
+  trials: AntiSaccadeTrialResult[];
+  scanningPath?: Array<{ t: number; x: number; y: number }>;
+}) {
   if (!trials?.length) {
     return <p className="text-slate-500 text-sm">No anti-saccade trials.</p>;
   }
 
+  const samplesPerTrial = trials.reduce((n, t) => n + (t.gazeSamples?.length ?? 0), 0);
+
   return (
     <div className="space-y-3">
+      <p className="text-xs text-slate-500 leading-relaxed">
+        Mẫu gaze: <span className="font-mono text-slate-300">{samplesPerTrial}</span> (tổng trong trials)
+        {scanningPath != null ? (
+          <>
+            {' '}
+            · <span className="font-mono text-slate-300">{scanningPath.length}</span> điểm trong{' '}
+            <code className="text-slate-400">scanningPath</code> (cùng kiểu Visual Search)
+          </>
+        ) : null}
+      </p>
       <p className="text-xs text-slate-500 leading-relaxed">
         Green = hướng target (dim); amber = mean gaze. Góc màn hình: 0° = phải, 90° = xuống.
       </p>
@@ -129,6 +149,7 @@ export function AntiSaccadeParamsSection({ trials }: { trials: AntiSaccadeTrialR
  */
 export default function AntiSaccadeGazeDirectionPreview({
   trials,
+  scanningPath,
   viewportWidth,
   viewportHeight,
   visualOnly,
@@ -258,6 +279,9 @@ export default function AntiSaccadeGazeDirectionPreview({
     return <p className="text-slate-500 text-sm">No anti-saccade trials.</p>;
   }
 
+  const totalGazeSamples =
+    trials.reduce((n, t) => n + (t.gazeSamples?.length ?? 0), 0) || (scanningPath?.length ?? 0);
+
   const viewportSvg = (
     <ResultVizMaxFrame>
       <ResultVizAspectSvg
@@ -339,17 +363,35 @@ export default function AntiSaccadeGazeDirectionPreview({
           const pts = filtered.map((s) => layout.loc(s.x, s.y));
           const ptsStr = pts.map((p) => `${p.x},${p.y}`).join(' ');
           const hue = (i * 37) % 360;
+          const stroke = `hsl(${hue} 72% 62%)`;
           return (
             <g key={`path-${t.startTime}-${i}`}>
-              <polyline
-                fill="none"
-                stroke={`hsl(${hue} 65% 58%)`}
-                strokeWidth="2.0"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity={0.88}
-                points={ptsStr}
-              />
+              {pts.length >= 2 ? (
+                <>
+                  <polyline
+                    fill="none"
+                    stroke="rgb(15 23 42)"
+                    strokeWidth={5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity={0.85}
+                    vectorEffect="nonScalingStroke"
+                    points={ptsStr}
+                  />
+                  <polyline
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={3}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity={0.95}
+                    vectorEffect="nonScalingStroke"
+                    points={ptsStr}
+                  />
+                </>
+              ) : (
+                <circle cx={pts[0].x} cy={pts[0].y} r={5} fill={stroke} stroke="rgb(15 23 42)" strokeWidth={1.5} vectorEffect="nonScalingStroke" />
+              )}
               <GazePathDirectionArrows points={pts} step={8} fill={`hsl(${hue} 65% 52%)`} size={5} />
             </g>
           );
@@ -366,9 +408,17 @@ export default function AntiSaccadeGazeDirectionPreview({
           style={innerFrame.style}
         >
           <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
-            Cùng toạ độ màn hình lúc test; đỏ = kích thích sáng, xanh = dim (đích). La bàn từng trial bên dưới — chi tiết trong{' '}
-            <strong>Tham số</strong>.
+            <span className="text-slate-400">Nét màu = đường gaze theo từng trial.</span> Đỏ = kích thích sáng, xanh = dim (đích). La bàn trong{' '}
+            <strong>Tham số</strong>. Bật <strong>Heatmap gaze</strong> trên thanh công cụ nếu muốn vùng tập trung.
           </p>
+          {totalGazeSamples === 0 && (
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4 pt-10">
+              <p className="max-w-md rounded-lg border border-amber-800/60 bg-amber-950/90 px-3 py-2.5 text-center text-xs leading-relaxed text-amber-50/95 shadow-lg">
+                Không có mẫu <strong>gaze</strong> trong kết quả (<code className="text-amber-200/90">trials[].gazeSamples</code> rỗng) — không thể vẽ đường đi.
+                Chạy lại bài với tracking gaze hoặc kiểm tra dữ liệu đã lưu.
+              </p>
+            </div>
+          )}
           <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 pt-9 sm:px-3">
             <div className="min-h-0 flex-1 overflow-hidden">{viewportSvg}</div>
           </div>

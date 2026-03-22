@@ -19,6 +19,7 @@ import {
 } from './constants';
 import StimulusShape from './StimulusShape';
 import { dimPosition, generateTrialDirections, primaryPosition } from './utils';
+import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 
 function mean(nums: number[]): number {
   if (nums.length === 0) return 0;
@@ -71,15 +72,37 @@ export interface AntiSaccadeTrialResult {
   angularErrorDeg?: number;
 }
 
+/** Một điểm gaze; `t` = giây từ `startTime` của bài test (cùng quy ước visual_search.scanningPath). */
+export type AntiSaccadeScanningPoint = { t: number; x: number; y: number };
+
 export interface AntiSaccadeResult {
   startTime: number;
   endTime: number;
   trials: AntiSaccadeTrialResult[];
+  /** Toàn bộ mẫu gaze nối theo thời gian — dùng replay/debug, tương đương visual_search.scanningPath */
+  scanningPath?: AntiSaccadeScanningPoint[];
+  /** Alias của scanningPath (giống visual_search). */
+  gazePath?: AntiSaccadeScanningPoint[];
   metrics?: {
     avgLatency?: number;
     directionAccuracy?: number;
     fixationStability?: number;
   };
+}
+
+/** Gộp từng trial (t tương đối từng lần chuyển động) thành một đường thời gian từ lúc bắt đầu test. */
+export function buildAntiSaccadeScanningPath(
+  trials: AntiSaccadeTrialResult[],
+  testStartMs: number
+): AntiSaccadeScanningPoint[] {
+  const out: AntiSaccadeScanningPoint[] = [];
+  for (const tr of trials) {
+    const offsetSec = (tr.startTime - testStartMs) / 1000;
+    for (const s of tr.gazeSamples ?? []) {
+      out.push({ t: offsetSec + s.t, x: s.x, y: s.y });
+    }
+  }
+  return out;
 }
 
 const EDGE_MARGIN_PX = 24;
@@ -101,9 +124,7 @@ function getTravelToEdges(): { travelX: number; travelY: number } {
 
 export default function AntiSaccadeTest() {
   const { config, completeTest } = useTestRunner();
-  const { gaze } = useNeuroGaze();
-  const gazeRef = useRef(gaze);
-  gazeRef.current = gaze;
+  useNeuroGaze();
 
   const trialCount = Math.max(2, Math.min(30, Number(config.trialCount) ?? DEFAULT_TRIAL_COUNT));
   const speedPxPerSec = (() => {
@@ -185,7 +206,7 @@ export default function AntiSaccadeTest() {
         const p = Math.min(1, elapsed / trialDurationMs);
 
         const dimPosNow = dimPosition(dir, center.x, center.y, p, travelPx);
-        const g = gazeRef.current;
+        const g = neuroLiveGazeRef.current;
         const tRel = (now - movementStartRef.current) / 1000;
         trialGazeSamplesRef.current.push({ t: tRel, x: g.x, y: g.y });
 
@@ -239,11 +260,15 @@ export default function AntiSaccadeTest() {
             const directionAccuracy =
               trials.length > 0 ? (withLatency.length / trials.length) * 100 : undefined;
             const fixationStability = undefined;
+            const testStart = startTimeRef.current;
+            const scanningPath = buildAntiSaccadeScanningPath(trials, testStart);
             completeTest({
               testId: 'anti_saccade',
-              startTime: startTimeRef.current,
+              startTime: testStart,
               endTime,
               trials,
+              scanningPath,
+              gazePath: scanningPath,
               metrics: { avgLatency, directionAccuracy, fixationStability },
               viewportWidth: typeof window !== 'undefined' ? window.innerWidth : undefined,
               viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,

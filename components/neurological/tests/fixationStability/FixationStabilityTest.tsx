@@ -11,6 +11,7 @@ import {
   MIN_DURATION_SEC,
 } from './constants';
 import { computeBceaForSamples } from '@/lib/bivariateEllipse';
+import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 
 const FIXATION_STABILITY_RESULT_LS_KEY = 'neuro_fixation_stability_result_v1';
 
@@ -70,9 +71,7 @@ function countMicroSaccades(
 
 export default function FixationStabilityTest() {
   const { config, completeTest } = useTestRunner();
-  const { gaze } = useNeuroGaze();
-  const gazeRef = useRef(gaze);
-  gazeRef.current = gaze;
+  useNeuroGaze();
   const completeTestRef = useRef(completeTest);
   completeTestRef.current = completeTest;
 
@@ -110,7 +109,7 @@ export default function FixationStabilityTest() {
     intervalRef.current = setInterval(() => {
       const now = performance.now();
       const t = (now - startTimeRef.current) / 1000;
-      const g = gazeRef.current;
+      const g = neuroLiveGazeRef.current;
       gazeSamplesRef.current.push({ t, x: g.x, y: g.y });
     }, GAZE_SAMPLE_INTERVAL_MS);
 

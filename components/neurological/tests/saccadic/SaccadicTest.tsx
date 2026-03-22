@@ -11,6 +11,7 @@ import {
   type SaccadicTargetSide,
 } from './constants';
 import { getTargetPosition } from './utils';
+import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 
 const SACCADIC_RESULT_LS_KEY = 'neuro_saccadic_result_v1';
 
@@ -65,9 +66,7 @@ function countCorrectiveSaccades(
 
 export default function SaccadicTest() {
   const { config, completeTest } = useTestRunner();
-  const { gaze } = useNeuroGaze();
-  const gazeRef = useRef(gaze);
-  gazeRef.current = gaze;
+  useNeuroGaze();
 
   const totalCycles = Math.max(2, Math.min(40, Number(config.totalCycles) ?? DEFAULT_TOTAL_CYCLES));
   const targetDurationMs = Math.max(400, Number(config.targetDurationMs) ?? DEFAULT_TARGET_DURATION_MS);
@@ -119,7 +118,7 @@ export default function SaccadicTest() {
         viewport.w,
         viewport.h
       );
-      const g = gazeRef.current;
+      const g = neuroLiveGazeRef.current;
       const tRel = (now - cycleStartRef.current) / 1000;
       cycleGazeSamplesRef.current.push({ t: tRel, x: g.x, y: g.y });
 

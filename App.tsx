@@ -5,6 +5,7 @@ import { flushSync } from 'react-dom';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PATHS, parsePathname } from '@/lib/paths';
 import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
+import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 import { NEURO_VERIFY_META_KEY, NEURO_VERIFY_SNAPSHOT_KEY } from '@/lib/neuroVerifyMode';
 import {
   NEURO_PREVIEW_RUN_ID,
@@ -1949,6 +1950,7 @@ function App() {
     if (Math.random() < 0.05) { // throttle log
       console.log(`[NeuroGaze] inputVector len=${inputVector.length}, method=${configRef.current.regressionMethod}, pred=`, prediction, ` smoothed=`, smoothed, ` hasModel=`, hybridRegressorRef.current.hasTrainedModel());
     }
+    neuroLiveGazeRef.current = { x: smoothed.x, y: smoothed.y };
     setGazePos(smoothed);
 
     if (statusRef.current === 'TRACKING') {
@@ -1995,6 +1997,7 @@ function App() {
     setTrainingData([]);
     hybridRegressorRef.current = new HybridRegressor();
     setGazeModelReady(false);
+    neuroLiveGazeRef.current = { x: 0, y: 0 };
     smootherRef.current.reset();
     validationErrorsRef.current = [];
     setAccuracyScore(null);
@@ -2123,6 +2126,7 @@ function App() {
     trackingHistoryRef.current = [];
     hybridRegressorRef.current = new HybridRegressor();
     setGazeModelReady(false);
+    neuroLiveGazeRef.current = { x: 0, y: 0 };
     setShowHeatmap(false);
     // Reset exercise state
     setCurrentExerciseIndex(0);

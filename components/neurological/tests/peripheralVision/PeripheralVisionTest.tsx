@@ -13,6 +13,7 @@ import {
   type PeripheralZone,
 } from './constants';
 import { generateTrialZones, getStimulusPosition } from './utils';
+import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 
 export interface PeripheralVisionTrialResult {
   stimulusOnsetTime: number;
@@ -48,9 +49,7 @@ function getViewport(): { w: number; h: number } {
 
 export default function PeripheralVisionTest() {
   const { config, completeTest } = useTestRunner();
-  const { gaze } = useNeuroGaze();
-  const gazeRef = useRef(gaze);
-  gazeRef.current = gaze;
+  useNeuroGaze();
   const completeTestRef = useRef(completeTest);
   completeTestRef.current = completeTest;
 
@@ -187,7 +186,7 @@ export default function PeripheralVisionTest() {
     const gazeInterval = setInterval(() => {
       const now = performance.now();
       const t = (now - trialStartRef.current) / 1000;
-      const g = gazeRef.current;
+      const g = neuroLiveGazeRef.current;
       trialGazeRef.current.push({ t, x: g.x, y: g.y });
     }, GAZE_SAMPLE_INTERVAL_MS);
 

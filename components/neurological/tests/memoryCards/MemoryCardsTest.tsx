@@ -15,6 +15,7 @@ import {
   type MemoryCardsSymbolSize,
 } from './constants';
 import { createBoard } from './utils';
+import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 
 const MEMORY_CARDS_RESULT_LS_KEY = 'neuro_memory_cards_result_v1';
 
@@ -62,9 +63,7 @@ function getSymbol(id: number): string {
 
 export default function MemoryCardsTest() {
   const { config, completeTest } = useTestRunner();
-  const { gaze } = useNeuroGaze();
-  const gazeRef = useRef(gaze);
-  gazeRef.current = gaze;
+  useNeuroGaze();
   const gridContainerRef = useRef<HTMLDivElement>(null);
 
   const cardCountNum = Number(config.cardCount);
@@ -165,7 +164,7 @@ export default function MemoryCardsTest() {
       );
     } catch (_) {}
     pathIntervalRef.current = setInterval(() => {
-      const g = gazeRef.current;
+      const g = neuroLiveGazeRef.current;
       const t = (performance.now() - startTimeRef.current) / 1000;
       gazePathRef.current.push({ t, x: g.x, y: g.y });
     }, GAZE_PATH_INTERVAL_MS);
@@ -178,7 +177,7 @@ export default function MemoryCardsTest() {
   useEffect(() => {
     const interval = setInterval(() => {
       const el = gridContainerRef.current;
-      const g = gazeRef.current;
+      const g = neuroLiveGazeRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const cellW = rect.width / cols;

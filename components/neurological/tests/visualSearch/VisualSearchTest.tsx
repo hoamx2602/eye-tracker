@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroGaze } from '../../NeuroGazeContext';
 import {
@@ -10,6 +10,7 @@ import {
 } from './constants';
 import { generateNumberPositions } from './utils';
 import { neuroDebugLog } from '@/lib/neuroDebugLog';
+import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 
 const VISUAL_SEARCH_RESULT_LS_KEY = 'neuro_visual_search_result_v1';
 
@@ -48,9 +49,7 @@ export interface VisualSearchResult {
 
 export default function VisualSearchTest() {
   const { config, completeTest } = useTestRunner();
-  const { gaze, gazeModelReady } = useNeuroGaze();
-  const gazeRef = useRef(gaze);
-  gazeRef.current = gaze;
+  const { gazeModelReady } = useNeuroGaze();
 
   const numberCount = Math.max(6, Math.min(10, Number(config.numberCount) ?? DEFAULT_NUMBER_COUNT));
   const aoiRadiusPx = Math.max(20, Number(config.aoiRadiusPx) ?? DEFAULT_AOI_RADIUS_PX);
@@ -66,16 +65,13 @@ export default function VisualSearchTest() {
   const sequenceRef = useRef<number[]>([]);
   const gazePathRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
   const lastInNumberRef = useRef<number | null>(null);
-  /** rAF ổn định hơn setInterval khi overlay fullscreen (timer bị throttle). */
-  const pathRafRef = useRef<number | null>(null);
-  const lastPathSampleAtRef = useRef(0);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.repeat) return;
       e.preventDefault();
       const endTime = performance.now();
-      const g = gazeRef.current;
+      const g = neuroLiveGazeRef.current;
       const tRel = (endTime - startTimeRef.current) / 1000;
       const pathSnapshot = [...gazePathRef.current, { t: tRel, x: g.x, y: g.y }];
       const rect = stimulusAreaRef.current?.getBoundingClientRect();
@@ -148,22 +144,14 @@ export default function VisualSearchTest() {
       );
     } catch (_) {}
 
-    lastPathSampleAtRef.current = 0;
-    const loop = (now: number) => {
-      pathRafRef.current = requestAnimationFrame(loop);
-      if (now - lastPathSampleAtRef.current < GAZE_PATH_INTERVAL_MS) return;
-      lastPathSampleAtRef.current = now;
-      const g = gazeRef.current;
-      const t = (now - startTimeRef.current) / 1000;
+    const pathInterval = window.setInterval(() => {
+      const g = neuroLiveGazeRef.current;
+      const t = (performance.now() - startTimeRef.current) / 1000;
       gazePathRef.current.push({ t, x: g.x, y: g.y });
-    };
-    pathRafRef.current = requestAnimationFrame(loop);
+    }, GAZE_PATH_INTERVAL_MS);
 
     return () => {
-      if (pathRafRef.current != null) {
-        cancelAnimationFrame(pathRafRef.current);
-        pathRafRef.current = null;
-      }
+      window.clearInterval(pathInterval);
     };
   }, []);
 
@@ -175,7 +163,7 @@ export default function VisualSearchTest() {
   // AOI check: which number is gaze inside? Run on interval to avoid too many updates
   useEffect(() => {
     const interval = setInterval(() => {
-      const g = gazeRef.current;
+      const g = neuroLiveGazeRef.current;
       const rect = stimulusAreaRef.current?.getBoundingClientRect();
       if (!rect || rect.width <= 0 || rect.height <= 0) return;
       let found: number | null = null;

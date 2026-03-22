@@ -156,9 +156,13 @@ function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly 
 
   if (testId === 'anti_saccade') {
     const trials = (r.trials as AntiSaccadeTrialResult[]) ?? [];
+    const scanningPath =
+      (r.scanningPath as Array<{ t: number; x: number; y: number }> | undefined) ??
+      (r.gazePath as Array<{ t: number; x: number; y: number }> | undefined);
     return (
       <AntiSaccadeGazeDirectionPreview
         trials={trials}
+        scanningPath={scanningPath}
         viewportWidth={r.viewportWidth as number | undefined}
         viewportHeight={r.viewportHeight as number | undefined}
         visualOnly={visualOnly}
