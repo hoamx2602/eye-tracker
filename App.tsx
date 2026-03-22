@@ -22,6 +22,7 @@ import {
   EyeLandmarkIndices,
   AppConfig,
   CalibrationMethod,
+  RegressionMethod,
   EXERCISE_KINDS,
   DEFAULT_CONFIG,
   TrackingMode,
@@ -174,6 +175,7 @@ function App() {
   const lastTestRecordTimeRef = useRef<number>(0);
 
   const [accuracyScore, setAccuracyScore] = useState<number | null>(null);
+  const [loocvErrors, setLoocvErrors] = useState<{ ridge: number; hybrid: number } | null>(null);
   
   const [gazePos, setGazePos] = useState({ x: 0, y: 0 });
   /** Regressor đã train — nếu false, predictGaze không có tọa độ thật, chỉ (0,0). */
@@ -1305,6 +1307,20 @@ function App() {
             reset();
             return;
         }
+
+        // --- Phase 2: LOOCV Overfitting Detection ---
+        const cvHybrid = hybridRegressorRef.current.lastMeanCVErrorHybrid;
+        const cvRidge = hybridRegressorRef.current.lastMeanCVErrorRidge;
+        setLoocvErrors({ ridge: cvRidge, hybrid: cvHybrid });
+        console.log(`[Calibration] Hybrid CV: ${cvHybrid.toFixed(1)}, Ridge CV: ${cvRidge.toFixed(1)}`);
+        
+        // If Hybrid CV is extremely bad (worse than Ridge or just crazy high), force fallback to Ridge.
+        if (cvHybrid > 150 || (cvHybrid > cvRidge + 50 && cvHybrid > 100)) {
+            console.warn("⚠️ Báo động Overfitting cấp tính ở k-NN! Lưới tọa độ đang bị vặn xoắn. Bắt buộc hạ cấp xuống thuật toán Ridge Tuyến tính.");
+            configRef.current.regressionMethod = RegressionMethod.RIDGE;
+            alert(`Cảnh báo: Phát hiện dấu hiệu Overfitting (Méo lưới nội suy). Hệ thống đã tự động chuyển sang chế độ Linear Ridge để đảm bảo an toàn thao tác! (Lỗi nội suy: ${cvHybrid.toFixed(0)}px)`);
+        }
+        
         setGazeModelReady(true);
 
         // Test mode: skip EXERCISES + VALIDATION, save session and go to Tracking after first phase

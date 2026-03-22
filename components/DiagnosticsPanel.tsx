@@ -11,6 +11,7 @@ interface DiagnosticsPanelProps {
   isBlinking: boolean;
   status: AppState;
   lightLevel?: { value: number; status: 'too_dark' | 'low' | 'ok' | 'good' } | null;
+  loocvErrors?: { ridge: number; hybrid: number } | null;
 }
 
 const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
@@ -21,7 +22,8 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
   capturedImagesCount,
   isBlinking,
   status,
-  lightLevel
+  lightLevel,
+  loocvErrors
 }) => {
   const [expanded, setExpanded] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -152,7 +154,20 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
             <div>Pitch: {(rawFeatures.headPose.pitch * 180 / Math.PI).toFixed(1)}°</div>
             <div>Yaw:   {(rawFeatures.headPose.yaw * 180 / Math.PI).toFixed(1)}°</div>
             <div>Roll:  {(rawFeatures.headPose.roll * 180 / Math.PI).toFixed(1)}°</div>
+            <div>Z-Dist: {rawFeatures.zDistance?.toFixed(2)}</div>
         </div>
+        )}
+
+        {loocvErrors && (
+          <div className="text-[9px] text-gray-400 font-mono space-y-1 mb-2 border-t border-gray-800 pt-1">
+            <div className="text-gray-500 mb-0.5">LOOCV Error:</div>
+            <div className={loocvErrors.ridge > 100 ? 'text-red-400' : 'text-green-400'}>
+              Ridge: {loocvErrors.ridge.toFixed(1)}px
+            </div>
+            <div className={loocvErrors.hybrid > 150 ? 'text-red-500 font-bold' : 'text-green-400'}>
+              k-NN: {loocvErrors.hybrid.toFixed(1)}px
+            </div>
+          </div>
         )}
         
         <div className="text-[9px] text-gray-500">

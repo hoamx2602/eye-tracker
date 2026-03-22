@@ -80,6 +80,7 @@ type AppMainOverlaysProps = {
   onStopSaveCancel: () => void;
   onSetShowCamera: (value: boolean) => void;
   rawFeatures: unknown;
+  loocvErrors?: { ridge: number; hybrid: number } | null;
 };
 
 export default function AppMainOverlays(props: AppMainOverlaysProps) {
@@ -139,6 +140,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
     onStopSaveCancel,
     onSetShowCamera,
     rawFeatures,
+    loocvErrors,
   } = props;
 
   return (
@@ -400,6 +402,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
           isBlinking={isBlinking}
           status={status}
           lightLevel={lightLevel}
+          loocvErrors={loocvErrors}
         />
       )}
     </>

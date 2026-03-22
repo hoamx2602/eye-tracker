@@ -238,6 +238,8 @@ export class TPSRegressor {
 export class HybridRegressor {
   private weights: number[][] | null = null;
   private trainingData: { input: number[], output: number[], error: number[] }[] = [];
+  public lastMeanCVErrorRidge: number = 0;
+  public lastMeanCVErrorHybrid: number = 0;
   
   // TPS Instance
   private tps: TPSRegressor = new TPSRegressor();
@@ -268,7 +270,82 @@ export class HybridRegressor {
         console.warn("TPS Training Exception", e);
     }
 
+    // 3. Compute LOOCV (Leave-One-Out Cross-Validation)
+    this.computeLOOCV(inputs, outputs);
+
     return true;
+  }
+
+  private computeLOOCV(inputs: number[][], outputs: number[][]) {
+    if (inputs.length < 5) return;
+    
+    let totalRidgeError = 0;
+    let totalHybridError = 0;
+    
+    for (let i = 0; i < inputs.length; i++) {
+        const trainInputs = inputs.filter((_, idx) => idx !== i);
+        const trainOutputs = outputs.filter((_, idx) => idx !== i);
+        const testInput = inputs[i];
+        const testOutput = outputs[i];
+
+        // Train Ridge CV
+        const weightsCV = Matrix.solveLeastSquares(trainInputs, trainOutputs);
+        if (!weightsCV) continue;
+
+        // Predict Ridge
+        let predRidgeX = 0, predRidgeY = 0;
+        for (let j = 0; j < testInput.length; j++) {
+            predRidgeX += testInput[j] * weightsCV[j][0];
+            predRidgeY += testInput[j] * weightsCV[j][1];
+        }
+        
+        const distRidge = Math.sqrt(Math.pow(predRidgeX - testOutput[0], 2) + Math.pow(predRidgeY - testOutput[1], 2));
+        totalRidgeError += distRidge;
+
+        // Predict Hybrid (kNN CV)
+        const k = 4;
+        const trainingDataCV = trainInputs.map((inp, idx) => {
+            let px = 0, py = 0;
+            for (let j = 0; j < inp.length; j++) {
+                px += inp[j] * weightsCV[j][0];
+                py += inp[j] * weightsCV[j][1];
+            }
+            const actual = trainOutputs[idx];
+            return { input: inp, error: [actual[0] - px, actual[1] - py] };
+        });
+
+        // Compute distances for kNN
+        const distances = trainingDataCV.map(data => {
+            let distSq = 0;
+            for (let j = 0; j < testInput.length; j++) {
+                distSq += Math.pow(testInput[j] - data.input[j], 2);
+            }
+            return { ...data, dist: Math.sqrt(distSq) };
+        });
+
+        distances.sort((a, b) => a.dist - b.dist);
+        const neighbors = distances.slice(0, k);
+
+        let totalWeight = 0;
+        let correctionX = 0, correctionY = 0;
+        for (const n of neighbors) {
+            const w = 1.0 / (n.dist + 0.0001);
+            correctionX += n.error[0] * w;
+            correctionY += n.error[1] * w;
+            totalWeight += w;
+        }
+
+        const predHybridX = predRidgeX + (correctionX / totalWeight);
+        const predHybridY = predRidgeY + (correctionY / totalWeight);
+
+        const distHybrid = Math.sqrt(Math.pow(predHybridX - testOutput[0], 2) + Math.pow(predHybridY - testOutput[1], 2));
+        totalHybridError += distHybrid;
+    }
+
+    this.lastMeanCVErrorRidge = totalRidgeError / inputs.length;
+    this.lastMeanCVErrorHybrid = totalHybridError / inputs.length;
+
+    console.log(`[Validation_LOOCV] Mean CV Error => RIDGE: ${this.lastMeanCVErrorRidge.toFixed(2)}px | HYBRID: ${this.lastMeanCVErrorHybrid.toFixed(2)}px`);
   }
 
   private predictLinear(input: number[]): number[] {
