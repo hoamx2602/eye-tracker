@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { AntiSaccadeTrialResult } from '../tests/antiSaccade/AntiSaccadeTest';
 import type { AntiSaccadeDirection } from '../tests/antiSaccade/constants';
 import { TRAVEL_DISTANCE_PX } from '../tests/antiSaccade/constants';
@@ -8,6 +8,7 @@ import { dimPosition, primaryPosition } from '../tests/antiSaccade/utils';
 import { RESULT_VIZ_OUTER, ResultVizAspectSvg, ResultVizMaxFrame, useResultVizInnerFrameStyle } from './resultVizLayout';
 import { GazeHeatmapLayer, GazePathDirectionArrows } from './gazeVizSvg';
 import { useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
+import { detectAndMapGazeToViewport } from '@/lib/visualSearchGazeCoords';
 
 const EDGE_MARGIN_PX = 24;
 
@@ -103,13 +104,21 @@ export function AntiSaccadeParamsSection({ trials }: { trials: AntiSaccadeTrialR
                 </td>
                 <td className="px-2 py-1.5 font-mono text-slate-200">
                   {t.angularErrorDeg != null
-                    ? `${t.angularErrorDeg > 0 ? '+' : ''}${t.angularErrorDeg.toFixed(0)}`
+                    ? `${t.angularErrorDeg > 0 ? '+' : ''}${t.angularErrorDeg.toFixed(0)}°`
                     : '—'}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="flex flex-wrap content-center justify-center gap-3 pt-2 sm:gap-4">
+        {trials.map((t, i) => (
+          <div key={`${t.startTime}-${i}`} className="flex flex-col items-center gap-1">
+            <MiniCompass targetDeg={t.targetDirectionDeg} gazeDeg={t.gazeDirectionDeg} />
+            <span className="font-mono text-[10px] text-slate-500">#{i + 1}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -127,6 +136,41 @@ export default function AntiSaccadeGazeDirectionPreview({
   const innerFrame = useResultVizInnerFrameStyle();
   const { showStimulusReplay, showGazeHeatmap } = useNeurologicalResultsViewOptions();
 
+  const durationSec = useMemo(() => {
+    if (!trials?.length) return 0;
+    const t0 = trials[0].startTime;
+    let maxMs = 0;
+    for (const t of trials) {
+      if (!t.gazeSamples?.length) continue;
+      const startMs = t.startTime - t0;
+      for (const s of t.gazeSamples) {
+        const ms = startMs + s.t * 1000;
+        if (ms > maxMs) maxMs = ms;
+      }
+    }
+    return maxMs / 1000;
+  }, [trials]);
+
+  const [replayTimeSec, setReplayTimeSec] = useState<number | null>(null);
+  const effectiveReplay = replayTimeSec ?? durationSec;
+
+  const filteredTrials = useMemo(() => {
+    if (!trials?.length) return [];
+    if (effectiveReplay >= durationSec - 0.05) return trials;
+    
+    const t0 = trials[0].startTime;
+    return trials.map((t) => {
+      const startSec = (t.startTime - t0) / 1000;
+      if (startSec > effectiveReplay) {
+        return { ...t, gazeSamples: [] };
+      }
+      return {
+        ...t,
+        gazeSamples: (t.gazeSamples ?? []).filter((s) => startSec + s.t <= effectiveReplay),
+      };
+    });
+  }, [trials, effectiveReplay, durationSec]);
+
   const layout = useMemo(() => {
     if (!trials?.length) return null;
     const vw = viewportWidth ?? 1920;
@@ -134,38 +178,62 @@ export default function AntiSaccadeGazeDirectionPreview({
     const { travelX, travelY } = getTravelToEdges(vw, vh);
     const cx = vw / 2;
     const cy = vh / 2;
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    const expand = (x: number, y: number) => {
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
-    };
-    expand(cx, cy);
-    const allHeat: { x: number; y: number }[] = [];
-    for (const t of trials) {
+    
+    let maxAbsX = 0;
+    let maxAbsY = 0;
+    const localizedHeat: { x: number; y: number }[] = [];
+
+    // Map all samples to viewport across ALL trials to ensure consistent coordinate mode detection
+    const allGazePts = trials.flatMap(t => t.gazeSamples ?? []);
+    const { mode } = detectAndMapGazeToViewport(allGazePts, vw, vh);
+
+    const mappedGazeTrials = trials.map(t => {
+      if (!t.gazeSamples?.length) {
+        return {
+          ...t,
+          mappedSamples: [] as Array<{ x: number; y: number; t: number }>
+        };
+      }
+      
+      const pts = mode === 'normalized01'
+        ? t.gazeSamples.map(p => ({ ...p, x: p.x * vw, y: p.y * vh }))
+        : mode === 'percent100'
+        ? t.gazeSamples.map(p => ({ ...p, x: (p.x / 100) * vw, y: (p.y / 100) * vh }))
+        : t.gazeSamples;
+
+      return {
+        ...t,
+        mappedSamples: pts
+      };
+    });
+
+    for (const t of mappedGazeTrials) {
       const tp = isHorizontalDirection(t.direction) ? travelX : travelY;
       const pEnd = primaryPosition(t.direction, cx, cy, 1, tp);
       const dEnd = dimPosition(t.direction, cx, cy, 1, tp);
-      expand(pEnd.x, pEnd.y);
-      expand(dEnd.x, dEnd.y);
-      for (const s of t.gazeSamples ?? []) {
-        expand(s.x, s.y);
-        allHeat.push({ x: s.x, y: s.y });
+      maxAbsX = Math.max(maxAbsX, Math.abs(pEnd.x - cx), Math.abs(dEnd.x - cx));
+      maxAbsY = Math.max(maxAbsY, Math.abs(pEnd.y - cy), Math.abs(dEnd.y - cy));
+
+      for (const s of t.mappedSamples ?? []) {
+        maxAbsX = Math.max(maxAbsX, Math.abs(s.x - cx));
+        maxAbsY = Math.max(maxAbsY, Math.abs(s.y - cy));
       }
     }
+
     const pad = 36;
-    minX -= pad;
-    minY -= pad;
-    maxX += pad;
-    maxY += pad;
-    const viewW = Math.max(maxX - minX, 320);
-    const viewH = Math.max(maxY - minY, 240);
-    const loc = (x: number, y: number) => ({ x: x - minX, y: y - minY });
-    const localizedHeat = allHeat.map((p) => loc(p.x, p.y));
+    maxAbsX += pad;
+    maxAbsY += pad;
+    const viewW = maxAbsX * 2;
+    const viewH = maxAbsY * 2;
+    // Map screen x/y to our symmetric viewBox, so cx/cy maps to center
+    const loc = (x: number, y: number) => ({ x: x - cx + maxAbsX, y: y - cy + maxAbsY });
+
+    for (const t of mappedGazeTrials) {
+      for (const s of t.mappedSamples ?? []) {
+        localizedHeat.push(loc(s.x, s.y));
+      }
+    }
+
     return {
       vw,
       vh,
@@ -177,6 +245,7 @@ export default function AntiSaccadeGazeDirectionPreview({
       travelX,
       travelY,
       localizedHeat,
+      mappedGazeTrials,
       centerL: loc(cx, cy),
     };
   }, [trials, viewportWidth, viewportHeight]);
@@ -201,26 +270,73 @@ export default function AntiSaccadeGazeDirectionPreview({
         {showStimulusReplay && (
           <g aria-hidden>
             <circle cx={layout.centerL.x} cy={layout.centerL.y} r={6} fill="rgb(148 163 184 / 0.9)" />
-            {trials.map((t, i) => {
+            {filteredTrials.map((t, i) => {
               const tp = isHorizontalDirection(t.direction) ? layout.travelX : layout.travelY;
+              const t0 = trials[0].startTime;
+              const startSec = (t.startTime - t0) / 1000;
+              const elapsedTrial = effectiveReplay - startSec;
+
+              if (elapsedTrial < 0) return null;
+
+              // Full trial samples — filteredTrials truncates gazeSamples mid-replay; duration must stay the real movement length
+              const fullTrial = trials[i];
+              const tDur =
+                fullTrial.gazeSamples?.length > 0
+                  ? fullTrial.gazeSamples[fullTrial.gazeSamples.length - 1].t
+                  : 1.5;
+
+              const isRectActive = elapsedTrial <= tDur + 0.2;
+              const pRatio = tDur > 0 ? Math.min(1, Math.max(0, elapsedTrial / tDur)) : 1;
+
+              const pEndMoving = primaryPosition(t.direction, layout.cx, layout.cy, pRatio, tp);
+              const dEndMoving = dimPosition(t.direction, layout.cx, layout.cy, pRatio, tp);
+
+              const pLM = layout.loc(pEndMoving.x, pEndMoving.y);
+              const dLM = layout.loc(dEndMoving.x, dEndMoving.y);
+
               const pEnd = primaryPosition(t.direction, layout.cx, layout.cy, 1, tp);
               const dEnd = dimPosition(t.direction, layout.cx, layout.cy, 1, tp);
-              const pL = layout.loc(pEnd.x, pEnd.y);
-              const dL = layout.loc(dEnd.x, dEnd.y);
+              const pEndL = layout.loc(pEnd.x, pEnd.y);
+              const dEndL = layout.loc(dEnd.x, dEnd.y);
+
+              const rectSize = 18;
+
               return (
-                <g key={`stim-${t.startTime}-${i}`} opacity={0.45}>
-                  <circle cx={pL.x} cy={pL.y} r={9} fill="rgb(244 63 94 / 0.35)" stroke="rgb(244 63 94 / 0.7)" strokeWidth="1.5" />
-                  <circle cx={dL.x} cy={dL.y} r={9} fill="rgb(52 211 153 / 0.3)" stroke="rgb(52 211 153 / 0.75)" strokeWidth="1.5" />
+                <g key={`stim-${t.startTime}-${i}`}>
+                  <circle cx={pEndL.x} cy={pEndL.y} r={9} fill="none" stroke="rgb(244 63 94 / 0.2)" strokeWidth="1" strokeDasharray="3 3" />
+                  <circle cx={dEndL.x} cy={dEndL.y} r={9} fill="none" stroke="rgb(52 211 153 / 0.2)" strokeWidth="1" strokeDasharray="3 3" />
+
+                  {isRectActive && (
+                    <>
+                      <rect x={pLM.x - rectSize / 2} y={pLM.y - rectSize / 2} width={rectSize} height={rectSize} fill="rgb(244 63 94 / 0.9)" rx={3} />
+                      <rect x={dLM.x - rectSize / 2} y={dLM.y - rectSize / 2} width={rectSize} height={rectSize} fill="rgb(52 211 153 / 0.4)" rx={3} />
+                    </>
+                  )}
                 </g>
               );
             })}
           </g>
         )}
-        {showGazeHeatmap && <GazeHeatmapLayer points={layout.localizedHeat} />}
-        {trials.map((t, i) => {
-          const samples = t.gazeSamples ?? [];
-          if (samples.length === 0) return null;
-          const pts = samples.map((s) => layout.loc(s.x, s.y));
+        {showGazeHeatmap && (
+          <GazeHeatmapLayer
+            points={filteredTrials.flatMap((t, i) => {
+              const mt = layout.mappedGazeTrials[i];
+              return (mt.mappedSamples ?? []).filter(s => {
+                const startSec = (t.startTime - trials[0].startTime) / 1000;
+                return startSec + s.t <= effectiveReplay;
+              }).map((s) => layout.loc(s.x, s.y));
+            })}
+          />
+        )}
+        {filteredTrials.map((t, i) => {
+          const mt = layout.mappedGazeTrials[i];
+          const samples = mt.mappedSamples ?? [];
+          const filtered = samples.filter(s => {
+            const startSec = (t.startTime - trials[0].startTime) / 1000;
+            return startSec + s.t <= effectiveReplay;
+          });
+          if (filtered.length === 0) return null;
+          const pts = filtered.map((s) => layout.loc(s.x, s.y));
           const ptsStr = pts.map((p) => `${p.x},${p.y}`).join(' ');
           const hue = (i * 37) % 360;
           return (
@@ -228,7 +344,9 @@ export default function AntiSaccadeGazeDirectionPreview({
               <polyline
                 fill="none"
                 stroke={`hsl(${hue} 65% 58%)`}
-                strokeWidth="1.35"
+                strokeWidth="2.0"
+                strokeLinecap="round"
+                strokeLinejoin="round"
                 opacity={0.88}
                 points={ptsStr}
               />
@@ -253,15 +371,25 @@ export default function AntiSaccadeGazeDirectionPreview({
           </p>
           <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 pt-9 sm:px-3">
             <div className="min-h-0 flex-1 overflow-hidden">{viewportSvg}</div>
-            <div className="flex max-h-[38vh] shrink-0 flex-wrap content-center justify-center gap-3 overflow-y-auto overflow-x-hidden border-t border-gray-800/80 pt-2 sm:gap-4">
-              {trials.map((t, i) => (
-                <div key={`${t.startTime}-${i}`} className="flex flex-col items-center gap-1">
-                  <MiniCompass targetDeg={t.targetDirectionDeg} gazeDeg={t.gazeDirectionDeg} />
-                  <span className="font-mono text-[10px] text-slate-500">#{i + 1}</span>
-                </div>
-              ))}
-            </div>
           </div>
+          {durationSec > 0 && (
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-800 bg-gray-900/40 px-3 pb-3 pt-3 text-xs text-slate-400 sm:px-4 sm:pb-4">
+              <span className="shrink-0 w-28 whitespace-nowrap">Thời điểm tái hiện</span>
+              <input
+                type="range"
+                min={0}
+                max={durationSec}
+                step={0.01}
+                value={Math.min(effectiveReplay, durationSec)}
+                onChange={(e) => setReplayTimeSec(Number(e.target.value))}
+                className="min-w-0 flex-1 accent-sky-500"
+              />
+              <span className="shrink-0 w-[4.5rem] text-right font-mono text-[10px] leading-[13px] tracking-tight">
+                {effectiveReplay.toFixed(1)}s <br />
+                <span className="text-slate-600"> {durationSec.toFixed(1)}s</span>
+              </span>
+            </div>
+          )}
         </div>
       </div>
     );
