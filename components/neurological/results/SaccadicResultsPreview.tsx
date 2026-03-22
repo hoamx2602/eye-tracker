@@ -1,14 +1,24 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { getTargetPosition } from '../tests/saccadic/utils';
-import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
+import {
+  RESULT_VIZ_OUTER,
+  ResultVizAspectSvg,
+  ResultVizMaxFrame,
+  useResultVizInnerFrameStyle,
+} from './resultVizLayout';
 import type { SaccadicCycleResult } from '../tests/saccadic/SaccadicTest';
 import { GazeHeatmapLayer, GazePathDirectionArrows } from './gazeVizSvg';
 import { useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
+import { detectAndMapGazeToViewport } from '@/lib/visualSearchGazeCoords';
 
 type Props = {
   cycles: SaccadicCycleResult[];
+  /** performance.now() lúc mount bài — cần để tính thời gian tuyệt đối cho replay. */
+  startTime?: number;
+  endTime?: number;
+  scanningPath?: Array<{ t: number; x: number; y: number }>;
   saccadeLatencyMs?: number[];
   fixationAccuracy?: number;
   correctiveSaccades?: number;
@@ -24,15 +34,33 @@ type Props = {
 
 type LatencyRow = { i: number; side: string; lat: number | undefined; w: number };
 
+type MappedCycle = SaccadicCycleResult & {
+  mappedSamples: Array<{ t: number; x: number; y: number }>;
+};
+
+function globalSampleTimeSec(cy: SaccadicCycleResult, s: { t: number }, testStartMs: number): number {
+  return (cy.onsetTime - testStartMs) / 1000 + s.t;
+}
+
 export function SaccadicParamsSection({
   cycles,
   saccadeLatencyMs,
   fixationAccuracy,
   correctiveSaccades,
   metrics,
-}: Pick<Props, 'cycles' | 'saccadeLatencyMs' | 'fixationAccuracy' | 'correctiveSaccades' | 'metrics'>) {
+  scanningPath,
+}: Pick<
+  Props,
+  | 'cycles'
+  | 'saccadeLatencyMs'
+  | 'fixationAccuracy'
+  | 'correctiveSaccades'
+  | 'metrics'
+  | 'scanningPath'
+>) {
   const latencies = saccadeLatencyMs ?? cycles.map((c) => c.latencyMs).filter((v): v is number => typeof v === 'number');
   const maxLat = Math.max(...latencies, 1);
+  const trialSamples = cycles.reduce((n, c) => n + (c.gazeSamples?.length ?? 0), 0);
 
   const rows: LatencyRow[] = cycles.map((c, i) => {
     const lat = c.latencyMs;
@@ -42,6 +70,16 @@ export function SaccadicParamsSection({
 
   return (
     <div className="space-y-4">
+      <p className="text-xs text-slate-500 leading-relaxed">
+        Mẫu gaze: <span className="font-mono text-slate-300">{trialSamples}</span> (tổng trong cycles)
+        {scanningPath != null ? (
+          <>
+            {' '}
+            · <span className="font-mono text-slate-300">{scanningPath.length}</span> điểm{' '}
+            <code className="text-slate-400">scanningPath</code>
+          </>
+        ) : null}
+      </p>
       <div className="flex flex-col gap-2 text-sm text-slate-300">
         {metrics?.avgLatency != null && (
           <span>
@@ -70,7 +108,7 @@ export function SaccadicParamsSection({
               <th className="px-2 py-2 font-medium">#</th>
               <th className="px-2 py-2 font-medium">Side</th>
               <th className="px-2 py-2 font-medium">Latency (ms)</th>
-              <th className="px-2 py-2 font-medium w-40">Bar</th>
+              <th className="w-40 px-2 py-2 font-medium">Bar</th>
             </tr>
           </thead>
           <tbody>
@@ -98,6 +136,9 @@ export function SaccadicParamsSection({
 
 export default function SaccadicResultsPreview({
   cycles,
+  startTime: startTimeProp,
+  endTime: endTimeProp,
+  scanningPath,
   saccadeLatencyMs,
   fixationAccuracy,
   correctiveSaccades,
@@ -106,26 +147,74 @@ export default function SaccadicResultsPreview({
   viewportHeight,
   visualOnly,
 }: Props) {
-  const vwRef = viewportWidth ?? 1920;
-  const vhRef = viewportHeight ?? 1080;
+  const innerFrame = useResultVizInnerFrameStyle();
+  const vw = viewportWidth ?? 1920;
+  const vh = viewportHeight ?? 1080;
 
-  const overview = useMemo(() => {
-    const left = getTargetPosition('left', vwRef, vhRef);
-    const right = getTargetPosition('right', vwRef, vhRef);
+  const testStartMs = useMemo(() => {
+    if (typeof startTimeProp === 'number' && Number.isFinite(startTimeProp)) return startTimeProp;
+    return cycles[0]?.onsetTime ?? 0;
+  }, [startTimeProp, cycles]);
+
+  const durationSec = useMemo(() => {
+    if (
+      typeof startTimeProp === 'number' &&
+      typeof endTimeProp === 'number' &&
+      Number.isFinite(startTimeProp) &&
+      Number.isFinite(endTimeProp) &&
+      endTimeProp >= startTimeProp
+    ) {
+      return (endTimeProp - startTimeProp) / 1000;
+    }
+    let maxT = 0;
+    for (const cy of cycles) {
+      for (const s of cy.gazeSamples ?? []) {
+        const g = globalSampleTimeSec(cy, s, testStartMs);
+        if (g > maxT) maxT = g;
+      }
+    }
+    return maxT;
+  }, [cycles, startTimeProp, endTimeProp, testStartMs]);
+
+  const [replayTimeSec, setReplayTimeSec] = useState<number | null>(null);
+  const effectiveReplay = replayTimeSec ?? durationSec;
+
+  const layout = useMemo(() => {
+    if (!cycles?.length) return null;
+
+    const left = getTargetPosition('left', vw, vh);
+    const right = getTargetPosition('right', vw, vh);
     const pad = 52;
     const targetR = 22;
+
+    const allGazePts = cycles.flatMap((c) => c.gazeSamples ?? []);
+    const { mode } = detectAndMapGazeToViewport(allGazePts, vw, vh);
+
+    const mapPt = (p: { x: number; y: number; t: number }) => {
+      if (mode === 'normalized01') return { ...p, x: p.x * vw, y: p.y * vh };
+      if (mode === 'percent100') return { ...p, x: (p.x / 100) * vw, y: (p.y / 100) * vh };
+      return p;
+    };
+
+    const mappedCycles: MappedCycle[] = cycles.map((cy) => ({
+      ...cy,
+      mappedSamples: (cy.gazeSamples ?? []).map((s) => mapPt(s)),
+    }));
+
     let minX = Math.min(left.x - targetR, right.x - targetR);
     let maxX = Math.max(left.x + targetR, right.x + targetR);
     let minY = Math.min(left.y - targetR, right.y - targetR);
     let maxY = Math.max(left.y + targetR + 42, right.y + targetR + 42);
-    for (const cy of cycles) {
-      for (const s of cy.gazeSamples ?? []) {
+
+    for (const mc of mappedCycles) {
+      for (const s of mc.mappedSamples) {
         minX = Math.min(minX, s.x);
         maxX = Math.max(maxX, s.x);
         minY = Math.min(minY, s.y);
         maxY = Math.max(maxY, s.y);
       }
     }
+
     minX -= pad;
     minY -= pad;
     maxX += pad;
@@ -133,80 +222,147 @@ export default function SaccadicResultsPreview({
     const viewW = Math.max(maxX - minX, 280);
     const viewH = Math.max(maxY - minY, 200);
     const loc = (x: number, y: number) => ({ x: x - minX, y: y - minY });
-    const pathStr = (samples: SaccadicCycleResult['gazeSamples']) => {
-      if (!samples?.length) return '';
-      return samples
-        .map((s) => {
-          const q = loc(s.x, s.y);
-          return `${q.x},${q.y}`;
-        })
-        .join(' ');
-    };
+
     return {
       viewW,
       viewH,
       left: loc(left.x, left.y),
       right: loc(right.x, right.y),
-      pathStr,
       loc,
+      mappedCycles,
     };
-  }, [cycles, vwRef, vhRef]);
+  }, [cycles, vw, vh]);
 
   const { showStimulusReplay, showGazeHeatmap } = useNeurologicalResultsViewOptions();
 
-  const allHeatPoints = useMemo(() => {
-    const out: { x: number; y: number }[] = [];
-    for (const cy of cycles) {
-      for (const s of cy.gazeSamples ?? []) {
-        out.push(overview.loc(s.x, s.y));
-      }
+  const totalGazeSamples =
+    cycles.reduce((n, c) => n + (c.gazeSamples?.length ?? 0), 0) || (scanningPath?.length ?? 0);
+
+  const cycleWindowSec = (i: number): { start: number; end: number } => {
+    const cy = cycles[i];
+    if (!cy) return { start: 0, end: 0 };
+    const start = (cy.onsetTime - testStartMs) / 1000;
+    const samples = cy.gazeSamples ?? [];
+    const maxT = samples.length ? Math.max(...samples.map((s) => s.t)) : 0;
+    let end = start + maxT + 0.05;
+    if (i + 1 < cycles.length) {
+      end = Math.min(end, (cycles[i + 1].onsetTime - testStartMs) / 1000);
+    } else if (typeof endTimeProp === 'number' && Number.isFinite(endTimeProp)) {
+      end = Math.min(end, (endTimeProp - testStartMs) / 1000);
     }
-    return out;
-  }, [cycles, overview]);
+    return { start, end };
+  };
 
   if (!cycles?.length) {
+    return <p className="text-slate-500 text-sm">No saccadic data.</p>;
+  }
+
+  if (!layout) {
     return <p className="text-slate-500 text-sm">No saccadic data.</p>;
   }
 
   const svgBlock = (
     <ResultVizMaxFrame>
       <ResultVizAspectSvg
-        contentWidth={overview.viewW}
-        contentHeight={overview.viewH}
+        contentWidth={layout.viewW}
+        contentHeight={layout.viewH}
         panelFill="rgb(15 23 42 / 0.35)"
         role="img"
-        aria-label="Saccadic targets and gaze paths per cycle"
+        aria-label="Saccadic targets, gaze paths per cycle, replay"
       >
-        {showStimulusReplay && (
-          <>
-            <circle cx={overview.left.x} cy={overview.left.y} r={18} fill="rgb(245 158 11 / 0.35)" stroke="rgb(245 158 11)" strokeWidth="2" />
-            <circle cx={overview.right.x} cy={overview.right.y} r={18} fill="rgb(245 158 11 / 0.35)" stroke="rgb(245 158 11)" strokeWidth="2" />
-            <text x={overview.left.x} y={overview.left.y + 36} textAnchor="middle" fill="rgb(148 163 184)" fontSize="11">
-              L
-            </text>
-            <text x={overview.right.x} y={overview.right.y + 36} textAnchor="middle" fill="rgb(148 163 184)" fontSize="11">
-              R
-            </text>
-          </>
+        {showStimulusReplay &&
+          (() => {
+            let activeSide: 'left' | 'right' | null = null;
+            for (let i = 0; i < cycles.length; i++) {
+              const { start, end } = cycleWindowSec(i);
+              if (effectiveReplay >= start - 1e-6 && effectiveReplay < end) {
+                activeSide = cycles[i].targetSide;
+                break;
+              }
+            }
+            const ring = (pos: { x: number; y: number }, side: 'left' | 'right') => {
+              const on = activeSide === side;
+              return (
+                <circle
+                  cx={pos.x}
+                  cy={pos.y}
+                  r={on ? 20 : 18}
+                  fill={on ? 'rgb(245 158 11 / 0.55)' : 'rgb(245 158 11 / 0.2)'}
+                  stroke={on ? 'rgb(251 191 36)' : 'rgb(245 158 11 / 0.45)'}
+                  strokeWidth={on ? 3 : 2}
+                />
+              );
+            };
+            return (
+              <g aria-hidden>
+                {ring(layout.left, 'left')}
+                {ring(layout.right, 'right')}
+                <text x={layout.left.x} y={layout.left.y + 36} textAnchor="middle" fill="rgb(148 163 184)" fontSize="11">
+                  L
+                </text>
+                <text x={layout.right.x} y={layout.right.y + 36} textAnchor="middle" fill="rgb(148 163 184)" fontSize="11">
+                  R
+                </text>
+              </g>
+            );
+          })()}
+        {showGazeHeatmap && (
+          <GazeHeatmapLayer
+            points={layout.mappedCycles.flatMap((mc, i) => {
+              const cy = cycles[i];
+              return mc.mappedSamples
+                .filter((s) => globalSampleTimeSec(cy, s, testStartMs) <= effectiveReplay)
+                .map((s) => layout.loc(s.x, s.y));
+            })}
+          />
         )}
-        {showGazeHeatmap && <GazeHeatmapLayer points={allHeatPoints} />}
-        {cycles.map((cy, i) => {
-          const pts = overview.pathStr(cy.gazeSamples);
-          if (!pts) return null;
+        {layout.mappedCycles.map((mc, i) => {
+          const cy = cycles[i];
+          const filtered = mc.mappedSamples.filter(
+            (s) => globalSampleTimeSec(cy, s, testStartMs) <= effectiveReplay
+          );
+          if (filtered.length === 0) return null;
+          const pts = filtered.map((s) => layout.loc(s.x, s.y));
+          const ptsStr = pts.map((p) => `${p.x},${p.y}`).join(' ');
           const hue = (i * 37) % 360;
-          const ptArr =
-            cy.gazeSamples?.map((s) => overview.loc(s.x, s.y)) ??
-            [];
+          const stroke = `hsl(${hue} 72% 62%)`;
           return (
-            <g key={`${cy.onsetTime}-${i}`}>
-              <polyline
-                fill="none"
-                stroke={`hsl(${hue} 70% 60%)`}
-                strokeWidth="1.25"
-                opacity={0.85}
-                points={pts}
-              />
-              <GazePathDirectionArrows points={ptArr} step={10} fill={`hsl(${hue} 70% 55%)`} size={5} />
+            <g key={`path-${cy.onsetTime}-${i}`}>
+              {pts.length >= 2 ? (
+                <>
+                  <polyline
+                    fill="none"
+                    stroke="rgb(15 23 42)"
+                    strokeWidth={5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity={0.85}
+                    vectorEffect="nonScalingStroke"
+                    points={ptsStr}
+                  />
+                  <polyline
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={3}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity={0.95}
+                    vectorEffect="nonScalingStroke"
+                    points={ptsStr}
+                  />
+                </>
+              ) : (
+                <circle
+                  cx={pts[0].x}
+                  cy={pts[0].y}
+                  r={5}
+                  fill={stroke}
+                  stroke="rgb(15 23 42)"
+                  strokeWidth={1.5}
+                  vectorEffect="nonScalingStroke"
+                />
+              )}
+              <GazePathDirectionArrows points={pts} step={10} fill={`hsl(${hue} 70% 55%)`} size={5} />
             </g>
           );
         })}
@@ -216,11 +372,44 @@ export default function SaccadicResultsPreview({
 
   if (visualOnly) {
     return (
-      <div className="relative flex min-h-0 max-h-full w-full min-w-0 shrink flex-col overflow-hidden">
-        {svgBlock}
-        <p className="pointer-events-none absolute bottom-2 left-2 right-2 text-center text-[10px] leading-snug text-slate-500/95 sm:text-xs">
-          Vòng cam = target; các đường màu = gaze theo từng chu kỳ.
-        </p>
+      <div className={RESULT_VIZ_OUTER}>
+        <div
+          className={`${innerFrame.className} relative flex min-h-0 flex-col overflow-hidden`}
+          style={innerFrame.style}
+        >
+          <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
+            <span className="text-slate-400">Nét màu = gaze theo từng chu kỳ.</span> Vòng cam = target (sáng hơn = chu kỳ đang replay). Chi tiết latency trong{' '}
+            <strong>Tham số</strong>.
+          </p>
+          {totalGazeSamples === 0 && (
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4 pt-10">
+              <p className="max-w-md rounded-lg border border-amber-800/60 bg-amber-950/90 px-3 py-2.5 text-center text-xs leading-relaxed text-amber-50/95 shadow-lg">
+                Không có mẫu gaze trong kết quả — không thể vẽ đường đi. Chạy lại bài với tracking gaze.
+              </p>
+            </div>
+          )}
+          <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 pt-9 sm:px-3">
+            <div className="min-h-0 flex-1 overflow-hidden">{svgBlock}</div>
+          </div>
+          {durationSec > 0 && (
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-800 bg-gray-900/40 px-3 pb-3 pt-3 text-xs text-slate-400 sm:px-4 sm:pb-4">
+              <span className="shrink-0 w-28 whitespace-nowrap">Thời điểm tái hiện</span>
+              <input
+                type="range"
+                min={0}
+                max={durationSec}
+                step={0.01}
+                value={Math.min(effectiveReplay, durationSec)}
+                onChange={(e) => setReplayTimeSec(Number(e.target.value))}
+                className="min-w-0 flex-1 accent-sky-500"
+              />
+              <span className="shrink-0 w-[4.5rem] text-right font-mono text-[10px] leading-[13px] tracking-tight">
+                {effectiveReplay.toFixed(1)}s <br />
+                <span className="text-slate-600"> {durationSec.toFixed(1)}s</span>
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -233,6 +422,7 @@ export default function SaccadicResultsPreview({
         fixationAccuracy={fixationAccuracy}
         correctiveSaccades={correctiveSaccades}
         metrics={metrics}
+        scanningPath={scanningPath}
       />
       {svgBlock}
       <p className="text-xs text-slate-500">Orange circles = target positions; colored traces = gaze per cycle.</p>

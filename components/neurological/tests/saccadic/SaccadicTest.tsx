@@ -23,10 +23,15 @@ export interface SaccadicCycleResult {
   gazeSamples: Array<{ t: number; x: number; y: number }>;
 }
 
+export type SaccadicScanningPoint = { t: number; x: number; y: number };
+
 export interface SaccadicResult {
   startTime: number;
   endTime: number;
   cycles: SaccadicCycleResult[];
+  /** Toàn bộ mẫu gaze; `t` = giây từ `startTime` bài test (giống visual_search / anti_saccade). */
+  scanningPath?: SaccadicScanningPoint[];
+  gazePath?: SaccadicScanningPoint[];
   saccadeLatencyMs?: number[];
   fixationAccuracy?: number;
   correctiveSaccades?: number;
@@ -37,6 +42,21 @@ export interface SaccadicResult {
     fixationAccuracy?: number;
     correctiveSaccadeCount?: number;
   };
+}
+
+/** Gộp các cycle (t tương đối từng chu kỳ) thành một đường thời gian từ lúc bắt đầu test. */
+export function buildSaccadicScanningPath(
+  cycles: SaccadicCycleResult[],
+  testStartMs: number
+): SaccadicScanningPoint[] {
+  const out: SaccadicScanningPoint[] = [];
+  for (const cy of cycles) {
+    const offsetSec = (cy.onsetTime - testStartMs) / 1000;
+    for (const s of cy.gazeSamples ?? []) {
+      out.push({ t: offsetSec + s.t, x: s.x, y: s.y });
+    }
+  }
+  return out;
 }
 
 function getViewport(): { w: number; h: number } {
@@ -178,11 +198,15 @@ export default function SaccadicTest() {
               })
             );
           } catch (_) {}
+          const testStart = startTimeRef.current;
+          const scanningPath = buildSaccadicScanningPath(cycles, testStart);
           completeTest({
             testId: 'saccadic',
-            startTime: startTimeRef.current,
+            startTime: testStart,
             endTime,
             cycles,
+            scanningPath,
+            gazePath: scanningPath,
             saccadeLatencyMs,
             fixationAccuracy,
             correctiveSaccades: correctiveSaccadeCount,

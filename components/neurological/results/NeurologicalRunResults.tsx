@@ -175,9 +175,15 @@ function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly 
     const metrics = r.metrics as
       | { avgLatency?: number; fixationAccuracy?: number; correctiveSaccadeCount?: number }
       | undefined;
+    const scanningPath =
+      (r.scanningPath as Array<{ t: number; x: number; y: number }> | undefined) ??
+      (r.gazePath as Array<{ t: number; x: number; y: number }> | undefined);
     return (
       <SaccadicResultsPreview
         cycles={cycles}
+        startTime={r.startTime as number | undefined}
+        endTime={r.endTime as number | undefined}
+        scanningPath={scanningPath}
         saccadeLatencyMs={r.saccadeLatencyMs as number[] | undefined}
         fixationAccuracy={r.fixationAccuracy as number | undefined}
         correctiveSaccades={r.correctiveSaccades as number | undefined}

@@ -70,6 +70,9 @@ function renderParamsForTest(testId: string, r: Record<string, unknown>): React.
     const metrics = r.metrics as
       | { avgLatency?: number; fixationAccuracy?: number; correctiveSaccadeCount?: number }
       | undefined;
+    const scanningPath =
+      (r.scanningPath as Array<{ t: number; x: number; y: number }> | undefined) ??
+      (r.gazePath as Array<{ t: number; x: number; y: number }> | undefined);
     return (
       <SaccadicParamsSection
         cycles={cycles}
@@ -77,6 +80,7 @@ function renderParamsForTest(testId: string, r: Record<string, unknown>): React.
         fixationAccuracy={r.fixationAccuracy as number | undefined}
         correctiveSaccades={r.correctiveSaccades as number | undefined}
         metrics={metrics}
+        scanningPath={scanningPath}
       />
     );
   }
