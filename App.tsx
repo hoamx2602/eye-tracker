@@ -1313,7 +1313,8 @@ function App() {
             return;
         }
 
-        if (configRef.current.enableExercises) {
+        // Option 2 ('test' mode): Skip Eye Movement Exercises, go directly to Validation to compute Mean Accuracy.
+        if (configRef.current.enableExercises && runModeRef.current !== 'test') {
             console.log(`[Calibration] Grid mapping done with ${data.length} samples, starting exercises...`);
             setCalibPhase(CalibrationPhase.EXERCISES);
             setCurrentExerciseIndex(0);
@@ -1321,10 +1322,6 @@ function App() {
       exerciseBlobsRef.current = [];
       exerciseKindRef.current = EXERCISE_KINDS[0];
       exerciseActiveRef.current = true;
-      if (runModeRef.current === 'test') {
-        testSegmentStartTimeRef.current = performance.now();
-        currentTestSegmentRef.current = [];
-      }
         } else {
             setCalibPhase(CalibrationPhase.VALIDATION);
             setCalibPoints(VALIDATION_POINTS);
