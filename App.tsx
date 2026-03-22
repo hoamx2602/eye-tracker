@@ -1593,7 +1593,14 @@ function App() {
       });
       setNeuroRunStatus('ready');
       pathSyncSourceRef.current = 'internal';
-      if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_PRE);
+      if (process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true') {
+        setNeuroPhase('tests');
+        setCurrentNeuroTestId(order[0] || null);
+        setCurrentNeuroTestIndex(0);
+        if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_TEST(order[0]));
+      } else {
+        if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_PRE);
+      }
     } catch (e) {
       console.error('Create neuro run failed', e);
       setNeuroRunStatus('error');

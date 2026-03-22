@@ -89,15 +89,7 @@ export function useNeuroFlowHandlers({
       neuroDebugLog('test complete', testId, '→ merged keys', Object.keys(nextResults));
       const pr = payload as Record<string, unknown>;
       console.log('[Neuro][FlowHandler] payload for', testId, '→ keys:', Object.keys(pr), 'scanningPath:', (pr.scanningPath as unknown[])?.length ?? 'N/A', 'gazePath:', (pr.gazePath as unknown[])?.length ?? 'N/A', 'fixations:', (pr.fixations as unknown[])?.length ?? 'N/A');
-      if (neuroRunId) {
-        try {
-          await neurologicalRunsApi.patch(neuroRunId, {
-            testResults: { [testId]: payload },
-          });
-        } catch (e) {
-          neuroPersistWarn(`PATCH test result failed (${testId})`, e);
-        }
-      }
+      
       const order = neuroTestOrder.length > 0 ? neuroTestOrder : DEFAULT_TEST_ORDER;
       const enabled = neuroConfigSnapshot?.testEnabled ?? {};
       let nextIdx = -1;
@@ -107,6 +99,19 @@ export function useNeuroFlowHandlers({
           break;
         }
       }
+
+      if (neuroRunId) {
+        try {
+          const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
+          await neurologicalRunsApi.patch(neuroRunId, {
+            testResults: { [testId]: payload },
+            ...(nextIdx < 0 && skipQ ? { status: 'completed' } : {})
+          });
+        } catch (e) {
+          neuroPersistWarn(`PATCH test result failed (${testId})`, e);
+        }
+      }
+
       try {
         localStorage.setItem(
           NEURO_TEST_PROGRESS_LS_KEY,
@@ -152,10 +157,18 @@ export function useNeuroFlowHandlers({
         pathSyncSourceRef.current = 'internal';
         routerPush(PATHS.NEURO_TEST(order[nextIdx]));
       } else {
-        setNeuroPhase('post');
-        setCurrentNeuroTestId(null);
-        pathSyncSourceRef.current = 'internal';
-        routerPush(PATHS.NEURO_POST);
+        const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
+        if (skipQ) {
+          setNeuroPhase('done');
+          setCurrentNeuroTestId(null);
+          pathSyncSourceRef.current = 'internal';
+          routerPush(PATHS.NEURO_DONE);
+        } else {
+          setNeuroPhase('post');
+          setCurrentNeuroTestId(null);
+          pathSyncSourceRef.current = 'internal';
+          routerPush(PATHS.NEURO_POST);
+        }
       }
     },
     [
