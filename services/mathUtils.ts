@@ -242,6 +242,11 @@ export class HybridRegressor {
   // TPS Instance
   private tps: TPSRegressor = new TPSRegressor();
 
+  /** True sau khi train() thành công; predict() trả (0,0) nếu false. */
+  hasTrainedModel(): boolean {
+    return this.weights != null && this.trainingData.length > 0;
+  }
+
   train(inputs: number[][], outputs: number[][]): boolean {
     // 1. Train Ridge (Always required as fallback)
     this.weights = Matrix.solveLeastSquares(inputs, outputs);

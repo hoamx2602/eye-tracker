@@ -72,6 +72,8 @@ type NeurologicalFlowSectionProps = {
   } | null;
   neuroHeadPose: { pitch: number; yaw: number; roll: number } | null;
   gazePos: { x: number; y: number };
+  /** HybridRegressor đã train — nếu false, gaze trong neuro là (0,0). */
+  gazeModelReady: boolean;
   neuroTestResults: Record<string, TestResultPayload>;
   neuroResultsLoading: boolean;
   neuroResultsLoadError: string | null;
@@ -85,6 +87,10 @@ type NeurologicalFlowSectionProps = {
   onPostSubmitConfirmSave: () => Promise<void>;
   onPostSubmitConfirmRedo: () => void;
   onPostSubmitConfirmCancel: () => void;
+  /** /neuro/done?verify=1 — banner + focus bài vừa xong. */
+  neuroVerifyBanner?: { focusTestId: string; onContinue: () => void } | null;
+  /** Mở đúng step trong NeurologicalRunResults (testId). */
+  resultsInitialFocusTestId?: string | null;
 };
 
 export default function NeurologicalFlowSection({
@@ -97,6 +103,7 @@ export default function NeurologicalFlowSection({
   neuroConfigSnapshot,
   neuroHeadPose,
   gazePos,
+  gazeModelReady,
   neuroTestResults,
   neuroResultsLoading,
   neuroResultsLoadError,
@@ -110,6 +117,8 @@ export default function NeurologicalFlowSection({
   onPostSubmitConfirmSave,
   onPostSubmitConfirmRedo,
   onPostSubmitConfirmCancel,
+  neuroVerifyBanner,
+  resultsInitialFocusTestId,
 }: NeurologicalFlowSectionProps) {
   return (
     <>
@@ -149,7 +158,7 @@ export default function NeurologicalFlowSection({
         </NeuroPanelLayoutContext.Provider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'visual_search' && (
-        <NeuroGazeProvider gaze={gazePos}>
+        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="visual_search"
             guideSteps={VISUAL_SEARCH_GUIDE_STEPS}
@@ -163,7 +172,7 @@ export default function NeurologicalFlowSection({
         </NeuroGazeProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'memory_cards' && (
-        <NeuroGazeProvider gaze={gazePos}>
+        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="memory_cards"
             guideSteps={MEMORY_CARDS_GUIDE_STEPS}
@@ -177,7 +186,7 @@ export default function NeurologicalFlowSection({
         </NeuroGazeProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'anti_saccade' && (
-        <NeuroGazeProvider gaze={gazePos}>
+        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="anti_saccade"
             guideSteps={ANTI_SACCADE_GUIDE_STEPS}
@@ -202,7 +211,7 @@ export default function NeurologicalFlowSection({
         </NeuroGazeProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'saccadic' && (
-        <NeuroGazeProvider gaze={gazePos}>
+        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="saccadic"
             guideSteps={SACCADIC_GUIDE_STEPS}
@@ -216,7 +225,7 @@ export default function NeurologicalFlowSection({
         </NeuroGazeProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'fixation_stability' && (
-        <NeuroGazeProvider gaze={gazePos}>
+        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="fixation_stability"
             guideSteps={FIXATION_STABILITY_GUIDE_STEPS}
@@ -230,7 +239,7 @@ export default function NeurologicalFlowSection({
         </NeuroGazeProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'peripheral_vision' && (
-        <NeuroGazeProvider gaze={gazePos}>
+        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="peripheral_vision"
             guideSteps={PERIPHERAL_VISION_GUIDE_STEPS}
@@ -299,6 +308,29 @@ export default function NeurologicalFlowSection({
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'done' && (
         <div className="fixed inset-0 z-50 flex h-[100dvh] max-h-[100dvh] flex-col bg-gray-950">
+          {neuroVerifyBanner && (
+            <div className="shrink-0 border-b border-amber-500/40 bg-amber-950/50 px-3 py-3 text-sm text-amber-100 sm:px-4">
+              <div className="mx-auto flex max-w-[min(96rem,100%)] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <strong className="text-amber-300">Chế độ verify:</strong> xem kết quả thật của bài vừa xong. Bật lâu dài:{' '}
+                  <code className="rounded bg-black/30 px-1.5 py-0.5 text-xs text-slate-300">
+                    NEXT_PUBLIC_NEURO_VERIFY_AFTER_EACH=1
+                  </code>{' '}
+                  hoặc trong DevTools:{' '}
+                  <code className="rounded bg-black/30 px-1.5 py-0.5 text-xs text-slate-300">
+                    sessionStorage.setItem(&apos;neuro_verify_after_each&apos;,&apos;1&apos;)
+                  </code>
+                </div>
+                <button
+                  type="button"
+                  onClick={neuroVerifyBanner.onContinue}
+                  className="shrink-0 rounded-xl bg-amber-600 px-4 py-2.5 font-medium text-white transition hover:bg-amber-500"
+                >
+                  Tiếp tục (bài tiếp theo hoặc post-test)
+                </button>
+              </div>
+            </div>
+          )}
           <div className="min-h-0 flex flex-1 flex-col px-3 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-5">
             <NeurologicalRunResults
               neuroTestOrder={neuroTestOrder}
@@ -307,6 +339,7 @@ export default function NeurologicalFlowSection({
               loading={neuroResultsLoading}
               loadError={neuroResultsLoadError}
               onRetry={onNeuroResultsRetry}
+              initialFocusTestId={resultsInitialFocusTestId ?? undefined}
             />
           </div>
         </div>

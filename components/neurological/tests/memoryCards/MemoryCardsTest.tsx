@@ -25,12 +25,22 @@ export interface MemoryCardsMove {
   timestamp: number;
 }
 
+/** `getBoundingClientRect()` của lưới — cùng hệ tọa độ gaze (viewport px). */
+export type MemoryCardsGridRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
 export interface MemoryCardsResult {
   startTime: number;
   endTime: number;
   cardCount: number;
   cols: number;
   rows: number;
+  /** Bố cục bài (symbol id mỗi ô) — để tái hiện lưới trên màn kết quả. */
+  board: number[];
   moves: MemoryCardsMove[];
   numberOfMoves: number;
   correctPairsCount: number;
@@ -38,6 +48,8 @@ export interface MemoryCardsResult {
   gazePath: Array<{ t: number; x: number; y: number }>;
   viewportWidth?: number;
   viewportHeight?: number;
+  /** Lưới card lúc hoàn thành — căn gaze path chính xác trên kết quả. */
+  gridRect?: MemoryCardsGridRect;
 }
 
 const SYMBOL_BASE_REM = 1.25;
@@ -208,6 +220,13 @@ export default function MemoryCardsTest() {
     const correctPairsCount = movesRef.current.filter((m) => m.match).length;
     const completionTimeMs = endTime - startTimeRef.current;
     const gazePath = [...gazePathRef.current];
+    const el = gridContainerRef.current;
+    const gridRect = el
+      ? (() => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, top: r.top, width: r.width, height: r.height };
+        })()
+      : undefined;
     try {
       localStorage.setItem(
         MEMORY_CARDS_RESULT_LS_KEY,
@@ -227,6 +246,7 @@ export default function MemoryCardsTest() {
       cardCount,
       cols,
       rows,
+      board: [...board],
       moves: [...movesRef.current],
       numberOfMoves,
       correctPairsCount,
@@ -234,6 +254,7 @@ export default function MemoryCardsTest() {
       gazePath,
       viewportWidth: typeof window !== 'undefined' ? window.innerWidth : undefined,
       viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
+      gridRect,
     });
   }, [allMatched, completeTest, cardCount, cols, rows]);
 

@@ -1,10 +1,18 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
+import { applyGazeModeToFixations, detectAndMapGazeToViewport } from '@/lib/visualSearchGazeCoords';
 import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
+import { GazeHeatmapLayer, GazePathDirectionArrows } from './gazeVizSvg';
+import { useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
 
 type NumberPos = { number: number; x: number; y: number };
 type PathPt = { t: number; x: number; y: number };
+
+type FixationPt = { number: number; timestamp: number; gazeX: number; gazeY: number };
+
+type StimulusBounds = { left: number; top: number; width: number; height: number };
 
 type Props = {
   completionTimeMs: number;
@@ -12,8 +20,12 @@ type Props = {
   scanningPath: PathPt[];
   gazeFixationPerNumber: Record<number, number>;
   sequence: number[];
+  fixations?: FixationPt[];
   viewportWidth?: number;
   viewportHeight?: number;
+  stimulusBounds?: StimulusBounds;
+  startTime?: number;
+  endTime?: number;
   visualOnly?: boolean;
 };
 
@@ -53,61 +65,238 @@ export function VisualSearchParamsSection({
   );
 }
 
+/**
+ * Scanpath kiểu cổ điển: đường nối các fixation theo thời gian + vòng có số thứ tự (kích thước ~ dwell).
+ * numberPositions: % trong vùng stimulus; scanningPath: pixel viewport (cùng eye tracking).
+ */
 export default function VisualSearchResultsPreview({
   completionTimeMs,
   numberPositions,
   scanningPath,
   gazeFixationPerNumber,
   sequence,
-  viewportWidth: _viewportWidth,
-  viewportHeight: _viewportHeight,
+  fixations = [],
+  viewportWidth,
+  viewportHeight,
+  stimulusBounds,
+  startTime,
+  endTime,
   visualOnly,
 }: Props) {
+  const { showStimulusReplay, showGazeHeatmap } = useNeurologicalResultsViewOptions();
+  const warnedEmptyRef = useRef(false);
+  const warnedModeRef = useRef(false);
+  const warnedNoValidGazeRef = useRef(false);
+
   const layout = useMemo(() => {
     const path = scanningPath ?? [];
-    if (path.length === 0 && numberPositions.length === 0) return null;
-    const pad = 28;
-    /** Bán kính vòng số trên canvas — phải tính vào bbox để không cắt label */
-    const numberR = 24;
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const p of path) {
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x);
-      maxY = Math.max(maxY, p.y);
+    const vw = viewportWidth ?? 1920;
+    const vh = viewportHeight ?? 1080;
+    console.log('[Neuro][VSPreview] layout memo: path.length=', path.length, 'numberPositions.length=', numberPositions.length, 'vw=', vw, 'vh=', vh, 'path[0..2]=', path.slice(0, 3));
+    if (path.length === 0 && numberPositions.length === 0) {
+      console.warn('[Neuro][VSPreview] layout → null (no path AND no numberPositions)');
+      return null;
     }
-    for (const n of numberPositions) {
-      minX = Math.min(minX, n.x - numberR);
-      minY = Math.min(minY, n.y - numberR);
-      maxX = Math.max(maxX, n.x + numberR);
-      maxY = Math.max(maxY, n.y + numberR);
+
+    const numbersPx = numberPositions.map((n) =>
+      stimulusBounds && stimulusBounds.width > 0 && stimulusBounds.height > 0
+        ? {
+            number: n.number,
+            x: stimulusBounds.left + (n.x / 100) * stimulusBounds.width,
+            y: stimulusBounds.top + (n.y / 100) * stimulusBounds.height,
+          }
+        : {
+            number: n.number,
+            x: (n.x / 100) * vw,
+            y: (n.y / 100) * vh,
+          }
+    );
+
+    const xy = path.map((p) => ({ x: p.x, y: p.y }));
+    const { pts: mapped, mode } = detectAndMapGazeToViewport(xy, vw, vh);
+    const pathPts = path.map((p, i) => ({
+      t: p.t,
+      x: mapped[i]!.x,
+      y: mapped[i]!.y,
+    }));
+    const poly = pathPts.map((p) => `${p.x},${p.y}`).join(' ');
+    const fixationsResolved = applyGazeModeToFixations(fixations, mode, vw, vh);
+
+    /** Nhiều mẫu nhưng gần như cố định tại (0,0) — khớp khi không có ước lượng gaze thật, chỉ placeholder từ API. */
+    let noValidGazeCoords = false;
+    if (pathPts.length >= 20) {
+      const xs = pathPts.map((p) => p.x);
+      const ys = pathPts.map((p) => p.y);
+      const mx = Math.max(...xs);
+      const mn = Math.min(...xs);
+      const my = Math.max(...ys);
+      const ny = Math.min(...ys);
+      const cx = (mx + mn) / 2;
+      const cy = (my + ny) / 2;
+      noValidGazeCoords =
+        mx - mn < 3 && my - ny < 3 && Math.hypot(cx, cy) < 32;
     }
-    if (!Number.isFinite(minX)) return null;
 
-    const vx0 = minX - pad;
-    const vy0 = minY - pad;
-    const vw = Math.max(maxX - minX + pad * 2, 120);
-    const vh = Math.max(maxY - minY + pad * 2, 120);
-
-    const loc = (x: number, y: number) => ({ x: x - vx0, y: y - vy0 });
-    const poly = path.map((p) => {
-      const q = loc(p.x, p.y);
-      return `${q.x},${q.y}`;
-    }).join(' ');
+    console.log('[Neuro][VSPreview] layout built: rawPathLen=', path.length, 'mode=', mode, 'noValidGazeCoords=', noValidGazeCoords, 'fixationsResolved.length=', fixationsResolved.length, 'pathPts range x:', pathPts.length > 0 ? [Math.min(...pathPts.map(p=>p.x)).toFixed(1), Math.max(...pathPts.map(p=>p.x)).toFixed(1)] : 'empty', 'y:', pathPts.length > 0 ? [Math.min(...pathPts.map(p=>p.y)).toFixed(1), Math.max(...pathPts.map(p=>p.y)).toFixed(1)] : 'empty');
     return {
       vw,
       vh,
       poly,
-      numbers: numberPositions.map((n) => ({ ...n, ...loc(n.x, n.y) })),
+      pathPts,
+      numbers: numbersPx,
+      gazeMode: mode,
+      rawPathLen: path.length,
+      fixationsResolved,
+      noValidGazeCoords,
     };
-  }, [scanningPath, numberPositions]);
+  }, [scanningPath, numberPositions, viewportWidth, viewportHeight, stimulusBounds, fixations]);
+
+  /** Fixation theo thời gian → scanpath (đoạn nối + vòng có số 1..N). */
+  const scanplot = useMemo(() => {
+    const fx = layout?.fixationsResolved ?? fixations;
+    const sorted = [...fx].sort((a, b) => a.timestamp - b.timestamp);
+    const tEnd =
+      endTime ??
+      (startTime != null ? startTime + completionTimeMs : sorted.length ? sorted[sorted.length - 1]!.timestamp + 1 : 0);
+
+    console.log('[Neuro][VSPreview] scanplot memo: sorted fixations=', sorted.length, 'layout exists=', !!layout, 'pathPts=', layout?.pathPts?.length ?? 0, 'noValidGazeCoords=', layout?.noValidGazeCoords);
+    // --- Fallback: synthesize fixation nodes from raw gaze path when AOI fixations are empty ---
+    if (sorted.length === 0 && layout && layout.pathPts.length >= 2 && !layout.noValidGazeCoords) {
+      console.log('[Neuro][VSPreview] → using synthetic scanpath fallback, nodeCount will be computed from', layout.pathPts.length, 'points');
+      const pts = layout.pathPts;
+      const totalDur = pts[pts.length - 1]!.t - pts[0]!.t;
+      // Sample roughly every 1 second, but at least 6 and at most 20 nodes
+      const nodeCount = Math.max(6, Math.min(20, Math.ceil(totalDur)));
+      const step = Math.max(1, Math.floor(pts.length / nodeCount));
+      const synthNodes: { cx: number; cy: number; r: number; label: string; targetNum: number; fill: string; stroke: string; key: string }[] = [];
+      const synthSegments: { x1: number; y1: number; x2: number; y2: number; stroke: string; key: string }[] = [];
+      let prevPt: { x: number; y: number } | null = null;
+      let k = 0;
+      for (let i = 0; i < pts.length; i += step) {
+        const p = pts[i]!;
+        const hue = (k * 47) % 360;
+        if (prevPt) {
+          synthSegments.push({
+            key: `sseg-${k}`,
+            x1: prevPt.x,
+            y1: prevPt.y,
+            x2: p.x,
+            y2: p.y,
+            stroke: `hsl(${hue} 72% 58%)`,
+          });
+        }
+        synthNodes.push({
+          cx: p.x,
+          cy: p.y,
+          r: 18,
+          label: String(k + 1),
+          targetNum: 0,
+          fill: `hsl(${hue} 65% 50% / 0.38)`,
+          stroke: `hsl(${hue} 75% 62%)`,
+          key: `sfx-${k}`,
+        });
+        prevPt = p;
+        k++;
+      }
+      // Always include the last point if not already included
+      const lastPt = pts[pts.length - 1]!;
+      if (prevPt && (prevPt.x !== lastPt.x || prevPt.y !== lastPt.y)) {
+        const hue = (k * 47) % 360;
+        synthSegments.push({
+          key: `sseg-${k}`,
+          x1: prevPt.x,
+          y1: prevPt.y,
+          x2: lastPt.x,
+          y2: lastPt.y,
+          stroke: `hsl(${hue} 72% 58%)`,
+        });
+        synthNodes.push({
+          cx: lastPt.x,
+          cy: lastPt.y,
+          r: 18,
+          label: String(k + 1),
+          targetNum: 0,
+          fill: `hsl(${hue} 65% 50% / 0.38)`,
+          stroke: `hsl(${hue} 75% 62%)`,
+          key: `sfx-${k}`,
+        });
+      }
+      return { segments: synthSegments, nodes: synthNodes };
+    }
+
+    const segments: { x1: number; y1: number; x2: number; y2: number; stroke: string; key: string }[] = [];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const a = sorted[i]!;
+      const b = sorted[i + 1]!;
+      const hue = (i * 47) % 360;
+      segments.push({
+        key: `seg-${i}`,
+        x1: a.gazeX,
+        y1: a.gazeY,
+        x2: b.gazeX,
+        y2: b.gazeY,
+        stroke: `hsl(${hue} 72% 58%)`,
+      });
+    }
+    const nodes = sorted.map((f, i) => {
+      const nextT = i < sorted.length - 1 ? sorted[i + 1]!.timestamp : tEnd;
+      const durMs = Math.max(80, nextT - f.timestamp);
+      const r = 12 + Math.min(24, durMs / 55);
+      const hue = (i * 47) % 360;
+      return {
+        cx: f.gazeX,
+        cy: f.gazeY,
+        r,
+        label: String(i + 1),
+        targetNum: f.number,
+        fill: `hsl(${hue} 65% 50% / 0.38)`,
+        stroke: `hsl(${hue} 75% 62%)`,
+        key: `fx-${f.timestamp}-${i}`,
+      };
+    });
+    return { segments, nodes };
+  }, [layout, fixations, endTime, startTime, completionTimeMs]);
+
+  useEffect(() => {
+    if (!layout) return;
+    const raw = scanningPath?.length ?? 0;
+    const xs = layout.pathPts.map((p) => p.x);
+    const ys = layout.pathPts.map((p) => p.y);
+    neuroDebugLog('[VisualSearch] chart', {
+      rawSamples: raw,
+      mappedPoints: layout.pathPts.length,
+      gazeMode: layout.gazeMode,
+      noValidGazeCoords: layout.noValidGazeCoords,
+      fixations: fixations.length,
+      scanplotNodes: scanplot.nodes.length,
+      xRange: xs.length ? [Math.min(...xs), Math.max(...xs)] : null,
+      yRange: ys.length ? [Math.min(...ys), Math.max(...ys)] : null,
+    });
+    if (raw === 0 && numberPositions.length > 0 && !warnedEmptyRef.current) {
+      warnedEmptyRef.current = true;
+      neuroPersistWarn(
+        '[VisualSearch] scanningPath rỗng — không có đường gaze. Kiểm tra: (1) bấm SPACE sau vài giây, (2) PATCH neurological run có testResults.visual_search.scanningPath, (3) filter console [Neuro] lúc hoàn thành bài.'
+      );
+    }
+    if (layout.gazeMode !== 'pixels' && !warnedModeRef.current) {
+      warnedModeRef.current = true;
+      neuroPersistWarn(
+        `[VisualSearch] Đã map tọa độ gaze từ ${layout.gazeMode} → pixel viewport (${viewportWidth ?? '?'}×${viewportHeight ?? '?'}). Nếu vẫn sai, kiểm tra calibration.`
+      );
+    }
+    if (layout.noValidGazeCoords && raw > 0 && !warnedNoValidGazeRef.current) {
+      warnedNoValidGazeRef.current = true;
+      neuroPersistWarn(
+        '[VisualSearch] Các mẫu lưu được gần (0,0) — thường không phải “nhìn góc màn” mà là chưa có dữ liệu gaze hợp lệ (regressor chưa train / chưa calibration trong session, hoặc pipeline không đưa ra tọa độ). Calibration xong rồi chạy lại neurological; nếu đã calibrate mà vẫn vậy, báo dev (gazeModelReady).'
+      );
+    }
+  }, [layout, scanningPath?.length, numberPositions.length, fixations.length, scanplot.nodes.length, viewportWidth, viewportHeight]);
 
   if (!layout) {
     return <p className="text-slate-500 text-sm">No visual search data.</p>;
   }
+
+  const noPath = layout.rawPathLen === 0;
 
   const svgBlock = (
     <ResultVizMaxFrame>
@@ -116,38 +305,80 @@ export default function VisualSearchResultsPreview({
         contentHeight={layout.vh}
         panelFill="rgb(15 23 42 / 0.4)"
         role="img"
-        aria-label="Visual search gaze path and number positions"
+        aria-label="Visual search gaze path and scanpath"
       >
-        <polyline
-          fill="none"
-          stroke="rgb(96 165 250)"
-          strokeWidth="2"
-          strokeLinejoin="round"
-          points={layout.poly}
-        />
-        {layout.numbers.map((n) => (
-          <g key={n.number}>
-            <circle
-              cx={n.x}
-              cy={n.y}
-              r={22}
-              fill="rgb(30 41 59 / 0.85)"
-              stroke="rgb(148 163 184)"
-              strokeWidth="1"
-            />
+        {showGazeHeatmap && layout.pathPts.length > 0 && <GazeHeatmapLayer points={layout.pathPts} />}
+        {layout.poly.length > 0 && (
+          <polyline
+            fill="none"
+            stroke="rgb(96 165 250)"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            opacity={0.42}
+            points={layout.poly}
+          />
+        )}
+        {layout.pathPts.length > 1 && scanplot.nodes.length === 0 && (
+          <GazePathDirectionArrows points={layout.pathPts} step={10} />
+        )}
+        {scanplot.segments.map((s) => (
+          <line
+            key={s.key}
+            x1={s.x1}
+            y1={s.y1}
+            x2={s.x2}
+            y2={s.y2}
+            stroke={s.stroke}
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            opacity={0.92}
+          />
+        ))}
+        {scanplot.nodes.map((n) => (
+          <g key={n.key}>
+            <circle cx={n.cx} cy={n.cy} r={n.r} fill={n.fill} stroke={n.stroke} strokeWidth="2.2" opacity={0.95} />
             <text
-              x={n.x}
-              y={n.y}
+              x={n.cx}
+              y={n.cy}
               textAnchor="middle"
               dominantBaseline="central"
               fill="white"
-              fontSize="14"
+              fontSize={Math.max(11, Math.min(18, n.r * 0.45))}
               fontWeight="bold"
+              style={{ textShadow: '0 1px 2px rgb(0 0 0 / 0.8)' }}
             >
-              {n.number}
+              {n.label}
             </text>
+            <title>
+              Fixation {n.label} · target #{n.targetNum} · ~dwell used for size
+            </title>
           </g>
         ))}
+        {showStimulusReplay &&
+          layout.numbers.map((n) => (
+            <g key={n.number}>
+              <circle
+                cx={n.x}
+                cy={n.y}
+                r={22}
+                fill="rgb(30 41 59 / 0.85)"
+                stroke="rgb(148 163 184)"
+                strokeWidth="1"
+              />
+              <text
+                x={n.x}
+                y={n.y}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill="white"
+                fontSize="14"
+                fontWeight="bold"
+              >
+                {n.number}
+              </text>
+            </g>
+          ))}
       </ResultVizAspectSvg>
     </ResultVizMaxFrame>
   );
@@ -163,6 +394,27 @@ export default function VisualSearchResultsPreview({
         sequence={sequence}
         gazeFixationPerNumber={gazeFixationPerNumber}
       />
+      <p className="text-[11px] leading-relaxed text-slate-500">
+        Đường nhạt + mũi tên = toàn bộ mẫu gaze; đường đậm màu + vòng số 1…N = các fixation (AOI) theo thời gian — giống scanpath tham chiếu.
+      </p>
+      {noPath && (
+        <div className="rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-100">
+          <strong className="text-amber-300">Không có mẫu gaze (scanningPath rỗng).</strong> Màn chỉ hiện stimulus. Mở console (filter{' '}
+          <code className="rounded bg-black/40 px-1">[Neuro]</code>) khi hoàn thành bài — phải thấy{' '}
+          <code className="rounded bg-black/40 px-1">scanningPathLen &gt; 0</code>. Nếu = 0: thử lại bài vài giây trước khi SPACE; đảm bảo eye
+          tracking chạy (NEURO_FLOW).
+        </div>
+      )}
+      {layout.noValidGazeCoords && !noPath && (
+        <div className="rounded-lg border border-rose-800/60 bg-rose-950/35 px-3 py-2 text-xs text-rose-100">
+          <strong className="text-rose-300">Không có tọa độ gaze hợp lệ trong các mẫu đã lưu.</strong> Thường là pipeline chỉ trả giá trị mặc định (0,0) khi mô hình chưa calibration trong session này — không phải do “nhìn một điểm trên màn”. Làm calibration (tracking) rồi chạy lại bài; nếu đã calibrate mà vẫn vậy, báo dev.
+        </div>
+      )}
+      {layout.gazeMode !== 'pixels' && !noPath && (
+        <p className="text-[11px] text-sky-300/95">
+          Đã tự nhận dạng tọa độ gaze dạng {layout.gazeMode} và nhân lên kích thước viewport — nếu vị trí sai, báo dev.
+        </p>
+      )}
       {svgBlock}
     </div>
   );

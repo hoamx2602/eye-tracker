@@ -9,6 +9,7 @@ import {
   GAZE_PATH_INTERVAL_MS,
 } from './constants';
 import { generateNumberPositions } from './utils';
+import { neuroDebugLog } from '@/lib/neuroDebugLog';
 
 const VISUAL_SEARCH_RESULT_LS_KEY = 'neuro_visual_search_result_v1';
 
@@ -38,11 +39,16 @@ export interface VisualSearchResult {
   scanningPath: Array<{ t: number; x: number; y: number }>;
   viewportWidth?: number;
   viewportHeight?: number;
+  /**
+   * Vùng lưới số (getBoundingClientRect) — cùng hệ với gaze (viewport px).
+   * Dùng để map % trong numberPositions → pixel đúng như lúc test (không phải full viewport).
+   */
+  stimulusBounds?: { left: number; top: number; width: number; height: number };
 }
 
 export default function VisualSearchTest() {
   const { config, completeTest } = useTestRunner();
-  const { gaze } = useNeuroGaze();
+  const { gaze, gazeModelReady } = useNeuroGaze();
   const gazeRef = useRef(gaze);
   gazeRef.current = gaze;
 
@@ -54,24 +60,34 @@ export default function VisualSearchTest() {
     [numberCount]
   );
 
+  const stimulusAreaRef = useRef<HTMLDivElement>(null);
   const startTimeRef = useRef<number>(0);
   const fixationsRef = useRef<VisualSearchFixation[]>([]);
   const sequenceRef = useRef<number[]>([]);
   const gazePathRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
   const lastInNumberRef = useRef<number | null>(null);
-  const pathIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** rAF ổn định hơn setInterval khi overlay fullscreen (timer bị throttle). */
+  const pathRafRef = useRef<number | null>(null);
+  const lastPathSampleAtRef = useRef(0);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.repeat) return;
       e.preventDefault();
       const endTime = performance.now();
+      const g = gazeRef.current;
+      const tRel = (endTime - startTimeRef.current) / 1000;
+      const pathSnapshot = [...gazePathRef.current, { t: tRel, x: g.x, y: g.y }];
+      const rect = stimulusAreaRef.current?.getBoundingClientRect();
+      const stimulusBounds = rect
+        ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+        : undefined;
       const fixationPerNumber = fixationsRef.current.reduce<Record<number, number>>((acc, fx) => {
         acc[fx.number] = (acc[fx.number] ?? 0) + 1;
         return acc;
       }, {});
       const gazeSequence = [...sequenceRef.current];
-      const scanningPath = [...gazePathRef.current];
+      const scanningPath = pathSnapshot;
       const completionTimeMs = endTime - startTimeRef.current;
       const payload = {
         testId: 'visual_search',
@@ -87,6 +103,7 @@ export default function VisualSearchTest() {
         scanningPath,
         viewportWidth: typeof window !== 'undefined' ? window.innerWidth : undefined,
         viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
+        stimulusBounds,
       };
       try {
         localStorage.setItem(
@@ -100,11 +117,17 @@ export default function VisualSearchTest() {
           })
         );
       } catch (_) {}
+      neuroDebugLog('[VisualSearch] complete', {
+        scanningPathLen: scanningPath.length,
+        fixations: fixationsRef.current.length,
+        hasStimulusBounds: Boolean(stimulusBounds),
+      });
       completeTest(payload);
     },
     [completeTest, positions]
   );
 
+  /** Không phụ thuộc handleKeyDown — tránh reset gazePath mỗi khi callback đổi (mất toàn bộ mẫu gaze). */
   useEffect(() => {
     startTimeRef.current = performance.now();
     fixationsRef.current = [];
@@ -125,32 +148,40 @@ export default function VisualSearchTest() {
       );
     } catch (_) {}
 
-    pathIntervalRef.current = setInterval(() => {
+    lastPathSampleAtRef.current = 0;
+    const loop = (now: number) => {
+      pathRafRef.current = requestAnimationFrame(loop);
+      if (now - lastPathSampleAtRef.current < GAZE_PATH_INTERVAL_MS) return;
+      lastPathSampleAtRef.current = now;
       const g = gazeRef.current;
-      const t = (performance.now() - startTimeRef.current) / 1000;
+      const t = (now - startTimeRef.current) / 1000;
       gazePathRef.current.push({ t, x: g.x, y: g.y });
-    }, GAZE_PATH_INTERVAL_MS);
+    };
+    pathRafRef.current = requestAnimationFrame(loop);
 
-    window.addEventListener('keydown', handleKeyDown);
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      if (pathIntervalRef.current) {
-        clearInterval(pathIntervalRef.current);
-        pathIntervalRef.current = null;
+      if (pathRafRef.current != null) {
+        cancelAnimationFrame(pathRafRef.current);
+        pathRafRef.current = null;
       }
     };
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
   // AOI check: which number is gaze inside? Run on interval to avoid too many updates
   useEffect(() => {
     const interval = setInterval(() => {
       const g = gazeRef.current;
-      const w = typeof window !== 'undefined' ? window.innerWidth : 1920;
-      const h = typeof window !== 'undefined' ? window.innerHeight : 1080;
+      const rect = stimulusAreaRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return;
       let found: number | null = null;
       for (const pos of positions) {
-        const centerX = (pos.x / 100) * w;
-        const centerY = (pos.y / 100) * h;
+        const centerX = rect.left + (pos.x / 100) * rect.width;
+        const centerY = rect.top + (pos.y / 100) * rect.height;
         if (Math.hypot(g.x - centerX, g.y - centerY) <= aoiRadiusPx) {
           found = pos.number;
           break;
@@ -185,7 +216,12 @@ export default function VisualSearchTest() {
       <p className="text-center text-gray-400 text-sm mt-4 mb-2">
         Look at each number in order (1 → 2 → … → {numberCount}). Press <kbd className="px-1.5 py-0.5 rounded bg-gray-700 font-mono">SPACE</kbd> when done.
       </p>
-      <div className="flex-1 relative">
+      {!gazeModelReady && (
+        <div className="mx-auto mb-2 max-w-xl rounded-lg border border-amber-700/55 bg-amber-950/45 px-3 py-2 text-center text-[11px] leading-relaxed text-amber-100">
+          Chưa có mô hình gaze trong session này — ứng dụng không ước lượng được tọa độ màn hình, chỉ ghi nhận (0,0), nên không có scanpath/AOI đúng nghĩa. Hoàn thành calibration (tracking) trước khi làm bài neurological.
+        </div>
+      )}
+      <div ref={stimulusAreaRef} className="flex-1 relative min-h-0">
         {positions.map((pos) => (
           <div
             key={pos.number}

@@ -4,6 +4,8 @@ import React, { useMemo } from 'react';
 import { getTargetPosition } from '../tests/saccadic/utils';
 import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
 import type { SaccadicCycleResult } from '../tests/saccadic/SaccadicTest';
+import { GazeHeatmapLayer, GazePathDirectionArrows } from './gazeVizSvg';
+import { useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
 
 type Props = {
   cycles: SaccadicCycleResult[];
@@ -146,8 +148,21 @@ export default function SaccadicResultsPreview({
       left: loc(left.x, left.y),
       right: loc(right.x, right.y),
       pathStr,
+      loc,
     };
   }, [cycles, vwRef, vhRef]);
+
+  const { showStimulusReplay, showGazeHeatmap } = useNeurologicalResultsViewOptions();
+
+  const allHeatPoints = useMemo(() => {
+    const out: { x: number; y: number }[] = [];
+    for (const cy of cycles) {
+      for (const s of cy.gazeSamples ?? []) {
+        out.push(overview.loc(s.x, s.y));
+      }
+    }
+    return out;
+  }, [cycles, overview]);
 
   if (!cycles?.length) {
     return <p className="text-slate-500 text-sm">No saccadic data.</p>;
@@ -162,27 +177,37 @@ export default function SaccadicResultsPreview({
         role="img"
         aria-label="Saccadic targets and gaze paths per cycle"
       >
-        <circle cx={overview.left.x} cy={overview.left.y} r={18} fill="rgb(245 158 11 / 0.35)" stroke="rgb(245 158 11)" strokeWidth="2" />
-        <circle cx={overview.right.x} cy={overview.right.y} r={18} fill="rgb(245 158 11 / 0.35)" stroke="rgb(245 158 11)" strokeWidth="2" />
-        <text x={overview.left.x} y={overview.left.y + 36} textAnchor="middle" fill="rgb(148 163 184)" fontSize="11">
-          L
-        </text>
-        <text x={overview.right.x} y={overview.right.y + 36} textAnchor="middle" fill="rgb(148 163 184)" fontSize="11">
-          R
-        </text>
+        {showStimulusReplay && (
+          <>
+            <circle cx={overview.left.x} cy={overview.left.y} r={18} fill="rgb(245 158 11 / 0.35)" stroke="rgb(245 158 11)" strokeWidth="2" />
+            <circle cx={overview.right.x} cy={overview.right.y} r={18} fill="rgb(245 158 11 / 0.35)" stroke="rgb(245 158 11)" strokeWidth="2" />
+            <text x={overview.left.x} y={overview.left.y + 36} textAnchor="middle" fill="rgb(148 163 184)" fontSize="11">
+              L
+            </text>
+            <text x={overview.right.x} y={overview.right.y + 36} textAnchor="middle" fill="rgb(148 163 184)" fontSize="11">
+              R
+            </text>
+          </>
+        )}
+        {showGazeHeatmap && <GazeHeatmapLayer points={allHeatPoints} />}
         {cycles.map((cy, i) => {
           const pts = overview.pathStr(cy.gazeSamples);
           if (!pts) return null;
           const hue = (i * 37) % 360;
+          const ptArr =
+            cy.gazeSamples?.map((s) => overview.loc(s.x, s.y)) ??
+            [];
           return (
-            <polyline
-              key={`${cy.onsetTime}-${i}`}
-              fill="none"
-              stroke={`hsl(${hue} 70% 60%)`}
-              strokeWidth="1.25"
-              opacity={0.85}
-              points={pts}
-            />
+            <g key={`${cy.onsetTime}-${i}`}>
+              <polyline
+                fill="none"
+                stroke={`hsl(${hue} 70% 60%)`}
+                strokeWidth="1.25"
+                opacity={0.85}
+                points={pts}
+              />
+              <GazePathDirectionArrows points={ptArr} step={10} fill={`hsl(${hue} 70% 55%)`} size={5} />
+            </g>
           );
         })}
       </ResultVizAspectSvg>

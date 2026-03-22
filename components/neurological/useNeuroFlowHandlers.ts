@@ -2,6 +2,11 @@
 
 import { useCallback } from 'react';
 import { PATHS } from '@/lib/paths';
+import {
+  NEURO_VERIFY_META_KEY,
+  NEURO_VERIFY_SNAPSHOT_KEY,
+  neuroVerifyAfterEachEnabled,
+} from '@/lib/neuroVerifyMode';
 import { SYMPTOM_QUESTIONS, type SymptomScores } from '@/lib/symptomAssessment';
 import { neurologicalRunsApi } from '@/services/api';
 import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
@@ -82,6 +87,8 @@ export function useNeuroFlowHandlers({
         return nextResults;
       });
       neuroDebugLog('test complete', testId, '→ merged keys', Object.keys(nextResults));
+      const pr = payload as Record<string, unknown>;
+      console.log('[Neuro][FlowHandler] payload for', testId, '→ keys:', Object.keys(pr), 'scanningPath:', (pr.scanningPath as unknown[])?.length ?? 'N/A', 'gazePath:', (pr.gazePath as unknown[])?.length ?? 'N/A', 'fixations:', (pr.fixations as unknown[])?.length ?? 'N/A');
       if (neuroRunId) {
         try {
           await neurologicalRunsApi.patch(neuroRunId, {
@@ -113,6 +120,32 @@ export function useNeuroFlowHandlers({
           })
         );
       } catch (_) {}
+
+      if (typeof window !== 'undefined' && neuroVerifyAfterEachEnabled()) {
+        try {
+          sessionStorage.setItem(NEURO_VERIFY_SNAPSHOT_KEY, JSON.stringify(nextResults));
+          sessionStorage.setItem(
+            NEURO_VERIFY_META_KEY,
+            JSON.stringify({
+              nextIdx,
+              order,
+              goToPost: nextIdx < 0,
+            })
+          );
+        } catch (e) {
+          neuroPersistWarn('verify mode: sessionStorage failed', e);
+        }
+        const vr = nextResults[testId] as { scanningPath?: unknown[]; fixations?: unknown[] } | undefined;
+        neuroDebugLog('verify mode → /neuro/done', testId, {
+          scanningPathLen: vr?.scanningPath?.length ?? 0,
+          fixationsLen: vr?.fixations?.length ?? 0,
+        });
+        pathSyncSourceRef.current = 'internal';
+        setNeuroPhase('done');
+        routerPush(`${PATHS.NEURO_DONE}?verify=1&focus=${encodeURIComponent(testId)}`);
+        return;
+      }
+
       if (nextIdx >= 0) {
         setCurrentNeuroTestIndex(nextIdx);
         setCurrentNeuroTestId(order[nextIdx]);
@@ -207,6 +240,7 @@ export function useNeuroFlowHandlers({
           console.error('Patch post scores failed', e);
         }
       }
+      setNeuroPhase('done');
       setNeuroPhase('done');
       pathSyncSourceRef.current = 'internal';
       routerPush(PATHS.NEURO_DONE);

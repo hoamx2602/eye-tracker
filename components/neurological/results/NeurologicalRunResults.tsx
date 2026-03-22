@@ -14,6 +14,7 @@ import SaccadicResultsPreview from './SaccadicResultsPreview';
 import PeripheralVisionResultsPreview from './PeripheralVisionResultsPreview';
 import NeurologicalResultParamsDrawer from './NeurologicalResultParamsDrawer';
 import { RESULT_CHART_PANEL_MIN, ResultVizSessionViewportProvider } from './resultVizLayout';
+import { NeurologicalResultsViewProvider, useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
 
 const DEFAULT_ORDER = [
   'head_orientation',
@@ -35,6 +36,33 @@ const TEST_LABELS: Record<string, string> = {
   peripheral_vision: 'Peripheral vision',
 };
 
+function NeurologicalResultsChartToolbar() {
+  const { showStimulusReplay, setShowStimulusReplay, showGazeHeatmap, setShowGazeHeatmap } =
+    useNeurologicalResultsViewOptions();
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-4 rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2 text-xs text-slate-300 sm:text-sm">
+      <label className="flex cursor-pointer items-center gap-2 select-none">
+        <input
+          type="checkbox"
+          className="rounded border-gray-600 bg-gray-900"
+          checked={showStimulusReplay}
+          onChange={(e) => setShowStimulusReplay(e.target.checked)}
+        />
+        <span>Tái hiện stimulus</span>
+      </label>
+      <label className="flex cursor-pointer items-center gap-2 select-none">
+        <input
+          type="checkbox"
+          className="rounded border-gray-600 bg-gray-900"
+          checked={showGazeHeatmap}
+          onChange={(e) => setShowGazeHeatmap(e.target.checked)}
+        />
+        <span>Heatmap gaze</span>
+      </label>
+    </div>
+  );
+}
+
 type Props = {
   neuroTestOrder: string[];
   neuroTestResults: Record<string, TestResultPayload>;
@@ -42,6 +70,8 @@ type Props = {
   loading: boolean;
   loadError: string | null;
   onRetry: () => void;
+  /** Mở step tương ứng testId (vd. verify sau một bài). */
+  initialFocusTestId?: string;
 };
 
 function asRecord(r: TestResultPayload): Record<string, unknown> {
@@ -66,9 +96,16 @@ function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly 
       (r.gazePath as Array<{ t: number; x: number; y: number }>) ??
       [];
     const numberPositions = (r.numberPositions as Array<{ number: number; x: number; y: number }>) ?? [];
+    console.log('[Neuro][Results] visual_search payload keys:', Object.keys(r), 'scanningPath.length:', scanningPath.length, 'numberPositions.length:', numberPositions.length, 'first 3 gaze samples:', scanningPath.slice(0, 3));
     const gazeFixationPerNumber = (r.gazeFixationPerNumber as Record<number, number>) ?? {};
     const sequence = (r.sequence as number[]) ?? (r.gazeSequence as number[]) ?? [];
     const completionTimeMs = Number(r.completionTimeMs ?? 0);
+    const fixations = (r.fixations as Array<{ number: number; timestamp: number; gazeX: number; gazeY: number }>) ?? [];
+    const stimulusBounds = r.stimulusBounds as
+      | { left: number; top: number; width: number; height: number }
+      | undefined;
+    const startTime = r.startTime as number | undefined;
+    const endTime = r.endTime as number | undefined;
     return (
       <VisualSearchResultsPreview
         completionTimeMs={completionTimeMs}
@@ -76,8 +113,12 @@ function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly 
         scanningPath={scanningPath}
         gazeFixationPerNumber={gazeFixationPerNumber}
         sequence={sequence}
+        fixations={fixations}
         viewportWidth={r.viewportWidth as number | undefined}
         viewportHeight={r.viewportHeight as number | undefined}
+        stimulusBounds={stimulusBounds}
+        startTime={startTime}
+        endTime={endTime}
         visualOnly={visualOnly}
       />
     );
@@ -85,11 +126,29 @@ function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly 
 
   if (testId === 'memory_cards') {
     const gazePath = (r.gazePath as Array<{ t: number; x: number; y: number }>) ?? [];
+    const board = (r.board as number[] | undefined) ?? undefined;
+    const cols = r.cols as number | undefined;
+    const rows = r.rows as number | undefined;
+    const gridRect = r.gridRect as
+      | { left: number; top: number; width: number; height: number }
+      | undefined;
+    const moves = r.moves as
+      | Array<{ card1Index: number; card2Index: number; match: boolean; timestamp: number }>
+      | undefined;
+    const startTime = r.startTime as number | undefined;
+    const completionTimeMs = r.completionTimeMs as number | undefined;
     return (
       <MemoryCardsGazePathPreview
         gazePath={gazePath}
+        board={board}
+        cols={cols}
+        rows={rows}
         viewportWidth={r.viewportWidth as number | undefined}
         viewportHeight={r.viewportHeight as number | undefined}
+        gridRect={gridRect}
+        moves={moves}
+        startTime={startTime}
+        completionTimeMs={completionTimeMs}
         visualOnly={visualOnly}
       />
     );
@@ -97,7 +156,14 @@ function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly 
 
   if (testId === 'anti_saccade') {
     const trials = (r.trials as AntiSaccadeTrialResult[]) ?? [];
-    return <AntiSaccadeGazeDirectionPreview trials={trials} visualOnly={visualOnly} />;
+    return (
+      <AntiSaccadeGazeDirectionPreview
+        trials={trials}
+        viewportWidth={r.viewportWidth as number | undefined}
+        viewportHeight={r.viewportHeight as number | undefined}
+        visualOnly={visualOnly}
+      />
+    );
   }
 
   if (testId === 'saccadic') {
@@ -157,6 +223,7 @@ export default function NeurologicalRunResults({
   loading,
   loadError,
   onRetry,
+  initialFocusTestId,
 }: Props) {
   const order = neuroTestOrder.length > 0 ? neuroTestOrder : [...DEFAULT_ORDER];
   const resultCount = Object.keys(neuroTestResults).length;
@@ -173,6 +240,12 @@ export default function NeurologicalRunResults({
       return Math.min(i, steps.length - 1);
     });
   }, [steps.length]);
+
+  useEffect(() => {
+    if (!initialFocusTestId) return;
+    const ix = steps.indexOf(initialFocusTestId);
+    if (ix >= 0) setStepIdx(ix);
+  }, [initialFocusTestId, steps]);
 
   const currentTestId = steps[stepIdx];
   const currentRaw = currentTestId ? neuroTestResults[currentTestId] : undefined;
@@ -219,7 +292,8 @@ export default function NeurologicalRunResults({
       )}
 
       {!loading && !loadError && totalSteps > 0 && currentTestId && currentRaw && (
-        <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3 sm:gap-4">
+        <NeurologicalResultsViewProvider>
+          <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3 sm:gap-4">
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pb-1 sm:pb-2">
             <h4 className="min-w-0 text-lg font-semibold text-white">
               {TEST_LABELS[currentTestId] ?? currentTestId}
@@ -246,6 +320,8 @@ export default function NeurologicalRunResults({
               )}
             </div>
           </div>
+
+          <NeurologicalResultsChartToolbar />
 
           <div className="flex min-h-0 flex-1 flex-col gap-2 sm:gap-3 lg:flex-row lg:items-stretch">
             <div
@@ -308,6 +384,7 @@ export default function NeurologicalRunResults({
             </div>
           </div>
         </div>
+        </NeurologicalResultsViewProvider>
       )}
     </div>
   );

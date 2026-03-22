@@ -3,6 +3,8 @@
 import React, { useMemo } from 'react';
 import { computeBceaForSamples } from '@/lib/bivariateEllipse';
 import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
+import { GazeHeatmapLayer, GazePathDirectionArrows } from './gazeVizSvg';
+import { useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
 
 type Sample = { t: number; x: number; y: number };
 
@@ -48,12 +50,14 @@ function subsample<T>(arr: T[], max: number): T[] {
 
 export default function FixationBceaPreview({
   gazeSamples,
-  viewportWidth: _viewportWidth,
-  viewportHeight: _viewportHeight,
+  viewportWidth: viewportWidthProp,
+  viewportHeight: viewportHeightProp,
   bcea68Px2,
   bcea95Px2,
   visualOnly,
 }: Props) {
+  const { showStimulusReplay, showGazeHeatmap } = useNeurologicalResultsViewOptions();
+
   const layout = useMemo(() => {
     const samples = gazeSamples ?? [];
     if (samples.length < 2) return null;
@@ -121,6 +125,12 @@ export default function FixationBceaPreview({
   }
 
   const pointsStr = layout.drawPts.map((p) => `${p.x},${p.y}`).join(' ');
+  const vwScreen = viewportWidthProp ?? 1920;
+  const vhScreen = viewportHeightProp ?? 1080;
+  const fixationCenterLocal = {
+    x: vwScreen / 2 - layout.vx0,
+    y: vhScreen / 2 - layout.vy0,
+  };
 
   const svgBlock = (
     <ResultVizMaxFrame>
@@ -131,6 +141,26 @@ export default function FixationBceaPreview({
         role="img"
         aria-label="Fixation gaze points and BCEA ellipses"
       >
+        {showStimulusReplay && (
+          <g aria-hidden>
+            <line
+              x1={fixationCenterLocal.x - 10}
+              y1={fixationCenterLocal.y}
+              x2={fixationCenterLocal.x + 10}
+              y2={fixationCenterLocal.y}
+              stroke="rgb(148 163 184 / 0.5)"
+              strokeWidth="1.5"
+            />
+            <line
+              x1={fixationCenterLocal.x}
+              y1={fixationCenterLocal.y - 10}
+              x2={fixationCenterLocal.x}
+              y2={fixationCenterLocal.y + 10}
+              stroke="rgb(148 163 184 / 0.5)"
+              strokeWidth="1.5"
+            />
+          </g>
+        )}
         {layout.b95ellipse && (
           <ellipse
             cx={layout.b95ellipse.cx}
@@ -155,12 +185,14 @@ export default function FixationBceaPreview({
             transform={`rotate(${layout.b68ellipse.rotDeg}, ${layout.b68ellipse.cx}, ${layout.b68ellipse.cy})`}
           />
         )}
+        {showGazeHeatmap && <GazeHeatmapLayer points={layout.drawPts} />}
         <polyline
           fill="none"
           stroke="rgb(148 163 184 / 0.35)"
           strokeWidth="1"
           points={pointsStr}
         />
+        <GazePathDirectionArrows points={layout.drawPts} step={12} fill="rgb(125 211 252)" size={5} />
       </ResultVizAspectSvg>
     </ResultVizMaxFrame>
   );

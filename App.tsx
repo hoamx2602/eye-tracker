@@ -5,6 +5,7 @@ import { flushSync } from 'react-dom';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PATHS, parsePathname } from '@/lib/paths';
 import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
+import { NEURO_VERIFY_META_KEY, NEURO_VERIFY_SNAPSHOT_KEY } from '@/lib/neuroVerifyMode';
 import {
   NEURO_PREVIEW_RUN_ID,
   getNeuroResultsPreviewMock,
@@ -175,6 +176,8 @@ function App() {
   const [accuracyScore, setAccuracyScore] = useState<number | null>(null);
   
   const [gazePos, setGazePos] = useState({ x: 0, y: 0 });
+  /** Regressor đã train — nếu false, predictGaze không có tọa độ thật, chỉ (0,0). */
+  const [gazeModelReady, setGazeModelReady] = useState(false);
   const [rawFeatures, setRawFeatures] = useState<EyeFeatures | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [trackingMode, setTrackingMode] = useState<TrackingMode>('free_gaze');
@@ -1262,6 +1265,7 @@ function App() {
       reset();
       return;
     }
+    setGazeModelReady(true);
 
     console.log(`[Calibration] Trained regressor with ${data.length} total samples (grid + exercises)`);
 
@@ -1301,6 +1305,7 @@ function App() {
             reset();
             return;
         }
+        setGazeModelReady(true);
 
         // Test mode: skip EXERCISES + VALIDATION, save session and go to Tracking after first phase
         if (CALIBRATION_TEST_MODE) {
@@ -1512,9 +1517,46 @@ function App() {
     setPreSymptomScores,
     setPostSymptomScores,
     pathSyncSourceRef,
-    routerPush: router.push,
+    routerPush: (url: string) => {
+      if (typeof window !== 'undefined') window.history.pushState(null, '', url);
+    },
     onStartRealTimeTracking: startRealTimeTracking,
   });
+
+  /** Sau màn /neuro/done?verify=1 — tiếp tục bài tiếp hoặc post-test (meta trong sessionStorage). */
+  const handleNeuroVerifyContinue = useCallback(() => {
+    try {
+      const raw = sessionStorage.getItem(NEURO_VERIFY_META_KEY);
+      try {
+        sessionStorage.removeItem(NEURO_VERIFY_SNAPSHOT_KEY);
+        sessionStorage.removeItem(NEURO_VERIFY_META_KEY);
+      } catch (_) {}
+      if (!raw) {
+        pathSyncSourceRef.current = 'internal';
+        if (typeof window !== 'undefined') window.history.replaceState(null, '', PATHS.NEURO_DONE);
+        return;
+      }
+      const meta = JSON.parse(raw) as { nextIdx: number; order: string[]; goToPost?: boolean };
+      const order =
+        Array.isArray(meta.order) && meta.order.length > 0 ? meta.order : neuroTestOrder.length > 0 ? neuroTestOrder : [...DEFAULT_NEURO_TEST_ORDER];
+      if (meta.goToPost === true || meta.nextIdx < 0) {
+        setNeuroPhase('post');
+        setCurrentNeuroTestId(null);
+        pathSyncSourceRef.current = 'internal';
+        if (typeof window !== 'undefined') window.history.replaceState(null, '', PATHS.NEURO_POST);
+        return;
+      }
+      setNeuroPhase('tests');
+      setCurrentNeuroTestIndex(meta.nextIdx);
+      setCurrentNeuroTestId(order[meta.nextIdx]);
+      pathSyncSourceRef.current = 'internal';
+      if (typeof window !== 'undefined') window.history.replaceState(null, '', PATHS.NEURO_TEST(order[meta.nextIdx]));
+    } catch (e) {
+      neuroPersistWarn('verify continue failed', e);
+      pathSyncSourceRef.current = 'internal';
+      if (typeof window !== 'undefined') window.history.replaceState(null, '', PATHS.NEURO_DONE);
+    }
+  }, [router, neuroTestOrder, setNeuroPhase, setCurrentNeuroTestIndex, setCurrentNeuroTestId]);
 
   const handleChooseNeurological = useCallback(async () => {
     setStatus('NEURO_FLOW');
@@ -1554,7 +1596,7 @@ function App() {
       });
       setNeuroRunStatus('ready');
       pathSyncSourceRef.current = 'internal';
-      router.push(PATHS.NEURO_PRE);
+      if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_PRE);
     } catch (e) {
       console.error('Create neuro run failed', e);
       setNeuroRunStatus('error');
@@ -1639,6 +1681,23 @@ function App() {
       setNeuroResultsLoadError(null);
       return;
     }
+    if (searchParams.get('verify') === '1' && typeof window !== 'undefined') {
+      try {
+        const snap = sessionStorage.getItem(NEURO_VERIFY_SNAPSHOT_KEY);
+        if (snap) {
+          const parsed = JSON.parse(snap) as Record<string, TestResultPayload>;
+          if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+            setNeuroTestResults(parsed);
+            setNeuroResultsLoading(false);
+            setNeuroResultsLoadError(null);
+            neuroDebugLog('verify: snapshot → state', Object.keys(parsed));
+            return;
+          }
+        }
+      } catch (e) {
+        neuroPersistWarn('verify: snapshot failed', e);
+      }
+    }
     if (!neuroRunId) {
       const resolved = resolveNeuroRunIdFromStorage();
       if (resolved) {
@@ -1720,7 +1779,14 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [neuroPhase, neuroRunId, neuroResultsFetchKey, readNeuroTestResultsFromProgressLs, resolveNeuroRunIdFromStorage]);
+  }, [
+    neuroPhase,
+    neuroRunId,
+    neuroResultsFetchKey,
+    readNeuroTestResultsFromProgressLs,
+    resolveNeuroRunIdFromStorage,
+    searchParams,
+  ]);
 
   const handlePostSubmitRequested = useCallback(async (scores: SymptomScores) => {
     setPendingPostSymptomScores(scores);
@@ -1807,7 +1873,7 @@ function App() {
     }
     setNeuroPhase('done');
     pathSyncSourceRef.current = 'internal';
-    router.push(PATHS.NEURO_DONE);
+    if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_DONE);
     setShowPostSubmitConfirm(false);
     setPendingPostSymptomScores(null);
   }, [
@@ -1842,14 +1908,14 @@ function App() {
       setNeuroPhase('post');
       setCurrentNeuroTestId(null);
       pathSyncSourceRef.current = 'internal';
-      router.push(PATHS.NEURO_POST);
+      if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_POST);
       return;
     }
     setNeuroPhase('tests');
     setCurrentNeuroTestIndex(idx);
     setCurrentNeuroTestId(order[idx]);
     pathSyncSourceRef.current = 'internal';
-    router.push(PATHS.NEURO_TEST(order[idx]));
+    if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_TEST(order[idx]));
   }, [neuroTestOrder, neuroConfigSnapshot?.testEnabled, NEURO_TEST_PROGRESS_LS_KEY, router]);
 
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
@@ -1860,6 +1926,9 @@ function App() {
     
     // Smoother has config injected already
     const smoothed = smootherRef.current.process(prediction.x, prediction.y, timestamp);
+    if (Math.random() < 0.05) { // throttle log
+      console.log(`[NeuroGaze] inputVector len=${inputVector.length}, method=${configRef.current.regressionMethod}, pred=`, prediction, ` smoothed=`, smoothed, ` hasModel=`, hybridRegressorRef.current.hasTrainedModel());
+    }
     setGazePos(smoothed);
 
     if (statusRef.current === 'TRACKING') {
@@ -1905,6 +1974,7 @@ function App() {
     trainingSamplesRef.current = [];
     setTrainingData([]);
     hybridRegressorRef.current = new HybridRegressor();
+    setGazeModelReady(false);
     smootherRef.current.reset();
     validationErrorsRef.current = [];
     setAccuracyScore(null);
@@ -2032,6 +2102,7 @@ function App() {
     trainingSamplesRef.current = [];
     trackingHistoryRef.current = [];
     hybridRegressorRef.current = new HybridRegressor();
+    setGazeModelReady(false);
     setShowHeatmap(false);
     // Reset exercise state
     setCurrentExerciseIndex(0);
@@ -2127,7 +2198,9 @@ function App() {
         onSetCapturedImageModalIndex={setCapturedImageModalIndex}
         onSetRunMode={setRunMode}
         onSetShowConsentModal={setShowConsentModal}
-        onGoHome={() => router.push(PATHS.HOME)}
+        onGoHome={() => {
+          if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.HOME);
+        }}
         onChooseRealTime={startRealTimeTracking}
         onChooseNeurological={handleChooseNeurological}
         onPointMouseDown={handlePointMouseDown}
@@ -2152,6 +2225,7 @@ function App() {
         neuroConfigSnapshot={neuroConfigSnapshot}
         neuroHeadPose={neuroHeadPose}
         gazePos={gazePos}
+        gazeModelReady={gazeModelReady}
         neuroTestResults={neuroTestResults}
         neuroResultsLoading={neuroResultsLoading}
         neuroResultsLoadError={neuroResultsLoadError}
@@ -2168,6 +2242,15 @@ function App() {
           setShowPostSubmitConfirm(false);
           setPendingPostSymptomScores(null);
         }}
+        neuroVerifyBanner={
+          neuroPhase === 'done' && searchParams.get('verify') === '1'
+            ? {
+                focusTestId: searchParams.get('focus') ?? '',
+                onContinue: handleNeuroVerifyContinue,
+              }
+            : null
+        }
+        resultsInitialFocusTestId={searchParams.get('verify') === '1' ? searchParams.get('focus') : null}
       />
 
     </div>
