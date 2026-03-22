@@ -5,7 +5,7 @@ export const PERIPHERAL_VISION_GUIDE_STEPS: GuideStep[] = [
   {
     id: '1',
     title: 'Peripheral Vision',
-    body: 'Keep your gaze on the center dot. A small stimulus will flash at the edge of the screen. Press SPACE as soon as you detect it.',
+    body: 'Keep your gaze on the center dot. A small stimulus will flash at a random position near the edge of the screen. Press SPACE as soon as you detect it.',
   },
   {
     id: '2',
@@ -18,7 +18,11 @@ export const PERIPHERAL_VISION_GUIDE_STEPS: GuideStep[] = [
   },
 ];
 
+/** Legacy: bốn hướng cố định (run cũ). Stimulus mới dùng stimulusX/Y. */
 export type PeripheralZone = 'top' | 'bottom' | 'left' | 'right';
+
+/** Khoảng cách tối thiểu từ mép viewport tới tâm stimulus (tỉ lệ 0–0.5). */
+export const PERIPHERAL_STIMULUS_MARGIN_FRAC = 0.12;
 
 /** Number of trials in the main test. */
 export const DEFAULT_TRIAL_COUNT = 16;

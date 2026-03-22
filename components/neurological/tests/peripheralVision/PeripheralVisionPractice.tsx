@@ -7,21 +7,24 @@ import {
   DEFAULT_MAX_DELAY_MS,
   PRACTICE_TRIALS,
 } from './constants';
-import { generateTrialZones } from './utils';
+import { randomPeripheralStimulusPosition } from './utils';
 
 /**
  * Practice: a few peripheral stimuli, same UI, no recording.
  */
 export default function PeripheralVisionPractice() {
-  const zones = useRef(generateTrialZones(PRACTICE_TRIALS)).current;
+  const boxRef = useRef<HTMLDivElement>(null);
   const [trialIndex, setTrialIndex] = useState(0);
   const [showStimulus, setShowStimulus] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const zone = zones[trialIndex];
+  const [stimulusPos, setStimulusPos] = useState({ x: 200, y: 96 });
 
   useEffect(() => {
     if (trialIndex >= PRACTICE_TRIALS) return;
+    const el = boxRef.current;
+    const w = el?.clientWidth ?? 400;
+    const h = el?.clientHeight ?? 192;
+    setStimulusPos(randomPeripheralStimulusPosition(w, h));
     const delayMs = DEFAULT_MIN_DELAY_MS + Math.random() * (DEFAULT_MAX_DELAY_MS - DEFAULT_MIN_DELAY_MS);
     timeoutRef.current = setTimeout(() => {
       setShowStimulus(true);
@@ -47,8 +50,7 @@ export default function PeripheralVisionPractice() {
       <p className="text-gray-400 text-sm mb-4">
         Keep gaze on center. A flash will appear at the edge. Trial {trialIndex + 1} of {PRACTICE_TRIALS}.
       </p>
-      <div className="relative w-full h-48" style={{ maxWidth: 400 }}>
-        {/* Center dot and stimulus use same logic as test; parent is viewport-sized in real test */}
+      <div ref={boxRef} className="relative w-full h-48" style={{ maxWidth: 400 }}>
         <div
           className="absolute w-2 h-2 rounded-full bg-amber-400"
           style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)', marginLeft: -4, marginTop: -4 }}
@@ -57,8 +59,8 @@ export default function PeripheralVisionPractice() {
           <div
             className="absolute w-4 h-4 rounded-full bg-white border border-gray-300"
             style={{
-              left: zone === 'left' ? '10%' : zone === 'right' ? '90%' : '50%',
-              top: zone === 'top' ? '15%' : zone === 'bottom' ? '85%' : '50%',
+              left: stimulusPos.x,
+              top: stimulusPos.y,
               transform: 'translate(-50%, -50%)',
             }}
           />

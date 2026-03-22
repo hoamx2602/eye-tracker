@@ -214,10 +214,25 @@ function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly 
 
   if (testId === 'peripheral_vision') {
     const trials = (r.trials as PeripheralVisionTrialResult[]) ?? [];
-    const metrics = r.metrics as { avgRT?: number; accuracy?: number; centerStability?: number } | undefined;
+    const metrics = r.metrics as
+      | {
+          avgRT?: number;
+          accuracy?: number;
+          centerStability?: number;
+          avgCenteringDistancePx?: number;
+          avgCenteringStdPx?: number;
+        }
+      | undefined;
+    const scanningPath =
+      (r.scanningPath as Array<{ t: number; x: number; y: number }> | undefined) ??
+      (r.gazePath as Array<{ t: number; x: number; y: number }> | undefined);
     return (
       <PeripheralVisionResultsPreview
         trials={trials}
+        startTime={r.startTime as number | undefined}
+        endTime={r.endTime as number | undefined}
+        scanningPath={scanningPath}
+        stimulusDurationMs={r.stimulusDurationMs as number | undefined}
         metrics={metrics}
         viewportWidth={r.viewportWidth as number | undefined}
         viewportHeight={r.viewportHeight as number | undefined}

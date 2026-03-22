@@ -1,34 +1,62 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
-import { getStimulusPosition } from '../tests/peripheralVision/utils';
-import type { PeripheralZone } from '../tests/peripheralVision/constants';
+import React, { useMemo, useState } from 'react';
+import {
+  RESULT_VIZ_OUTER,
+  ResultVizAspectSvg,
+  ResultVizMaxFrame,
+  useResultVizInnerFrameStyle,
+} from './resultVizLayout';
+import {
+  getTrialStimulusPixelPosition,
+  stimulusAngleDegFromCenter,
+} from '../tests/peripheralVision/utils';
 import type { PeripheralVisionTrialResult } from '../tests/peripheralVision/PeripheralVisionTest';
 import { GazeHeatmapLayer, GazePathDirectionArrows } from './gazeVizSvg';
 import { useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
+import { detectAndMapGazeToViewport } from '@/lib/visualSearchGazeCoords';
 
 type Props = {
   trials: PeripheralVisionTrialResult[];
+  startTime?: number;
+  endTime?: number;
+  scanningPath?: Array<{ t: number; x: number; y: number }>;
+  stimulusDurationMs?: number;
   metrics?: {
     avgRT?: number;
     accuracy?: number;
     centerStability?: number;
+    avgCenteringDistancePx?: number;
+    avgCenteringStdPx?: number;
   };
   viewportWidth?: number;
   viewportHeight?: number;
   visualOnly?: boolean;
 };
 
+type MappedTrial = PeripheralVisionTrialResult & {
+  mappedSamples: Array<{ t: number; x: number; y: number }>;
+};
+
+function globalSampleTimeSec(tr: PeripheralVisionTrialResult, s: { t: number }, testStartMs: number): number {
+  const startMs = tr.trialStartTime ?? tr.stimulusOnsetTime;
+  return (startMs - testStartMs) / 1000 + s.t;
+}
+
 export function PeripheralParamsSection({
   trials,
   metrics,
-}: Pick<Props, 'trials' | 'metrics'>) {
+  viewportWidth: vwProp,
+  viewportHeight: vhProp,
+}: Pick<Props, 'trials' | 'metrics' | 'viewportWidth' | 'viewportHeight'>) {
+  const vw = vwProp ?? 1920;
+  const vh = vhProp ?? 1080;
   if (!trials?.length) {
     return <p className="text-slate-500 text-sm">No peripheral vision trials.</p>;
   }
 
   const hits = trials.filter((t) => t.hit).length;
+  const hasCentering = trials.some((t) => t.centeringMeanDistancePx != null);
 
   return (
     <div className="space-y-4">
@@ -45,10 +73,22 @@ export function PeripheralParamsSection({
             <span className="font-mono text-emerald-400">{metrics.accuracy.toFixed(1)}%</span>
           </span>
         )}
-        {metrics?.centerStability != null && (
+        {metrics?.avgCenteringDistancePx != null && (
           <span>
-            Mean dist. center→gaze:{' '}
-            <span className="font-mono text-slate-200">{metrics.centerStability.toFixed(1)} px</span>
+            Gaze stability at center (delay, mean dist.):{' '}
+            <span className="font-mono text-amber-300">{metrics.avgCenteringDistancePx.toFixed(1)} px</span>
+          </span>
+        )}
+        {metrics?.avgCenteringStdPx != null && (
+          <span>
+            Mean σ distance (delay):{' '}
+            <span className="font-mono text-slate-200">{metrics.avgCenteringStdPx.toFixed(1)} px</span>
+          </span>
+        )}
+        {metrics?.centerStability != null && (
+          <span className="text-slate-500">
+            Mean dist. all samples (legacy):{' '}
+            <span className="font-mono text-slate-400">{metrics.centerStability.toFixed(1)} px</span>
           </span>
         )}
         <span className="text-slate-500">
@@ -57,22 +97,42 @@ export function PeripheralParamsSection({
       </div>
 
       <div className="max-h-[min(50vh,360px)] overflow-y-auto rounded-lg border border-gray-800">
-        <table className="w-full min-w-[280px] text-left text-xs text-slate-300">
+        <table className="w-full min-w-[320px] text-left text-xs text-slate-300">
           <thead className="sticky top-0 bg-gray-900/95 text-slate-400">
             <tr>
               <th className="px-2 py-2 font-medium">#</th>
-              <th className="px-2 py-2 font-medium">Zone</th>
+              <th className="px-2 py-2 font-medium">Angle (°)</th>
               <th className="px-2 py-2 font-medium">Hit</th>
               <th className="px-2 py-2 font-medium">RT (ms)</th>
+              {hasCentering && (
+                <>
+                  <th className="px-2 py-2 font-medium">Center μ</th>
+                  <th className="px-2 py-2 font-medium">Center σ</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {trials.map((t, i) => (
               <tr key={`${t.stimulusOnsetTime}-${i}`} className="border-t border-gray-800">
                 <td className="px-2 py-1.5 font-mono text-slate-500">{i + 1}</td>
-                <td className="px-2 py-1.5 font-medium capitalize">{t.stimulusPosition}</td>
-                <td className="px-2 py-1.5">{t.hit ? <span className="text-emerald-400">Yes</span> : <span className="text-rose-400">No</span>}</td>
+                <td className="px-2 py-1.5 font-mono text-slate-200">
+                  {Math.round(stimulusAngleDegFromCenter(t, vw, vh))}°
+                </td>
+                <td className="px-2 py-1.5">
+                  {t.hit ? <span className="text-emerald-400">Yes</span> : <span className="text-rose-400">No</span>}
+                </td>
                 <td className="px-2 py-1.5 font-mono">{t.rtMs != null ? t.rtMs.toFixed(0) : '—'}</td>
+                {hasCentering && (
+                  <>
+                    <td className="px-2 py-1.5 font-mono text-amber-200/90">
+                      {t.centeringMeanDistancePx != null ? t.centeringMeanDistancePx.toFixed(1) : '—'}
+                    </td>
+                    <td className="px-2 py-1.5 font-mono text-slate-400">
+                      {t.centeringStdDistancePx != null ? t.centeringStdDistancePx.toFixed(1) : '—'}
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
@@ -84,27 +144,68 @@ export function PeripheralParamsSection({
 
 export default function PeripheralVisionResultsPreview({
   trials,
+  startTime: startTimeProp,
+  endTime: endTimeProp,
+  scanningPath,
+  stimulusDurationMs: stimulusDurationMsProp,
   metrics,
   viewportWidth,
   viewportHeight,
   visualOnly,
 }: Props) {
+  const innerFrame = useResultVizInnerFrameStyle();
   const { showStimulusReplay, showGazeHeatmap } = useNeurologicalResultsViewOptions();
+
   const vw = viewportWidth ?? 1920;
   const vh = viewportHeight ?? 1080;
   const center = { x: vw / 2, y: vh / 2 };
+  const stimulusDurationSec = (stimulusDurationMsProp ?? 300) / 1000;
 
-  const zones = useMemo(() => {
-    const list: PeripheralZone[] = ['top', 'bottom', 'left', 'right'];
-    return list.map((z) => ({
-      z,
-      pos: getStimulusPosition(z, vw, vh),
-    }));
-  }, [vw, vh]);
+  const testStartMs = useMemo(() => {
+    if (typeof startTimeProp === 'number' && Number.isFinite(startTimeProp)) return startTimeProp;
+    return trials[0]?.trialStartTime ?? trials[0]?.stimulusOnsetTime ?? 0;
+  }, [startTimeProp, trials]);
+
+  const durationSec = useMemo(() => {
+    if (
+      typeof startTimeProp === 'number' &&
+      typeof endTimeProp === 'number' &&
+      Number.isFinite(startTimeProp) &&
+      Number.isFinite(endTimeProp) &&
+      endTimeProp >= startTimeProp
+    ) {
+      return (endTimeProp - startTimeProp) / 1000;
+    }
+    let maxT = 0;
+    for (const tr of trials) {
+      for (const s of tr.gazeSamples ?? []) {
+        const g = globalSampleTimeSec(tr, s, testStartMs);
+        if (g > maxT) maxT = g;
+      }
+    }
+    return maxT;
+  }, [trials, startTimeProp, endTimeProp, testStartMs]);
+
+  const [replayTimeSec, setReplayTimeSec] = useState<number | null>(null);
+  const effectiveReplay = replayTimeSec ?? durationSec;
 
   const layout = useMemo(() => {
     if (!trials?.length) return null;
     const pad = 40;
+    const allGazePts = trials.flatMap((t) => t.gazeSamples ?? []);
+    const { mode } = detectAndMapGazeToViewport(allGazePts, vw, vh);
+
+    const mapPt = (p: { t: number; x: number; y: number }) => {
+      if (mode === 'normalized01') return { ...p, x: p.x * vw, y: p.y * vh };
+      if (mode === 'percent100') return { ...p, x: (p.x / 100) * vw, y: (p.y / 100) * vh };
+      return p;
+    };
+
+    const mappedTrials: MappedTrial[] = trials.map((tr) => ({
+      ...tr,
+      mappedSamples: (tr.gazeSamples ?? []).map((s) => mapPt(s)),
+    }));
+
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
@@ -116,11 +217,12 @@ export default function PeripheralVisionResultsPreview({
       maxY = Math.max(maxY, y);
     };
     expand(center.x, center.y);
-    for (const { pos } of zones) {
-      expand(pos.x, pos.y);
+    for (const tr of trials) {
+      const sp = getTrialStimulusPixelPosition(tr, vw, vh);
+      expand(sp.x, sp.y);
     }
-    for (const t of trials) {
-      for (const s of t.gazeSamples ?? []) {
+    for (const mt of mappedTrials) {
+      for (const s of mt.mappedSamples) {
         expand(s.x, s.y);
       }
     }
@@ -137,21 +239,35 @@ export default function PeripheralVisionResultsPreview({
     const viewW = Math.max(maxX - minX, 200);
     const viewH = Math.max(maxY - minY, 200);
     const loc = (x: number, y: number) => ({ x: x - minX, y: y - minY });
+
     const allHeat: { x: number; y: number }[] = [];
-    for (const t of trials) {
-      for (const s of t.gazeSamples ?? []) {
+    for (const mt of mappedTrials) {
+      for (const s of mt.mappedSamples) {
         allHeat.push(loc(s.x, s.y));
       }
     }
+
     return {
       viewW,
       viewH,
       loc,
       centerL: loc(center.x, center.y),
-      zonesL: zones.map(({ z, pos }) => ({ z, pos: loc(pos.x, pos.y) })),
+      stimulusMarkersL: trials.map((tr) => {
+        const sp = getTrialStimulusPixelPosition(tr, vw, vh);
+        return loc(sp.x, sp.y);
+      }),
       allHeat,
+      mappedTrials,
     };
-  }, [trials, vw, vh, zones, center.x, center.y]);
+  }, [trials, vw, vh, center.x, center.y]);
+
+  const totalGazeSamples = trials.reduce((n, t) => n + (t.gazeSamples?.length ?? 0), 0) || (scanningPath?.length ?? 0);
+
+  const flashActiveForTrial = (tr: PeripheralVisionTrialResult): boolean => {
+    const flashStart = (tr.stimulusOnsetTime - testStartMs) / 1000;
+    const flashEnd = flashStart + stimulusDurationSec;
+    return effectiveReplay >= flashStart - 1e-6 && effectiveReplay < flashEnd;
+  };
 
   if (!trials?.length) {
     return <p className="text-slate-500 text-sm">No peripheral vision trials.</p>;
@@ -168,43 +284,88 @@ export default function PeripheralVisionResultsPreview({
         contentHeight={layout.viewH}
         panelFill="rgb(15 23 42 / 0.35)"
         role="img"
-        aria-label="Peripheral stimulus zones and gaze paths"
+        aria-label="Peripheral vision gaze replay"
       >
         {showStimulusReplay && (
           <>
             <circle cx={layout.centerL.x} cy={layout.centerL.y} r={10} fill="rgb(245 158 11 / 0.9)" />
-            {layout.zonesL.map(({ z, pos }) => (
-              <circle
-                key={z}
-                cx={pos.x}
-                cy={pos.y}
-                r={14}
-                fill="rgb(255 255 255 / 0.08)"
-                stroke="rgb(148 163 184 / 0.6)"
-                strokeWidth="1"
-              />
-            ))}
             <text x={layout.centerL.x} y={layout.centerL.y - 20} textAnchor="middle" fill="rgb(148 163 184)" fontSize="12">
               Center
             </text>
+            {trials.map((tr, i) => {
+              const pos = layout.stimulusMarkersL[i];
+              if (!pos) return null;
+              const flashOn = flashActiveForTrial(tr);
+              return (
+                <circle
+                  key={`${tr.stimulusOnsetTime}-${i}`}
+                  cx={pos.x}
+                  cy={pos.y}
+                  r={flashOn ? 18 : 14}
+                  fill={flashOn ? 'rgb(255 255 255 / 0.35)' : 'rgb(255 255 255 / 0.08)'}
+                  stroke={flashOn ? 'rgb(251 191 36)' : 'rgb(148 163 184 / 0.6)'}
+                  strokeWidth={flashOn ? 2.5 : 1}
+                />
+              );
+            })}
           </>
         )}
-        {showGazeHeatmap && <GazeHeatmapLayer points={layout.allHeat} />}
-        {trials.map((t, i) => {
-          const samples = t.gazeSamples ?? [];
-          if (samples.length === 0) return null;
-          const pts = samples.map((s) => layout.loc(s.x, s.y));
+        {showGazeHeatmap && (
+          <GazeHeatmapLayer
+            points={layout.mappedTrials.flatMap((mt, i) => {
+              const tr = trials[i];
+              return mt.mappedSamples
+                .filter((s) => globalSampleTimeSec(tr, s, testStartMs) <= effectiveReplay)
+                .map((s) => layout.loc(s.x, s.y));
+            })}
+          />
+        )}
+        {layout.mappedTrials.map((mt, i) => {
+          const tr = trials[i];
+          const filtered = mt.mappedSamples.filter(
+            (s) => globalSampleTimeSec(tr, s, testStartMs) <= effectiveReplay
+          );
+          if (filtered.length === 0) return null;
+          const pts = filtered.map((s) => layout.loc(s.x, s.y));
           const ptsStr = pts.map((p) => `${p.x},${p.y}`).join(' ');
           const hue = (i * 41) % 360;
+          const stroke = `hsl(${hue} 72% 62%)`;
           return (
-            <g key={`${t.stimulusOnsetTime}-${i}`}>
-              <polyline
-                fill="none"
-                stroke={`hsl(${hue} 65% 58%)`}
-                strokeWidth="1.25"
-                opacity={0.88}
-                points={ptsStr}
-              />
+            <g key={`${tr.stimulusOnsetTime}-${i}`}>
+              {pts.length >= 2 ? (
+                <>
+                  <polyline
+                    fill="none"
+                    stroke="rgb(15 23 42)"
+                    strokeWidth={5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity={0.85}
+                    vectorEffect="nonScalingStroke"
+                    points={ptsStr}
+                  />
+                  <polyline
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={3}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity={0.95}
+                    vectorEffect="nonScalingStroke"
+                    points={ptsStr}
+                  />
+                </>
+              ) : (
+                <circle
+                  cx={pts[0].x}
+                  cy={pts[0].y}
+                  r={5}
+                  fill={stroke}
+                  stroke="rgb(15 23 42)"
+                  strokeWidth={1.5}
+                  vectorEffect="nonScalingStroke"
+                />
+              )}
               <GazePathDirectionArrows points={pts} step={10} fill={`hsl(${hue} 65% 55%)`} size={5} />
             </g>
           );
@@ -215,21 +376,54 @@ export default function PeripheralVisionResultsPreview({
 
   if (visualOnly) {
     return (
-      <div className="relative flex min-h-0 max-h-full w-full min-w-0 shrink flex-col overflow-hidden">
-        {svgBlock}
-        <p className="pointer-events-none absolute bottom-2 left-2 right-2 text-center text-[10px] leading-snug text-slate-500/95 sm:text-xs">
-          Đường màu = gaze theo trial; bật &quot;Tái hiện stimulus&quot; để xem tâm và các vùng; heatmap tùy chọn. Chi tiết trong Tham số.
-        </p>
+      <div className={RESULT_VIZ_OUTER}>
+        <div
+          className={`${innerFrame.className} relative flex min-h-0 flex-col overflow-hidden`}
+          style={innerFrame.style}
+        >
+          <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
+            <span className="text-slate-400">Nét màu = gaze theo trial.</span> Vòng sáng = vị trí flash (ngẫu nhiên theo trial). Ổn định tâm (delay) trong{' '}
+            <strong>Tham số</strong>.
+          </p>
+          {totalGazeSamples === 0 && (
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4 pt-10">
+              <p className="max-w-md rounded-lg border border-amber-800/60 bg-amber-950/90 px-3 py-2.5 text-center text-xs text-amber-50/95 shadow-lg">
+                Không có mẫu gaze — không thể vẽ đường đi.
+              </p>
+            </div>
+          )}
+          <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 pt-9 sm:px-3">
+            <div className="min-h-0 flex-1 overflow-hidden">{svgBlock}</div>
+          </div>
+          {durationSec > 0 && (
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-800 bg-gray-900/40 px-3 pb-3 pt-3 text-xs text-slate-400 sm:px-4 sm:pb-4">
+              <span className="shrink-0 w-28 whitespace-nowrap">Thời điểm tái hiện</span>
+              <input
+                type="range"
+                min={0}
+                max={durationSec}
+                step={0.01}
+                value={Math.min(effectiveReplay, durationSec)}
+                onChange={(e) => setReplayTimeSec(Number(e.target.value))}
+                className="min-w-0 flex-1 accent-sky-500"
+              />
+              <span className="shrink-0 w-[4.5rem] text-right font-mono text-[10px] leading-[13px] tracking-tight">
+                {effectiveReplay.toFixed(1)}s <br />
+                <span className="text-slate-600"> {durationSec.toFixed(1)}s</span>
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <PeripheralParamsSection trials={trials} metrics={metrics} />
+      <PeripheralParamsSection trials={trials} metrics={metrics} viewportWidth={vw} viewportHeight={vh} />
       {svgBlock}
       <p className="text-xs text-slate-500">
-        Gaze path per trial (screen coordinates); toggle stimulus overlay and heatmap in the toolbar above.
+        Gaze path per trial; flash highlight follows stimulus timing. Toggle heatmap in the toolbar.
       </p>
     </div>
   );

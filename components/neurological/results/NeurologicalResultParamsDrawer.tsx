@@ -102,8 +102,23 @@ function renderParamsForTest(testId: string, r: Record<string, unknown>): React.
 
   if (testId === 'peripheral_vision') {
     const trials = (r.trials as PeripheralVisionTrialResult[]) ?? [];
-    const metrics = r.metrics as { avgRT?: number; accuracy?: number; centerStability?: number } | undefined;
-    return <PeripheralParamsSection trials={trials} metrics={metrics} />;
+    const metrics = r.metrics as
+      | {
+          avgRT?: number;
+          accuracy?: number;
+          centerStability?: number;
+          avgCenteringDistancePx?: number;
+          avgCenteringStdPx?: number;
+        }
+      | undefined;
+    return (
+      <PeripheralParamsSection
+        trials={trials}
+        metrics={metrics}
+        viewportWidth={r.viewportWidth as number | undefined}
+        viewportHeight={r.viewportHeight as number | undefined}
+      />
+    );
   }
 
   return <p className="text-slate-500 text-sm">Không có tham số cho bài này.</p>;

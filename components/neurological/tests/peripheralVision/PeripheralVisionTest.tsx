@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroGaze } from '../../NeuroGazeContext';
 import {
@@ -10,31 +10,78 @@ import {
   DEFAULT_TRIAL_COUNT,
   GAZE_SAMPLE_INTERVAL_MS,
   RESPONSE_WINDOW_MS,
-  type PeripheralZone,
 } from './constants';
-import { generateTrialZones, getStimulusPosition } from './utils';
+import { randomPeripheralStimulusPosition } from './utils';
 import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 
 export interface PeripheralVisionTrialResult {
+  /** performance.now() lúc bắt đầu trial (delay). `t` trong gazeSamples tính từ đây. */
+  trialStartTime?: number;
   stimulusOnsetTime: number;
-  stimulusPosition: PeripheralZone;
+  /** Tâm stimulus (px, viewport). Run mới luôn có; run cũ có thể chỉ có `stimulusPosition`. */
+  stimulusX?: number;
+  stimulusY?: number;
+  /** @deprecated Chỉ run cũ (4 hướng cố định). */
+  stimulusPosition?: import('./constants').PeripheralZone;
   spacePressedTime?: number;
   rtMs?: number;
   hit: boolean;
   gazeSamples: Array<{ t: number; x: number; y: number }>;
+  /** Khoảng cách trung bình tới tâm màn hình trong giai đoạn delay (trước flash) — px. */
+  centeringMeanDistancePx?: number;
+  /** Độ lệch chuẩn khoảng cách tới tâm trong delay — px (nhỏ hơn = ổn định hơn). */
+  centeringStdDistancePx?: number;
 }
+
+export type PeripheralScanningPoint = { t: number; x: number; y: number };
 
 export interface PeripheralVisionResult {
   startTime: number;
   endTime: number;
   trials: PeripheralVisionTrialResult[];
+  scanningPath?: PeripheralScanningPoint[];
+  gazePath?: PeripheralScanningPoint[];
+  /** Thời gian hiển thị stimulus (ms) — dùng replay flash. */
+  stimulusDurationMs?: number;
   viewportWidth?: number;
   viewportHeight?: number;
   metrics?: {
     avgRT?: number;
     accuracy?: number;
+    /** Trung bình khoảng cách gaze→tâm trên toàn bộ mẫu (legacy). */
     centerStability?: number;
+    /** Trung bình (theo trial) của centeringMeanDistancePx — ổn định nhìn tâm trong delay. */
+    avgCenteringDistancePx?: number;
+    /** Trung bình độ lệch chuẩn theo trial trong delay. */
+    avgCenteringStdPx?: number;
   };
+}
+
+function mean(nums: number[]): number {
+  if (nums.length === 0) return 0;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+function std(nums: number[]): number {
+  if (nums.length < 2) return 0;
+  const m = mean(nums);
+  return Math.sqrt(nums.reduce((s, v) => s + (v - m) ** 2, 0) / (nums.length - 1));
+}
+
+/** Gộp mẫu gaze; `t` = giây từ `startTime` của bài test. */
+export function buildPeripheralScanningPath(
+  trials: PeripheralVisionTrialResult[],
+  testStartMs: number
+): PeripheralScanningPoint[] {
+  const out: PeripheralScanningPoint[] = [];
+  for (const tr of trials) {
+    const startMs = tr.trialStartTime ?? tr.stimulusOnsetTime;
+    const offsetSec = (startMs - testStartMs) / 1000;
+    for (const s of tr.gazeSamples ?? []) {
+      out.push({ t: offsetSec + s.t, x: s.x, y: s.y });
+    }
+  }
+  return out;
 }
 
 function getCenter(): { x: number; y: number } {
@@ -62,7 +109,6 @@ export default function PeripheralVisionTest() {
   const stimulusDotSizePx = Math.max(8, Math.min(64, Number(config.stimulusDotSizePx) ?? 16));
   const stimulusDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.stimulusDotColor ?? '')) ? String(config.stimulusDotColor) : '#ffffff';
 
-  const zones = useMemo(() => generateTrialZones(trialCount), [trialCount]);
   const startTimeRef = useRef(0);
   const [trialIndex, setTrialIndex] = useState(0);
   const [phase, setPhase] = useState<'delay' | 'stimulus' | 'response' | 'iti'>('delay');
@@ -79,11 +125,7 @@ export default function PeripheralVisionTest() {
 
   const viewport = getViewport();
   const center = getCenter();
-  const zone = zones[trialIndex];
-  const stimulusPos = useMemo(
-    () => (zone ? getStimulusPosition(zone, viewport.w, viewport.h) : { x: 0, y: 0 }),
-    [zone, viewport.w, viewport.h]
-  );
+  const [stimulusPos, setStimulusPos] = useState({ x: 0, y: 0 });
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -113,8 +155,8 @@ export default function PeripheralVisionTest() {
   useEffect(() => {
     if (trialIndex >= trialCount) return;
 
-    const zone = zones[trialIndex];
-    if (!zone) return;
+    const pos = randomPeripheralStimulusPosition(viewport.w, viewport.h);
+    setStimulusPos(pos);
 
     trialStartRef.current = performance.now();
     trialGazeRef.current = [];
@@ -133,17 +175,28 @@ export default function PeripheralVisionTest() {
         setPhase('response');
 
         responseEndTimeoutRef.current = setTimeout(() => {
+          const trialStartMs = trialStartRef.current;
           const onset = stimulusOnsetRef.current;
           const pressed = spacePressedThisTrialRef.current;
           const responseDeadline = onset + stimulusDurationMs + RESPONSE_WINDOW_MS;
           const hit = pressed !== null && pressed >= onset && pressed <= responseDeadline;
+          const delaySec = (onset - trialStartMs) / 1000;
+          const c = getCenter();
+          const centerSamples = trialGazeRef.current.filter((s) => s.t < delaySec - 1e-6);
+          const dists = centerSamples.map((s) => Math.hypot(s.x - c.x, s.y - c.y));
+          const centeringMeanDistancePx = dists.length ? mean(dists) : undefined;
+          const centeringStdDistancePx = dists.length >= 2 ? std(dists) : undefined;
           trialsResultsRef.current.push({
+            trialStartTime: trialStartMs,
             stimulusOnsetTime: onset,
-            stimulusPosition: zone,
+            stimulusX: pos.x,
+            stimulusY: pos.y,
             spacePressedTime: pressed ?? undefined,
             rtMs: hit && pressed != null ? pressed - onset : undefined,
             hit,
             gazeSamples: [...trialGazeRef.current],
+            centeringMeanDistancePx,
+            centeringStdDistancePx,
           });
 
           if (trialIndex + 1 >= trialCount) {
@@ -166,14 +219,35 @@ export default function PeripheralVisionTest() {
             });
             centerStability = totalSamples > 0 ? centerStability / totalSamples : 0;
 
+            const centeringMeans = trials
+              .map((t) => t.centeringMeanDistancePx)
+              .filter((v): v is number => typeof v === 'number');
+            const centeringStds = trials
+              .map((t) => t.centeringStdDistancePx)
+              .filter((v): v is number => typeof v === 'number');
+            const avgCenteringDistancePx = centeringMeans.length ? mean(centeringMeans) : undefined;
+            const avgCenteringStdPx = centeringStds.length ? mean(centeringStds) : undefined;
+
+            const testStart = startTimeRef.current;
+            const scanningPath = buildPeripheralScanningPath(trials, testStart);
+
             completeTestRef.current({
               testId: 'peripheral_vision',
-              startTime: startTimeRef.current,
+              startTime: testStart,
               endTime: endTime,
               trials,
+              scanningPath,
+              gazePath: scanningPath,
+              stimulusDurationMs,
               viewportWidth: viewport.w,
               viewportHeight: viewport.h,
-              metrics: { avgRT, accuracy, centerStability },
+              metrics: {
+                avgRT,
+                accuracy,
+                centerStability,
+                avgCenteringDistancePx,
+                avgCenteringStdPx,
+              },
             });
             return;
           }
@@ -197,7 +271,7 @@ export default function PeripheralVisionTest() {
       if (itiTimeoutRef.current) clearTimeout(itiTimeoutRef.current);
       clearInterval(gazeInterval);
     };
-  }, [trialIndex, trialCount, zones, minDelayMs, maxDelayMs, stimulusDurationMs]);
+  }, [trialIndex, trialCount, viewport.w, viewport.h, minDelayMs, maxDelayMs, stimulusDurationMs]);
 
   if (trialIndex >= trialCount) {
     return (

@@ -149,18 +149,30 @@ export function getNeuroResultsPreviewMock(): Record<string, TestResultPayload> 
       testId: 'peripheral_vision',
       startTime: t0,
       endTime: now,
+      stimulusDurationMs: 300,
       trials: [
         {
-          stimulusOnsetTime: t0,
-          stimulusPosition: 'top',
+          trialStartTime: t0,
+          stimulusOnsetTime: t0 + 400,
+          stimulusX: 600,
+          stimulusY: 194,
           rtMs: 280,
           hit: true,
           gazeSamples: gazeLine(8),
+          centeringMeanDistancePx: 42,
+          centeringStdDistancePx: 12,
         },
       ],
+      scanningPath: gazeLine(8).map((s) => ({ t: s.t, x: s.x, y: s.y })),
       viewportWidth: 1200,
       viewportHeight: 800,
-      metrics: { avgRT: 280, accuracy: 100, centerStability: 40 },
+      metrics: {
+        avgRT: 280,
+        accuracy: 100,
+        centerStability: 40,
+        avgCenteringDistancePx: 42,
+        avgCenteringStdPx: 12,
+      },
     } as TestResultPayload,
   };
 }
