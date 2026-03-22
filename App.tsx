@@ -4,7 +4,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from
 import { flushSync } from 'react-dom';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PATHS, parsePathname } from '@/lib/paths';
-import { neuroDebugLog } from '@/lib/neuroDebugLog';
+import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
 import {
   NEURO_PREVIEW_RUN_ID,
   getNeuroResultsPreviewMock,
@@ -1574,10 +1574,30 @@ function App() {
     return null;
   }, [NEURO_TEST_PROGRESS_LS_KEY]);
 
-  /** Restore run id after refresh on /neuro/done. */
+  /** sessionStorage trước, rồi runId trong neuro_test_progress — để PATCH không bị bỏ qua sau refresh / điều hướng. */
+  const resolveNeuroRunIdFromStorage = useCallback((): string | null => {
+    try {
+      const ss = sessionStorage.getItem(NEURO_LAST_RUN_ID_SS_KEY);
+      if (ss) return ss;
+    } catch (_) {}
+    try {
+      const raw = localStorage.getItem(NEURO_TEST_PROGRESS_LS_KEY);
+      if (!raw) return null;
+      const p = JSON.parse(raw) as { runId?: string | null };
+      if (typeof p.runId === 'string' && p.runId.length > 0) return p.runId;
+    } catch (_) {}
+    return null;
+  }, [NEURO_LAST_RUN_ID_SS_KEY, NEURO_TEST_PROGRESS_LS_KEY]);
+
+  /** Khôi phục run id trên mọi màn neuro (refresh giữa flow thường làm mất state). */
   useEffect(() => {
     const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
-    if (parsed.screen !== 'neuro_done') return;
+    const isNeuroScreen =
+      parsed.screen === 'neuro_pre' ||
+      parsed.screen === 'neuro_test' ||
+      parsed.screen === 'neuro_post' ||
+      parsed.screen === 'neuro_done';
+    if (!isNeuroScreen) return;
     if (neuroRunId) return;
     if (typeof window !== 'undefined' && neuroDevPreviewEnabled()) {
       try {
@@ -1585,11 +1605,14 @@ function App() {
         if (q.get('preview') === '1') return;
       } catch (_) {}
     }
-    try {
-      const id = sessionStorage.getItem(NEURO_LAST_RUN_ID_SS_KEY);
-      if (id) setNeuroRunId(id);
-    } catch (_) {}
-  }, [pathname, neuroRunId]);
+    const id = resolveNeuroRunIdFromStorage();
+    if (id) {
+      setNeuroRunId(id);
+      try {
+        sessionStorage.setItem(NEURO_LAST_RUN_ID_SS_KEY, id);
+      } catch (_) {}
+    }
+  }, [pathname, neuroRunId, resolveNeuroRunIdFromStorage]);
 
   /** Dev only: /neuro/done?preview=1 — mock data, skip DB (needs NEXT_PUBLIC_NEURO_DEV_PREVIEW=1). */
   useEffect(() => {
@@ -1617,7 +1640,22 @@ function App() {
       return;
     }
     if (!neuroRunId) {
+      const resolved = resolveNeuroRunIdFromStorage();
+      if (resolved) {
+        neuroDebugLog('done screen: recovered runId from storage → will GET', resolved);
+        setNeuroRunId(resolved);
+        return;
+      }
       setNeuroResultsLoading(false);
+      const fromLsNoId = readNeuroTestResultsFromProgressLs();
+      if (fromLsNoId && Object.keys(fromLsNoId).length > 0) {
+        neuroPersistWarn('done screen: không có run id — hiển thị tạm từ localStorage (không đồng bộ DB)', {
+          keys: Object.keys(fromLsNoId),
+        });
+        setNeuroTestResults(fromLsNoId);
+      } else {
+        neuroPersistWarn('done screen: không có run id và không có neuro_test_progress_v1 — không tải được kết quả');
+      }
       return;
     }
     if (neuroRunId === NEURO_PREVIEW_RUN_ID) {
@@ -1640,19 +1678,40 @@ function App() {
             ? (raw as Record<string, TestResultPayload>)
             : {};
         neuroDebugLog('GET run testResults keys', Object.keys(tr));
-        if (Object.keys(tr).length === 0 && neuroDevPreviewEnabled()) {
-          neuroDebugLog(
-            'DB testResults empty — showing dev mock. Tip: use /neuro/done?preview=1 to skip DB entirely.'
-          );
-          setNeuroTestResults(getNeuroResultsPreviewMock());
-        } else {
+        if (Object.keys(tr).length > 0) {
           setNeuroTestResults(tr);
+        } else {
+          const fromLs = readNeuroTestResultsFromProgressLs();
+          if (fromLs && Object.keys(fromLs).length > 0) {
+            neuroDebugLog('GET run testResults empty — using local progress fallback');
+            setNeuroTestResults(fromLs);
+            try {
+              await neurologicalRunsApi.patch(neuroRunId, { testResults: fromLs });
+              neuroDebugLog('GET empty DB — synced LS fallback to DB ok', { runId: neuroRunId });
+            } catch (syncErr) {
+              neuroPersistWarn('GET empty DB — không sync được LS lên DB', syncErr);
+            }
+          } else if (neuroDevPreviewEnabled()) {
+            neuroDebugLog(
+              'DB testResults empty — showing dev mock. Tip: use /neuro/done?preview=1 to skip DB entirely.'
+            );
+            setNeuroTestResults(getNeuroResultsPreviewMock());
+          } else {
+            setNeuroTestResults({});
+          }
         }
       } catch (e) {
-        console.error('[Neuro] load test results from DB failed', e);
-        neuroDebugLog('GET run failed', e);
+        neuroPersistWarn('GET neurological run failed', e);
+        neuroDebugLog('GET run failed (detail)', e);
         if (!cancelled) {
-          setNeuroResultsLoadError(e instanceof Error ? e.message : 'Failed to load results');
+          const fromLs = readNeuroTestResultsFromProgressLs();
+          if (fromLs && Object.keys(fromLs).length > 0) {
+            neuroDebugLog('GET failed — showing local progress fallback', Object.keys(fromLs));
+            setNeuroTestResults(fromLs);
+            setNeuroResultsLoadError(null);
+          } else {
+            setNeuroResultsLoadError(e instanceof Error ? e.message : 'Failed to load results');
+          }
         }
       } finally {
         if (!cancelled) setNeuroResultsLoading(false);
@@ -1661,7 +1720,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [neuroPhase, neuroRunId, neuroResultsFetchKey]);
+  }, [neuroPhase, neuroRunId, neuroResultsFetchKey, readNeuroTestResultsFromProgressLs, resolveNeuroRunIdFromStorage]);
 
   const handlePostSubmitRequested = useCallback(async (scores: SymptomScores) => {
     setPendingPostSymptomScores(scores);
@@ -1705,9 +1764,23 @@ function App() {
       setNeuroTestResults(mergedResults);
     }
 
-    if (neuroRunId) {
+    const runIdForSave = neuroRunId ?? resolveNeuroRunIdFromStorage();
+    if (runIdForSave && !neuroRunId) {
+      neuroDebugLog('post-save: recovered runId from storage', runIdForSave);
+      setNeuroRunId(runIdForSave);
       try {
-        const updated = await neurologicalRunsApi.patch(neuroRunId, {
+        sessionStorage.setItem(NEURO_LAST_RUN_ID_SS_KEY, runIdForSave);
+      } catch (_) {}
+    }
+
+    if (runIdForSave) {
+      neuroDebugLog('post-save: PATCH start', {
+        runId: runIdForSave,
+        testResultKeys: Object.keys(mergedResults),
+        testResultCount: Object.keys(mergedResults).length,
+      });
+      try {
+        const updated = await neurologicalRunsApi.patch(runIdForSave, {
           preSymptomScores: (preQuestionnaire ?? preSymptomScores ?? {}) as unknown as Record<string, number>,
           postSymptomScores: postQuestionnaire as unknown as Record<string, number>,
           testResults: mergedResults,
@@ -1721,9 +1794,16 @@ function App() {
           setNeuroTestResults(updated.testResults as Record<string, TestResultPayload>);
         }
       } catch (e) {
-        console.error('Patch final run data failed', e);
-        neuroDebugLog('post-save: PATCH failed', e);
+        neuroPersistWarn('post-save: PATCH failed — không ghi được DB', e);
+        alert(
+          'Không lưu được kết quả lên server (lỗi mạng hoặc máy chủ). Kiểm tra kết nối và bấm Lưu kết quả lại. (Xem console [Neuro])'
+        );
+        return;
       }
+    } else {
+      neuroPersistWarn('post-save: không có run id — bỏ qua PATCH; chỉ có dữ liệu local nếu trong LS', {
+        mergedKeys: Object.keys(mergedResults),
+      });
     }
     setNeuroPhase('done');
     pathSyncSourceRef.current = 'internal';
@@ -1736,6 +1816,7 @@ function App() {
     neuroRunId,
     neuroTestResults,
     readNeuroTestResultsFromProgressLs,
+    resolveNeuroRunIdFromStorage,
     buildQuestionnairePayload,
     router,
   ]);

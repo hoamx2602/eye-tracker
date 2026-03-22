@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { PATHS } from '@/lib/paths';
 import { SYMPTOM_QUESTIONS, type SymptomScores } from '@/lib/symptomAssessment';
 import { neurologicalRunsApi } from '@/services/api';
-import { neuroDebugLog } from '@/lib/neuroDebugLog';
+import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
 import type { TestResultPayload } from '@/components/neurological';
 
 type NeuroConfigSnapshot = {
@@ -88,7 +88,7 @@ export function useNeuroFlowHandlers({
             testResults: { [testId]: payload },
           });
         } catch (e) {
-          console.error('Patch test result failed', e);
+          neuroPersistWarn(`PATCH test result failed (${testId})`, e);
         }
       }
       const order = neuroTestOrder.length > 0 ? neuroTestOrder : DEFAULT_TEST_ORDER;
