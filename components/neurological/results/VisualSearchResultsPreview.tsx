@@ -10,7 +10,16 @@ import { useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
 type NumberPos = { number: number; x: number; y: number };
 type PathPt = { t: number; x: number; y: number };
 
-type FixationPt = { number: number; timestamp: number; gazeX: number; gazeY: number };
+export type VisualSearchFixationPt = {
+  number: number;
+  timestamp: number;
+  gazeX: number;
+  gazeY: number;
+  source?: 'aoi' | 'pointer';
+  pointerX?: number;
+  pointerY?: number;
+  holdDurationMs?: number;
+};
 
 type StimulusBounds = { left: number; top: number; width: number; height: number };
 
@@ -20,20 +29,38 @@ type Props = {
   scanningPath: PathPt[];
   gazeFixationPerNumber: Record<number, number>;
   sequence: number[];
-  fixations?: FixationPt[];
+  fixations?: VisualSearchFixationPt[];
   viewportWidth?: number;
   viewportHeight?: number;
   stimulusBounds?: StimulusBounds;
   startTime?: number;
   endTime?: number;
   visualOnly?: boolean;
+  allowClickTargets?: boolean;
+  clickHoldDurationMs?: number;
 };
 
 export function VisualSearchParamsSection({
   completionTimeMs,
   sequence,
   gazeFixationPerNumber,
-}: Pick<Props, 'completionTimeMs' | 'sequence' | 'gazeFixationPerNumber'>) {
+  fixations,
+  allowClickTargets,
+  clickHoldDurationMs,
+}: Pick<
+  Props,
+  | 'completionTimeMs'
+  | 'sequence'
+  | 'gazeFixationPerNumber'
+  | 'fixations'
+  | 'allowClickTargets'
+  | 'clickHoldDurationMs'
+>) {
+  const pointerConfirmCount = useMemo(
+    () => (fixations ?? []).filter((f) => f.source === 'pointer').length,
+    [fixations]
+  );
+
   const fixationRows = useMemo(() => {
     const entries = Object.entries(gazeFixationPerNumber ?? {})
       .map(([k, v]) => ({ num: Number(k), count: v as number }))
@@ -52,6 +79,24 @@ export function VisualSearchParamsSection({
           Order found:{' '}
           <span className="font-mono text-slate-200">{sequence?.length ? sequence.join(' → ') : '—'}</span>
         </span>
+        {allowClickTargets != null && (
+          <span>
+            Hold-and-click:{' '}
+            <span className="font-mono text-slate-200">{allowClickTargets ? 'on' : 'off'}</span>
+            {allowClickTargets && clickHoldDurationMs != null && (
+              <span className="text-slate-500">
+                {' '}
+                (min hold {clickHoldDurationMs} ms)
+              </span>
+            )}
+          </span>
+        )}
+        {pointerConfirmCount > 0 && (
+          <span>
+            Pointer confirmations:{' '}
+            <span className="font-mono text-emerald-400">{pointerConfirmCount}</span>
+          </span>
+        )}
       </div>
       {fixationRows.length > 0 && (
         <div className="rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-2 text-xs">
@@ -82,6 +127,8 @@ export default function VisualSearchResultsPreview({
   startTime,
   endTime,
   visualOnly,
+  allowClickTargets,
+  clickHoldDurationMs,
 }: Props) {
   const { showStimulusReplay, showGazeHeatmap } = useNeurologicalResultsViewOptions();
   const warnedEmptyRef = useRef(false);
@@ -519,6 +566,9 @@ export default function VisualSearchResultsPreview({
         completionTimeMs={completionTimeMs}
         sequence={sequence}
         gazeFixationPerNumber={gazeFixationPerNumber}
+        fixations={fixations}
+        allowClickTargets={allowClickTargets}
+        clickHoldDurationMs={clickHoldDurationMs}
       />
       <p className="text-[11px] leading-relaxed text-slate-500">
         Faint line + arrows = full gaze trace; bold colored line + numbered circles = fixations (AOIs) in time order — classic scanpath layout.

@@ -63,12 +63,9 @@ export function detectAndMapGazeToViewport<T extends { x: number; y: number }>(
   return { pts, mode: 'pixels' };
 }
 
-export function applyGazeModeToFixations(
-  fixations: Array<{ number: number; timestamp: number; gazeX: number; gazeY: number }>,
-  mode: GazeCoordMode,
-  vw: number,
-  vh: number
-): Array<{ number: number; timestamp: number; gazeX: number; gazeY: number }> {
+export function applyGazeModeToFixations<
+  T extends { number: number; timestamp: number; gazeX: number; gazeY: number },
+>(fixations: T[], mode: GazeCoordMode, vw: number, vh: number): T[] {
   if (mode === 'pixels') return fixations;
   if (mode === 'normalized01') {
     return fixations.map((f) => ({ ...f, gazeX: f.gazeX * vw, gazeY: f.gazeY * vh }));

@@ -38,7 +38,13 @@ export type NeurologicalConfigState = {
 function ensureParams(id: string, params: Record<string, Record<string, unknown>>): Record<string, unknown> {
   const defaults: Record<string, Record<string, unknown>> = {
     head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
-    visual_search: { numberCount: 8, practiceCount: 4, aoiRadiusPx: 80 },
+    visual_search: {
+      numberCount: 8,
+      practiceCount: 4,
+      aoiRadiusPx: 80,
+      allowClickTargets: false,
+      clickHoldDurationMs: 300,
+    },
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
     anti_saccade: {
       trialCount: 12,
@@ -260,6 +266,28 @@ export default function NeurologicalConfigForm() {
                         min={20}
                         max={200}
                       />
+                      <div className="sm:col-span-2 lg:col-span-3 flex flex-col gap-2 rounded-lg border border-slate-700 bg-slate-900/50 p-3">
+                        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(params.allowClickTargets)}
+                            onChange={(e) => setParam(id, 'allowClickTargets', e.target.checked)}
+                            className="rounded border-slate-500 bg-slate-800"
+                          />
+                          Allow hold-and-click on targets
+                        </label>
+                        <p className="text-xs text-slate-500">
+                          When on, participants press and hold each number, then release to log pointer position with gaze — useful to compare gaze vs touch/mouse.
+                        </p>
+                        <LabelInput
+                          label="Min hold before release (ms)"
+                          value={Number(params.clickHoldDurationMs ?? 300)}
+                          onChange={(v) => setParam(id, 'clickHoldDurationMs', v)}
+                          min={0}
+                          max={2000}
+                        />
+                        <p className="text-xs text-slate-500">0 = single tap/click counts without a minimum hold.</p>
+                      </div>
                     </>
                   )}
                   {id === 'memory_cards' && (

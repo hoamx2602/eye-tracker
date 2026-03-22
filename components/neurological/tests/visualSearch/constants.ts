@@ -28,3 +28,7 @@ export const DEFAULT_AOI_RADIUS_PX = 80;
 export const MIN_SPACING_FRACTION = 0.15;
 /** Gaze path sample interval (ms) — 0.1s cố định, đồng bộ với yêu cầu lưu scanpath. */
 export const GAZE_PATH_INTERVAL_MS = 100;
+/** Default: targets are gaze-only (no pointer). Admin can enable hold-and-click confirmations. */
+export const DEFAULT_ALLOW_CLICK_TARGETS = false;
+/** Minimum press duration (ms) before release counts as a pointer confirmation (0 = any tap). */
+export const DEFAULT_CLICK_HOLD_DURATION_MS = 300;

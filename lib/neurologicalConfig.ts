@@ -16,7 +16,13 @@ export type NeuroTestId = (typeof DEFAULT_TEST_ORDER)[number];
 
 export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = {
   head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
-  visual_search: { numberCount: 8, practiceCount: 4, aoiRadiusPx: 80 },
+  visual_search: {
+    numberCount: 8,
+    practiceCount: 4,
+    aoiRadiusPx: 80,
+    allowClickTargets: false,
+    clickHoldDurationMs: 300,
+  },
   memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
   anti_saccade: {
     trialCount: 12,

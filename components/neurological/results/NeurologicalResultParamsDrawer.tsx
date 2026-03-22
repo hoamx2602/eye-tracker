@@ -11,7 +11,7 @@ import { HeadOrientationParamsSection } from './HeadOrientationResultsPreview';
 import { MemoryCardsParamsSection } from './MemoryCardsGazePathPreview';
 import { PeripheralParamsSection } from './PeripheralVisionResultsPreview';
 import { SaccadicParamsSection } from './SaccadicResultsPreview';
-import { VisualSearchParamsSection } from './VisualSearchResultsPreview';
+import { VisualSearchParamsSection, type VisualSearchFixationPt } from './VisualSearchResultsPreview';
 import { RESULT_CHART_PANEL_MIN_LG } from './resultVizLayout';
 
 const TEST_LABELS: Record<string, string> = {
@@ -40,11 +40,17 @@ function renderParamsForTest(testId: string, r: Record<string, unknown>): React.
     const gazeFixationPerNumber = (r.gazeFixationPerNumber as Record<number, number>) ?? {};
     const sequence = (r.sequence as number[]) ?? (r.gazeSequence as number[]) ?? [];
     const completionTimeMs = Number(r.completionTimeMs ?? 0);
+    const fixations = (r.fixations as VisualSearchFixationPt[]) ?? [];
+    const allowClickTargets = r.allowClickTargets as boolean | undefined;
+    const clickHoldDurationMs = r.clickHoldDurationMs as number | undefined;
     return (
       <VisualSearchParamsSection
         completionTimeMs={completionTimeMs}
         sequence={sequence}
         gazeFixationPerNumber={gazeFixationPerNumber}
+        fixations={fixations}
+        allowClickTargets={allowClickTargets}
+        clickHoldDurationMs={clickHoldDurationMs}
       />
     );
   }

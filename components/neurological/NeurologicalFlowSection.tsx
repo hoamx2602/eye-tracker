@@ -19,6 +19,8 @@ import {
   DEFAULT_NUMBER_COUNT,
   DEFAULT_AOI_RADIUS_PX,
   PRACTICE_COUNT,
+  DEFAULT_ALLOW_CLICK_TARGETS,
+  DEFAULT_CLICK_HOLD_DURATION_MS,
 } from '@/components/neurological/tests/visualSearch/constants';
 import MemoryCardsTest from '@/components/neurological/tests/memoryCards/MemoryCardsTest';
 import MemoryCardsPractice from '@/components/neurological/tests/memoryCards/MemoryCardsPractice';
@@ -166,7 +168,15 @@ export default function NeurologicalFlowSection({
             practiceContent={<VisualSearchPractice />}
             practiceTitle="Practice: Visual Search"
             testContent={<VisualSearchTest />}
-            config={(neuroConfigSnapshot?.testParameters?.visual_search as Record<string, unknown>) ?? { numberCount: DEFAULT_NUMBER_COUNT, practiceCount: PRACTICE_COUNT, aoiRadiusPx: DEFAULT_AOI_RADIUS_PX }}
+            config={
+              (neuroConfigSnapshot?.testParameters?.visual_search as Record<string, unknown>) ?? {
+                numberCount: DEFAULT_NUMBER_COUNT,
+                practiceCount: PRACTICE_COUNT,
+                aoiRadiusPx: DEFAULT_AOI_RADIUS_PX,
+                allowClickTargets: DEFAULT_ALLOW_CLICK_TARGETS,
+                clickHoldDurationMs: DEFAULT_CLICK_HOLD_DURATION_MS,
+              }
+            }
             onTestComplete={(payload) => onTestComplete('visual_search', payload)}
           />
         </NeuroGazeProvider>

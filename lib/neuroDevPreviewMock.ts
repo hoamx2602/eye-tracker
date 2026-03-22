@@ -55,6 +55,8 @@ export function getNeuroResultsPreviewMock(): Record<string, TestResultPayload> 
       testId: 'visual_search',
       startTime: t0,
       endTime: now,
+      allowClickTargets: false,
+      clickHoldDurationMs: 300,
       completionTimeMs: 12000,
       numberPositions: [
         { number: 1, x: 20, y: 25 },
