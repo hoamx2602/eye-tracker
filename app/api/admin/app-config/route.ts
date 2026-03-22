@@ -52,8 +52,8 @@ export async function PUT(request: NextRequest) {
 
     await prisma.appConfig.upsert({
       where: { name: 'default' },
-      create: { name: 'default', config },
-      update: { config },
+      create: { name: 'default', config: config as any },
+      update: { config: config as any },
     });
 
     return NextResponse.json({ ok: true });

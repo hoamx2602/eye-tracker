@@ -24,6 +24,7 @@ export interface EyeFeatures {
   leftRelative: Point;
   rightRelative: Point;
   headPose: HeadPose; // Added for compensation
+  zDistance: number;  // Pseudo-Z axis measurement (inter-ocular distance scaled)
 }
 
 export interface TrainingSample {

@@ -169,6 +169,10 @@ export class EyeTrackingService {
 
     const headPose = this.calculateGeometricHeadPose(landmarks);
 
+    // Calculate Z-Distance proxy (inter-ocular distance scaled up)
+    // The larger this is, the closer the face is to the camera.
+    const zDistance = Math.abs(leftOuter.x - rightOuter.x) * 10;
+
     return {
       leftPupil,
       rightPupil,
@@ -176,7 +180,8 @@ export class EyeTrackingService {
       rightEyeCenter: rightCenter,
       leftRelative: { x: lx * 10, y: ly * 10 }, 
       rightRelative: { x: rx * 10, y: ry * 10 },
-      headPose
+      headPose,
+      zDistance
     };
   }
 
@@ -195,6 +200,8 @@ export class EyeTrackingService {
     const rR = Math.sqrt(rx*rx + ry*ry);
     const rTheta = Math.atan2(ry, rx);
 
+    const z = features.zDistance;
+
     return [
       1, // Bias
       lx, ly, rx, ry, 
@@ -202,7 +209,12 @@ export class EyeTrackingService {
       pitch, yaw, roll,
       lx * yaw, rx * yaw,
       ly * pitch, ry * pitch,
-      lx * lx, ly * ly
+      lx * lx, ly * ly,
+      // Phase 1: Z-Axis Compensation Terms
+      z,
+      lx * z, ly * z,
+      rx * z, ry * z,
+      pitch * z, yaw * z
     ];
   }
 }
