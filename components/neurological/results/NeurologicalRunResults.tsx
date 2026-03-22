@@ -204,6 +204,9 @@ function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly 
         viewportHeight={r.viewportHeight as number | undefined}
         bcea68Px2={r.bcea68Px2 as number | undefined}
         bcea95Px2={r.bcea95Px2 as number | undefined}
+        startTime={r.startTime as number | undefined}
+        endTime={r.endTime as number | undefined}
+        durationMs={r.durationMs as number | undefined}
         visualOnly={visualOnly}
       />
     );

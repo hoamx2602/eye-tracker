@@ -1,8 +1,14 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { computeBceaForSamples } from '@/lib/bivariateEllipse';
-import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
+import { detectAndMapGazeToViewport } from '@/lib/visualSearchGazeCoords';
+import {
+  RESULT_VIZ_OUTER,
+  ResultVizAspectSvg,
+  ResultVizMaxFrame,
+  useResultVizInnerFrameStyle,
+} from './resultVizLayout';
 import { GazeHeatmapLayer, GazePathDirectionArrows } from './gazeVizSvg';
 import { useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
 
@@ -14,6 +20,9 @@ type Props = {
   viewportHeight?: number;
   bcea68Px2?: number;
   bcea95Px2?: number;
+  startTime?: number;
+  endTime?: number;
+  durationMs?: number;
   visualOnly?: boolean;
 };
 
@@ -54,14 +63,92 @@ export default function FixationBceaPreview({
   viewportHeight: viewportHeightProp,
   bcea68Px2,
   bcea95Px2,
+  startTime,
+  endTime,
+  durationMs,
   visualOnly,
 }: Props) {
+  const innerFrame = useResultVizInnerFrameStyle();
   const { showStimulusReplay, showGazeHeatmap } = useNeurologicalResultsViewOptions();
 
+  const vwScreen = viewportWidthProp ?? 1920;
+  const vhScreen = viewportHeightProp ?? 1080;
+
+  const durationSec = useMemo(() => {
+    if (durationMs != null && durationMs > 0) return durationMs / 1000;
+    if (
+      startTime != null &&
+      endTime != null &&
+      Number.isFinite(startTime) &&
+      Number.isFinite(endTime) &&
+      endTime >= startTime
+    ) {
+      return (endTime - startTime) / 1000;
+    }
+    const s = gazeSamples ?? [];
+    if (!s.length) return 0;
+    return Math.max(0, ...s.map((x) => x.t));
+  }, [durationMs, startTime, endTime, gazeSamples]);
+
+  const [replayTimeSec, setReplayTimeSec] = useState<number | null>(null);
+  const effectiveReplay = replayTimeSec ?? durationSec;
+
+  const filteredSamples = useMemo(() => {
+    const all = gazeSamples ?? [];
+    return all.filter((s) => s.t <= effectiveReplay + 1e-4);
+  }, [gazeSamples, effectiveReplay]);
+
   const layout = useMemo(() => {
-    const samples = gazeSamples ?? [];
-    if (samples.length < 2) return null;
-    const xy = samples.map((s) => ({ x: s.x, y: s.y }));
+    const raw = filteredSamples;
+    if (raw.length < 1) {
+      const pad = 200;
+      const cx = vwScreen / 2;
+      const cy = vhScreen / 2;
+      return {
+        kind: 'empty' as const,
+        vx0: cx - pad,
+        vy0: cy - pad,
+        vw: pad * 2,
+        vh: pad * 2,
+        drawPts: [] as { x: number; y: number }[],
+        b68ellipse: null,
+        b95ellipse: null,
+        area68: bcea68Px2 ?? 0,
+        area95: bcea95Px2 ?? 0,
+      };
+    }
+
+    const { mode } = detectAndMapGazeToViewport(raw, vwScreen, vhScreen);
+    const mapPt = (p: Sample): Sample => {
+      if (mode === 'normalized01') return { ...p, x: p.x * vwScreen, y: p.y * vhScreen };
+      if (mode === 'percent100') return { ...p, x: (p.x / 100) * vwScreen, y: (p.y / 100) * vhScreen };
+      return p;
+    };
+    const mapped = raw.map(mapPt);
+    const xy = mapped.map((s) => ({ x: s.x, y: s.y }));
+
+    if (xy.length < 2) {
+      const p = xy[0];
+      const pad = 80;
+      const vx0 = p.x - pad;
+      const vy0 = p.y - pad;
+      const vw = pad * 2;
+      const vh = pad * 2;
+      const toLocal = (x: number, y: number) => ({ x: x - vx0, y: y - vy0 });
+      return {
+        kind: 'sparse' as const,
+        vx0,
+        vy0,
+        vw,
+        vh,
+        drawPts: [toLocal(p.x, p.y)],
+        b68ellipse: null,
+        b95ellipse: null,
+        area68: bcea68Px2 ?? 0,
+        area95: bcea95Px2 ?? 0,
+      };
+    }
+
     const b68 = computeBceaForSamples(xy, '68');
     const b95 = computeBceaForSamples(xy, '95');
     const pad = 40;
@@ -94,6 +181,7 @@ export default function FixationBceaPreview({
     const rotDeg = (r: number) => (r * 180) / Math.PI;
 
     return {
+      kind: 'full' as const,
       vx0,
       vy0,
       vw,
@@ -115,18 +203,22 @@ export default function FixationBceaPreview({
             rotDeg: rotDeg(b95.ellipse.rotationRad),
           }
         : null,
-      area68: bcea68Px2 ?? b68.areaPx2,
-      area95: bcea95Px2 ?? b95.areaPx2,
+      area68: b68.areaPx2,
+      area95: b95.areaPx2,
     };
-  }, [gazeSamples, bcea68Px2, bcea95Px2]);
+  }, [filteredSamples, bcea68Px2, bcea95Px2, vwScreen, vhScreen]);
+
+  const totalSamples = gazeSamples?.length ?? 0;
+
+  if (!gazeSamples?.length) {
+    return <p className="text-slate-500 text-sm">No gaze samples for fixation.</p>;
+  }
 
   if (!layout) {
-    return <p className="text-slate-500 text-sm">Not enough gaze samples for BCEA.</p>;
+    return <p className="text-slate-500 text-sm">Could not build fixation layout.</p>;
   }
 
   const pointsStr = layout.drawPts.map((p) => `${p.x},${p.y}`).join(' ');
-  const vwScreen = viewportWidthProp ?? 1920;
-  const vhScreen = viewportHeightProp ?? 1080;
   const fixationCenterLocal = {
     x: vwScreen / 2 - layout.vx0,
     y: vhScreen / 2 - layout.vy0,
@@ -139,7 +231,7 @@ export default function FixationBceaPreview({
         contentHeight={layout.vh}
         panelFill="rgb(15 23 42 / 0.5)"
         role="img"
-        aria-label="Fixation gaze points and BCEA ellipses"
+        aria-label="Fixation gaze replay and BCEA ellipses"
       >
         {showStimulusReplay && (
           <g aria-hidden>
@@ -161,7 +253,7 @@ export default function FixationBceaPreview({
             />
           </g>
         )}
-        {layout.b95ellipse && (
+        {layout.kind === 'full' && layout.b95ellipse && (
           <ellipse
             cx={layout.b95ellipse.cx}
             cy={layout.b95ellipse.cy}
@@ -173,7 +265,7 @@ export default function FixationBceaPreview({
             transform={`rotate(${layout.b95ellipse.rotDeg}, ${layout.b95ellipse.cx}, ${layout.b95ellipse.cy})`}
           />
         )}
-        {layout.b68ellipse && (
+        {layout.kind === 'full' && layout.b68ellipse && (
           <ellipse
             cx={layout.b68ellipse.cx}
             cy={layout.b68ellipse.cy}
@@ -186,25 +278,77 @@ export default function FixationBceaPreview({
           />
         )}
         {showGazeHeatmap && <GazeHeatmapLayer points={layout.drawPts} />}
-        <polyline
-          fill="none"
-          stroke="rgb(148 163 184 / 0.35)"
-          strokeWidth="1"
-          points={pointsStr}
-        />
-        <GazePathDirectionArrows points={layout.drawPts} step={12} fill="rgb(125 211 252)" size={5} />
+        {layout.drawPts.length >= 2 && (
+          <>
+            <polyline
+              fill="none"
+              stroke="rgb(148 163 184 / 0.45)"
+              strokeWidth={2}
+              vectorEffect="nonScalingStroke"
+              points={pointsStr}
+            />
+            <GazePathDirectionArrows points={layout.drawPts} step={12} fill="rgb(125 211 252)" size={5} />
+          </>
+        )}
+        {layout.drawPts.length === 1 && (
+          <circle
+            cx={layout.drawPts[0].x}
+            cy={layout.drawPts[0].y}
+            r={5}
+            fill="rgb(125 211 252 / 0.9)"
+            stroke="rgb(15 23 42)"
+            strokeWidth={1}
+            vectorEffect="nonScalingStroke"
+          />
+        )}
       </ResultVizAspectSvg>
     </ResultVizMaxFrame>
   );
 
   if (visualOnly) {
-    return svgBlock;
+    return (
+      <div className={RESULT_VIZ_OUTER}>
+        <div
+          className={`${innerFrame.className} relative flex min-h-0 flex-col overflow-hidden`}
+          style={innerFrame.style}
+        >
+          <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
+            <span className="text-slate-400">Kéo thanh để replay gaze.</span> Ellipse BCEA tính trên mẫu tính đến thời điểm đó. Số liệu đầy đủ trong{' '}
+            <strong>Tham số</strong>.
+          </p>
+          <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 pt-9 sm:px-3">
+            <div className="min-h-0 flex-1 overflow-hidden">{svgBlock}</div>
+          </div>
+          {durationSec > 0 && (
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-800 bg-gray-900/40 px-3 pb-3 pt-3 text-xs text-slate-400 sm:px-4 sm:pb-4">
+              <span className="shrink-0 w-28 whitespace-nowrap">Thời điểm tái hiện</span>
+              <input
+                type="range"
+                min={0}
+                max={durationSec}
+                step={0.01}
+                value={Math.min(effectiveReplay, durationSec)}
+                onChange={(e) => setReplayTimeSec(Number(e.target.value))}
+                className="min-w-0 flex-1 accent-sky-500"
+              />
+              <span className="shrink-0 w-[4.5rem] text-right font-mono text-[10px] leading-[13px] tracking-tight">
+                {effectiveReplay.toFixed(1)}s <br />
+                <span className="text-slate-600"> {durationSec.toFixed(1)}s</span>
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <FixationParamsSection area68={layout.area68} area95={layout.area95} />
       {svgBlock}
+      <p className="text-xs text-slate-500">
+        {totalSamples} samples · BCEA trong biểu đồ phản ánh mẫu đến thanh replay (khác số tổng hợp khi chưa kéo hết).
+      </p>
     </div>
   );
 }
