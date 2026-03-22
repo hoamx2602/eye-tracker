@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
 import { applyGazeModeToFixations, detectAndMapGazeToViewport } from '@/lib/visualSearchGazeCoords';
 import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
@@ -88,6 +88,13 @@ export default function VisualSearchResultsPreview({
   const warnedModeRef = useRef(false);
   const warnedNoValidGazeRef = useRef(false);
 
+  const durationSec = useMemo(() => {
+    return Math.max(0, completionTimeMs / 1000);
+  }, [completionTimeMs]);
+
+  const [replayTimeSec, setReplayTimeSec] = useState<number | null>(null);
+  const effectiveReplay = replayTimeSec ?? durationSec;
+
   const layout = useMemo(() => {
     const path = scanningPath ?? [];
     const vw = viewportWidth ?? 1920;
@@ -151,19 +158,43 @@ export default function VisualSearchResultsPreview({
     };
   }, [scanningPath, numberPositions, viewportWidth, viewportHeight, stimulusBounds, fixations]);
 
+  const filteredPathPts = useMemo(() => {
+    if (!layout?.pathPts) return [];
+    // layout.pathPts[].t is in SECONDS (relative to start of the test)
+    return layout.pathPts.filter((p) => p.t <= effectiveReplay);
+  }, [layout?.pathPts, effectiveReplay]);
+
+  const filteredFixations = useMemo(() => {
+    if (!layout?.fixationsResolved) return [];
+    // layout.fixationsResolved[].timestamp is ABSOLUTE MILLISECONDS (performance.now())
+    if (startTime != null) {
+      const cutoff = startTime + effectiveReplay * 1000;
+      return layout.fixationsResolved.filter((f) => f.timestamp <= cutoff);
+    }
+    // Fallback if startTime is missing but we have fixations
+    if (layout.fixationsResolved.length > 0) {
+      const t0 = layout.fixationsResolved[0]!.timestamp;
+      const cutoff = t0 + effectiveReplay * 1000;
+      return layout.fixationsResolved.filter((f) => f.timestamp <= cutoff);
+    }
+    return layout.fixationsResolved;
+  }, [layout?.fixationsResolved, effectiveReplay, startTime]);
+
+  const replayPolyline = useMemo(() => filteredPathPts.map((p) => `${p.x},${p.y}`).join(' '), [filteredPathPts]);
+
   /** Fixation theo thời gian → scanpath (đoạn nối + vòng có số 1..N). */
   const scanplot = useMemo(() => {
-    const fx = layout?.fixationsResolved ?? fixations;
+    const fx = filteredFixations;
     const sorted = [...fx].sort((a, b) => a.timestamp - b.timestamp);
     const tEnd =
       endTime ??
-      (startTime != null ? startTime + completionTimeMs : sorted.length ? sorted[sorted.length - 1]!.timestamp + 1 : 0);
+      (startTime != null ? startTime + effectiveReplay * 1000 : sorted.length ? sorted[sorted.length - 1]!.timestamp + 1 : 0);
 
-    console.log('[Neuro][VSPreview] scanplot memo: sorted fixations=', sorted.length, 'layout exists=', !!layout, 'pathPts=', layout?.pathPts?.length ?? 0, 'noValidGazeCoords=', layout?.noValidGazeCoords);
+    console.log('[Neuro][VSPreview] scanplot memo: sorted fixations=', sorted.length, 'layout exists=', !!layout, 'filteredPathPts=', filteredPathPts.length, 'noValidGazeCoords=', layout?.noValidGazeCoords);
     // --- Fallback: synthesize fixation nodes from raw gaze path when AOI fixations are empty ---
-    if (sorted.length === 0 && layout && layout.pathPts.length >= 2 && !layout.noValidGazeCoords) {
-      console.log('[Neuro][VSPreview] → using synthetic scanpath fallback, nodeCount will be computed from', layout.pathPts.length, 'points');
-      const pts = layout.pathPts;
+    if (sorted.length === 0 && filteredPathPts.length >= 2 && !layout?.noValidGazeCoords) {
+      console.log('[Neuro][VSPreview] → using synthetic scanpath fallback, nodeCount will be computed from', filteredPathPts.length, 'points');
+      const pts = filteredPathPts;
       const totalDur = pts[pts.length - 1]!.t - pts[0]!.t;
       // Sample roughly every 1 second, but at least 6 and at most 20 nodes
       const nodeCount = Math.max(6, Math.min(20, Math.ceil(totalDur)));
@@ -184,7 +215,7 @@ export default function VisualSearchResultsPreview({
             x2: p.x,
             y2: p.y,
             stroke: `hsl(${hue} 72% 58%)`,
-            label: dt > 0 ? `${(dt / 1000).toFixed(2)}s` : undefined,
+            label: dt > 0 ? `${dt.toFixed(2)}s` : undefined,
           });
         }
         synthNodes.push({
@@ -212,7 +243,7 @@ export default function VisualSearchResultsPreview({
           x2: lastPt.x,
           y2: lastPt.y,
           stroke: `hsl(${hue} 72% 58%)`,
-          label: dt > 0 ? `${(dt / 1000).toFixed(2)}s` : undefined,
+          label: dt > 0 ? `${dt.toFixed(2)}s` : undefined,
         });
         synthNodes.push({
           cx: lastPt.x,
@@ -261,7 +292,7 @@ export default function VisualSearchResultsPreview({
       };
     });
     return { segments, nodes };
-  }, [layout, fixations, endTime, startTime, completionTimeMs]);
+  }, [filteredFixations, filteredPathPts, layout?.noValidGazeCoords, endTime, startTime, effectiveReplay]);
 
   useEffect(() => {
     if (!layout) return;
@@ -305,6 +336,7 @@ export default function VisualSearchResultsPreview({
   const noPath = layout.rawPathLen === 0;
 
   const svgBlock = (
+    <>
     <ResultVizMaxFrame>
       <ResultVizAspectSvg
         contentWidth={layout.vw}
@@ -313,8 +345,8 @@ export default function VisualSearchResultsPreview({
         role="img"
         aria-label="Visual search gaze path and scanpath"
       >
-        {showGazeHeatmap && layout.pathPts.length > 0 && <GazeHeatmapLayer points={layout.pathPts} />}
-        {layout.poly.length > 0 && (
+        {showGazeHeatmap && filteredPathPts.length > 0 && <GazeHeatmapLayer points={filteredPathPts} />}
+        {replayPolyline.length > 0 && (
           <polyline
             fill="none"
             stroke="rgb(96 165 250)"
@@ -322,11 +354,11 @@ export default function VisualSearchResultsPreview({
             strokeLinejoin="round"
             strokeLinecap="round"
             opacity={0.42}
-            points={layout.poly}
+            points={replayPolyline}
           />
         )}
-        {layout.pathPts.length > 1 && scanplot.nodes.length === 0 && (
-          <GazePathDirectionArrows points={layout.pathPts} step={10} />
+        {filteredPathPts.length > 1 && scanplot.nodes.length === 0 && (
+          <GazePathDirectionArrows points={filteredPathPts} step={10} />
         )}
         {scanplot.segments.map((s) => {
           const cx = (s.x1 + s.x2) / 2;
@@ -455,6 +487,24 @@ export default function VisualSearchResultsPreview({
           ))}
       </ResultVizAspectSvg>
     </ResultVizMaxFrame>
+    {durationSec > 0 && layout && (
+      <label className="flex shrink-0 flex-col gap-1 px-1 mt-2 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:gap-3">
+        <span className="whitespace-nowrap">Thời điểm tái hiện</span>
+        <input
+          type="range"
+          min={0}
+          max={durationSec}
+          step={Math.min(0.1, durationSec / 200) || 0.01}
+          value={Math.min(effectiveReplay, durationSec)}
+          onChange={(e) => setReplayTimeSec(Number(e.target.value))}
+          className="min-w-0 flex-1 accent-sky-500"
+        />
+        <span className="font-mono text-slate-300 tabular-nums">
+          {effectiveReplay.toFixed(1)}s / {durationSec.toFixed(1)}s
+        </span>
+      </label>
+    )}
+    </>
   );
 
   if (visualOnly) {
