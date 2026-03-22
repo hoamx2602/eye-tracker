@@ -241,10 +241,11 @@ export default function MemoryCardsGazePathPreview({
     }
     const b = layout.board;
     if (moves?.length && startTime != null) {
-      return cardStateAtTime(effectiveReplay, startTime, moves, FLIP_BACK_DELAY_MS / 1000);
+      const t = effectiveReplay >= durationSec - 0.05 ? Infinity : effectiveReplay;
+      return cardStateAtTime(t, startTime, moves, FLIP_BACK_DELAY_MS / 1000);
     }
     return { matched: allMatchedIndices(b), revealed: new Set<number>() };
-  }, [layout?.board, moves, startTime, effectiveReplay]);
+  }, [layout?.board, moves, startTime, effectiveReplay, durationSec]);
 
   const gridCells = useMemo(() => {
     if (!layout?.board || !showStimulusReplay) return [];
@@ -401,7 +402,7 @@ export default function MemoryCardsGazePathPreview({
             type="range"
             min={0}
             max={durationSec}
-            step={Math.min(0.1, durationSec / 200) || 0.01}
+            step={0.01}
             value={Math.min(effectiveReplay, durationSec)}
             onChange={(e) => setReplayTimeSec(Number(e.target.value))}
             className="min-w-0 flex-1 accent-sky-500"

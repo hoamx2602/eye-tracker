@@ -160,12 +160,14 @@ export default function VisualSearchResultsPreview({
 
   const filteredPathPts = useMemo(() => {
     if (!layout?.pathPts) return [];
+    if (effectiveReplay >= durationSec - 0.05) return layout.pathPts;
     // layout.pathPts[].t is in SECONDS (relative to start of the test)
     return layout.pathPts.filter((p) => p.t <= effectiveReplay);
-  }, [layout?.pathPts, effectiveReplay]);
+  }, [layout?.pathPts, effectiveReplay, durationSec]);
 
   const filteredFixations = useMemo(() => {
     if (!layout?.fixationsResolved) return [];
+    if (effectiveReplay >= durationSec - 0.05) return layout.fixationsResolved;
     // layout.fixationsResolved[].timestamp is ABSOLUTE MILLISECONDS (performance.now())
     if (startTime != null) {
       const cutoff = startTime + effectiveReplay * 1000;
@@ -178,7 +180,7 @@ export default function VisualSearchResultsPreview({
       return layout.fixationsResolved.filter((f) => f.timestamp <= cutoff);
     }
     return layout.fixationsResolved;
-  }, [layout?.fixationsResolved, effectiveReplay, startTime]);
+  }, [layout?.fixationsResolved, effectiveReplay, startTime, durationSec]);
 
   const replayPolyline = useMemo(() => filteredPathPts.map((p) => `${p.x},${p.y}`).join(' '), [filteredPathPts]);
 
@@ -494,7 +496,7 @@ export default function VisualSearchResultsPreview({
           type="range"
           min={0}
           max={durationSec}
-          step={Math.min(0.1, durationSec / 200) || 0.01}
+          step={0.01}
           value={Math.min(effectiveReplay, durationSec)}
           onChange={(e) => setReplayTimeSec(Number(e.target.value))}
           className="min-w-0 flex-1 accent-sky-500"
