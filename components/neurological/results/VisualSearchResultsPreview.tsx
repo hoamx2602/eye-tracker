@@ -169,13 +169,14 @@ export default function VisualSearchResultsPreview({
       const nodeCount = Math.max(6, Math.min(20, Math.ceil(totalDur)));
       const step = Math.max(1, Math.floor(pts.length / nodeCount));
       const synthNodes: { cx: number; cy: number; r: number; label: string; targetNum: number; fill: string; stroke: string; key: string }[] = [];
-      const synthSegments: { x1: number; y1: number; x2: number; y2: number; stroke: string; key: string }[] = [];
-      let prevPt: { x: number; y: number } | null = null;
+      const synthSegments: { x1: number; y1: number; x2: number; y2: number; stroke: string; key: string; label?: string }[] = [];
+      let prevPt: { x: number; y: number; t?: number } | null = null;
       let k = 0;
       for (let i = 0; i < pts.length; i += step) {
         const p = pts[i]!;
         const hue = (k * 47) % 360;
         if (prevPt) {
+          const dt = p.t && prevPt.t ? p.t - prevPt.t : 0;
           synthSegments.push({
             key: `sseg-${k}`,
             x1: prevPt.x,
@@ -183,6 +184,7 @@ export default function VisualSearchResultsPreview({
             x2: p.x,
             y2: p.y,
             stroke: `hsl(${hue} 72% 58%)`,
+            label: dt > 0 ? `${(dt / 1000).toFixed(2)}s` : undefined,
           });
         }
         synthNodes.push({
@@ -202,6 +204,7 @@ export default function VisualSearchResultsPreview({
       const lastPt = pts[pts.length - 1]!;
       if (prevPt && (prevPt.x !== lastPt.x || prevPt.y !== lastPt.y)) {
         const hue = (k * 47) % 360;
+        const dt = lastPt.t && prevPt.t ? lastPt.t - prevPt.t : 0;
         synthSegments.push({
           key: `sseg-${k}`,
           x1: prevPt.x,
@@ -209,6 +212,7 @@ export default function VisualSearchResultsPreview({
           x2: lastPt.x,
           y2: lastPt.y,
           stroke: `hsl(${hue} 72% 58%)`,
+          label: dt > 0 ? `${(dt / 1000).toFixed(2)}s` : undefined,
         });
         synthNodes.push({
           cx: lastPt.x,
@@ -224,11 +228,12 @@ export default function VisualSearchResultsPreview({
       return { segments: synthSegments, nodes: synthNodes };
     }
 
-    const segments: { x1: number; y1: number; x2: number; y2: number; stroke: string; key: string }[] = [];
+    const segments: { x1: number; y1: number; x2: number; y2: number; stroke: string; key: string; label?: string }[] = [];
     for (let i = 0; i < sorted.length - 1; i++) {
       const a = sorted[i]!;
       const b = sorted[i + 1]!;
       const hue = (i * 47) % 360;
+      const dt = b.timestamp - a.timestamp;
       segments.push({
         key: `seg-${i}`,
         x1: a.gazeX,
@@ -236,6 +241,7 @@ export default function VisualSearchResultsPreview({
         x2: b.gazeX,
         y2: b.gazeY,
         stroke: `hsl(${hue} 72% 58%)`,
+        label: `${(dt / 1000).toFixed(2)}s`,
       });
     }
     const nodes = sorted.map((f, i) => {
@@ -322,19 +328,87 @@ export default function VisualSearchResultsPreview({
         {layout.pathPts.length > 1 && scanplot.nodes.length === 0 && (
           <GazePathDirectionArrows points={layout.pathPts} step={10} />
         )}
-        {scanplot.segments.map((s) => (
-          <line
-            key={s.key}
-            x1={s.x1}
-            y1={s.y1}
-            x2={s.x2}
-            y2={s.y2}
-            stroke={s.stroke}
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            opacity={0.92}
-          />
-        ))}
+        {scanplot.segments.map((s) => {
+          const cx = (s.x1 + s.x2) / 2;
+          const cy = (s.y1 + s.y2) / 2;
+          // Calculate angle for text rotation
+          const dx = s.x2 - s.x1;
+          const dy = s.y2 - s.y1;
+          const inRange = Math.abs(dx) > 10 || Math.abs(dy) > 10;
+          return (
+          <g key={s.key} className="group cursor-default">
+            {/* Thicker invisible line for easier hovering */}
+            <line
+              x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+              stroke="transparent"
+              strokeWidth="20"
+            />
+            <line
+              x1={s.x1}
+              y1={s.y1}
+              x2={s.x2}
+              y2={s.y2}
+              stroke={s.stroke}
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              opacity={0.92}
+            />
+            {(() => {
+              const len = Math.hypot(dx, dy);
+              if (len > 35) {
+                const ux = dx / len;
+                const uy = dy / len;
+                // Place arrowhead 22px away from destination (just outside circle)
+                const tipX = s.x1 + ux * (len - 22);
+                const tipY = s.y1 + uy * (len - 22);
+                // Base is 14px back from tip
+                const baseX = tipX - ux * 14;
+                const baseY = tipY - uy * 14;
+                // Vector perpendicular to line
+                const nx = -uy;
+                const ny = ux;
+                const p1x = baseX + nx * 7;
+                const p1y = baseY + ny * 7;
+                const p2x = baseX - nx * 7;
+                const p2y = baseY - ny * 7;
+                return (
+                  <polygon
+                    points={`${tipX},${tipY} ${p1x},${p1y} ${p2x},${p2y}`}
+                    fill={s.stroke}
+                    opacity={0.92}
+                  />
+                );
+              }
+              return null;
+            })()}
+            {s.label && inRange && (
+              <g className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <rect
+                  x={cx - 24}
+                  y={cy - 12}
+                  width="48"
+                  height="24"
+                  fill="rgb(15 23 42 / 0.85)"
+                  stroke={s.stroke}
+                  strokeWidth="1"
+                  rx="4"
+                />
+                <text
+                  x={cx}
+                  y={cy}
+                  fill="white"
+                  fontSize="12"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontWeight="bold"
+                >
+                  {s.label}
+                </text>
+              </g>
+            )}
+            <title>Time taken: {s.label ?? 'Unknown'}</title>
+          </g>
+        )})}
         {scanplot.nodes.map((n) => (
           <g key={n.key}>
             <circle cx={n.cx} cy={n.cy} r={n.r} fill={n.fill} stroke={n.stroke} strokeWidth="2.2" opacity={0.95} />
