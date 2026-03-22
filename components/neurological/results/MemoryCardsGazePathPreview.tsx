@@ -6,6 +6,7 @@ import type { MemoryCardsGridRect, MemoryCardsMove } from '../tests/memoryCards/
 import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
 import { GazeHeatmapLayer, GazePathDirectionArrows } from './gazeVizSvg';
 import { useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
+import { detectAndMapGazeToViewport } from '@/lib/visualSearchGazeCoords';
 
 const SYMBOLS = '◆●▲■★♦♥♣✓✗○◇☆▪▫①②③④⑤⑥⑦⑧⑨⑩'.split('');
 
@@ -158,9 +159,80 @@ export default function MemoryCardsGazePathPreview({
     return gazePath.filter((p) => p.t <= effectiveReplay);
   }, [gazePath, effectiveReplay, layout]);
 
-  const pathPts = useMemo(() => pathForReplay.map((p) => ({ x: p.x, y: p.y })), [pathForReplay]);
-  const polyline = useMemo(() => pathPts.map((p) => `${p.x},${p.y}`).join(' '), [pathPts]);
+  const pathPts = useMemo(() => {
+    if (!layout || pathForReplay.length === 0) return [];
+    const xy = pathForReplay.map((p) => ({ x: p.x, y: p.y }));
+    const { pts: mapped } = detectAndMapGazeToViewport(xy, layout.vw, layout.vh);
+    return pathForReplay.map((p, i) => ({ t: p.t, x: mapped[i]!.x, y: mapped[i]!.y }));
+  }, [pathForReplay, layout]);
   const last = pathPts[pathPts.length - 1];
+
+  const scanplot = useMemo(() => {
+    if (!layout || pathPts.length < 2) return { segments: [], nodes: [] };
+    const pts = pathPts;
+    const totalDurSec = Math.max(1, pts[pts.length - 1]!.t - pts[0]!.t); // t is already seconds
+    const nodeCount = Math.max(6, Math.min(30, Math.ceil(totalDurSec * 1.5))); // ~1.5 nodes per second
+    const step = Math.max(1, Math.floor(pts.length / nodeCount));
+    
+    const synthNodes: { cx: number; cy: number; r: number; label: string; fill: string; stroke: string; key: string }[] = [];
+    const synthSegments: { x1: number; y1: number; x2: number; y2: number; stroke: string; key: string; label?: string }[] = [];
+    let prevPt: typeof pts[0] | null = null;
+    let k = 0;
+    
+    for (let i = 0; i < pts.length; i += step) {
+      const p = pts[i]!;
+      const hue = (k * 35) % 360;
+      if (prevPt) {
+        const dt = p.t - prevPt.t; // dt is in seconds
+        synthSegments.push({
+          key: `sseg-${k}`,
+          x1: prevPt.x,
+          y1: prevPt.y,
+          x2: p.x,
+          y2: p.y,
+          stroke: `hsl(${hue} 72% 58%)`,
+          label: dt > 0 ? `${dt.toFixed(2)}s` : undefined,
+        });
+      }
+      synthNodes.push({
+        cx: p.x,
+        cy: p.y,
+        r: 16,
+        label: String(k + 1),
+        fill: `hsl(${hue} 65% 50% / 0.38)`,
+        stroke: `hsl(${hue} 75% 62%)`,
+        key: `sfx-${k}`,
+      });
+      prevPt = p;
+      k++;
+    }
+    
+    const lastPt = pts[pts.length - 1]!;
+    if (prevPt && (prevPt.x !== lastPt.x || prevPt.y !== lastPt.y)) {
+      const hue = (k * 35) % 360;
+      const dt = lastPt.t - prevPt.t; // dt is in seconds
+      synthSegments.push({
+        key: `sseg-${k}`,
+        x1: prevPt.x,
+        y1: prevPt.y,
+        x2: lastPt.x,
+        y2: lastPt.y,
+        stroke: `hsl(${hue} 72% 58%)`,
+        label: dt > 0 ? `${dt.toFixed(2)}s` : undefined,
+      });
+      synthNodes.push({
+        cx: lastPt.x,
+        cy: lastPt.y,
+        r: 16,
+        label: String(k + 1),
+        fill: `hsl(${hue} 65% 50% / 0.38)`,
+        stroke: `hsl(${hue} 75% 62%)`,
+        key: `sfx-${k}`,
+      });
+    }
+    
+    return { segments: synthSegments, nodes: synthNodes };
+  }, [layout, pathForReplay]);
 
   const { matched, revealed } = useMemo(() => {
     if (!layout?.board?.length) {
@@ -252,18 +324,70 @@ export default function MemoryCardsGazePathPreview({
         >
           {gridCells}
           {showGazeHeatmap && pathPts.length > 0 && <GazeHeatmapLayer points={pathPts} />}
-          {pathPts.length > 0 && (
-            <polyline
-              fill="none"
-              stroke="rgb(96 165 250)"
-              strokeWidth="2"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              opacity={0.95}
-              points={polyline}
-            />
-          )}
-          {pathPts.length > 1 && <GazePathDirectionArrows points={pathPts} step={10} />}
+          {scanplot.segments.map((s) => {
+            const cx = (s.x1 + s.x2) / 2;
+            const cy = (s.y1 + s.y2) / 2;
+            const dx = s.x2 - s.x1;
+            const dy = s.y2 - s.y1;
+            const inRange = Math.abs(dx) > 10 || Math.abs(dy) > 10;
+            return (
+            <g key={s.key} className="group cursor-default">
+              <line
+                x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                stroke="transparent" strokeWidth="20"
+              />
+              <line
+                x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                stroke={s.stroke} strokeWidth="3.5" strokeLinecap="round" opacity={0.92}
+              />
+              {(() => {
+                const len = Math.hypot(dx, dy);
+                if (len > 35) {
+                  const ux = dx / len;
+                  const uy = dy / len;
+                  const tipX = s.x1 + ux * (len - 20);
+                  const tipY = s.y1 + uy * (len - 20);
+                  const baseX = tipX - ux * 14;
+                  const baseY = tipY - uy * 14;
+                  const nx = -uy;
+                  const ny = ux;
+                  const p1x = baseX + nx * 7;
+                  const p1y = baseY + ny * 7;
+                  const p2x = baseX - nx * 7;
+                  const p2y = baseY - ny * 7;
+                  return (
+                    <polygon
+                      points={`${tipX},${tipY} ${p1x},${p1y} ${p2x},${p2y}`}
+                      fill={s.stroke} opacity={0.92}
+                    />
+                  );
+                }
+                return null;
+              })()}
+              {s.label && inRange && (
+                <g className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <rect
+                    x={cx - 24} y={cy - 12} width="48" height="24"
+                    fill="rgb(15 23 42 / 0.85)" stroke={s.stroke} strokeWidth="1" rx="4"
+                  />
+                  <text
+                    x={cx} y={cy} fill="white" fontSize="12" textAnchor="middle" dominantBaseline="central" fontWeight="bold"
+                  >
+                    {s.label}
+                  </text>
+                </g>
+              )}
+              <title>Time taken: {s.label ?? 'Unknown'}</title>
+            </g>
+          )})}
+          {scanplot.nodes.map((n) => (
+            <g key={n.key}>
+              <circle cx={n.cx} cy={n.cy} r={n.r} fill={n.fill} stroke={n.stroke} strokeWidth="2.2" opacity={0.95} />
+              <text x={n.cx} y={n.cy} textAnchor="middle" dominantBaseline="central" fill="white" fontSize={13} fontWeight="bold" style={{ textShadow: '0 1px 2px rgb(0 0 0 / 0.8)' }}>
+                {n.label}
+              </text>
+            </g>
+          ))}
           {last && (
             <circle cx={last.x} cy={last.y} r={6} fill="rgb(251 191 36)" stroke="rgb(15 23 42)" strokeWidth={1} />
           )}
