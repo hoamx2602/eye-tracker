@@ -193,8 +193,22 @@ export class EyeTrackingService {
 
     const headPose = this.calculateGeometricHeadPose(landmarks);
 
-    // Z-Distance proxy (inter-ocular distance; larger = closer to camera)
-    const zDistance = Math.abs(leftOuter.x - rightOuter.x) * 10;
+    // Z-Distance proxy: IPD normalized by face width.
+    // Using the full 2D distance (sqrt of x²+y²) avoids head-tilt confound —
+    // when the head tilts, raw horizontal-only IPD shrinks even at the same depth.
+    // Dividing by faceWidth removes camera-FOV and face-size variation,
+    // giving a stable inverse-depth signal (larger = closer to camera).
+    const leftFaceEdge  = landmarks[EyeLandmarkIndices.LEFT_FACE_EDGE];
+    const rightFaceEdge = landmarks[EyeLandmarkIndices.RIGHT_FACE_EDGE];
+    const faceWidth = Math.sqrt(
+      (rightFaceEdge.x - leftFaceEdge.x) ** 2 +
+      (rightFaceEdge.y - leftFaceEdge.y) ** 2
+    );
+    const ipd = Math.sqrt(
+      (leftOuter.x - rightOuter.x) ** 2 +
+      (leftOuter.y - rightOuter.y) ** 2
+    );
+    const zDistance = faceWidth > 0.01 ? (ipd / faceWidth) * 10 : 0;
 
     // --- EAR: Eye Aspect Ratio (openness) ---
     // EAR = vertical_opening / horizontal_width. Drops toward 0 when squinting/blinking.
