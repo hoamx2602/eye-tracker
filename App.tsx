@@ -1392,13 +1392,6 @@ function App() {
         setLoocvBaseline(prev => prev ?? { ridge: cvRidge, hybrid: cvHybrid });
         console.log(`[Calibration] Hybrid CV: ${cvHybrid.toFixed(1)}, Ridge CV: ${cvRidge.toFixed(1)}`);
         
-        // If Hybrid CV is extremely bad (worse than Ridge or just crazy high), force fallback to Ridge.
-        if (cvHybrid > 150 || (cvHybrid > cvRidge + 50 && cvHybrid > 100)) {
-            console.warn("⚠️ Severe k-NN overfitting: coordinate grid warping. Forcing fallback to linear Ridge.");
-            configRef.current.regressionMethod = RegressionMethod.RIDGE;
-            alert(`Warning: Possible overfitting (warped interpolation grid). Switched to Linear Ridge for safety. (Interpolation error: ${cvHybrid.toFixed(0)} px)`);
-        }
-        
         setGazeModelReady(true);
 
         // Test mode: skip EXERCISES + VALIDATION, save session and go to Tracking after first phase
