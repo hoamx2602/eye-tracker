@@ -12,6 +12,10 @@ interface DiagnosticsPanelProps {
   status: AppState;
   lightLevel?: { value: number; status: 'too_dark' | 'low' | 'ok' | 'good' } | null;
   loocvErrors?: { ridge: number; hybrid: number } | null;
+  /** Frozen LOOCV from first training — compare against to measure flag improvements. */
+  loocvBaseline?: { ridge: number; hybrid: number } | null;
+  /** Re-train with current AppConfig feature flags and recompute LOOCV. */
+  onReEvaluate?: () => void;
 }
 
 const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
@@ -23,7 +27,9 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
   isBlinking,
   status,
   lightLevel,
-  loocvErrors
+  loocvErrors,
+  loocvBaseline,
+  onReEvaluate,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -150,23 +156,93 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
         )}
 
         {rawFeatures && rawFeatures.headPose && (
-        <div className="text-[9px] text-gray-400 font-mono space-y-1 mb-2">
-            <div>Pitch: {(rawFeatures.headPose.pitch * 180 / Math.PI).toFixed(1)}°</div>
-            <div>Yaw:   {(rawFeatures.headPose.yaw * 180 / Math.PI).toFixed(1)}°</div>
+        <div className="text-[9px] text-gray-400 font-mono space-y-0.5 mb-2">
+            <div>Pitch: {(rawFeatures.headPose.pitch * 180 / Math.PI).toFixed(1)}°
+              {rawFeatures.matrixHeadPose && (
+                <span className="text-blue-500 ml-1">({(rawFeatures.matrixHeadPose.pitch * 180 / Math.PI).toFixed(1)}°M)</span>
+              )}
+            </div>
+            <div>Yaw:   {(rawFeatures.headPose.yaw * 180 / Math.PI).toFixed(1)}°
+              {rawFeatures.matrixHeadPose && (
+                <span className="text-blue-500 ml-1">({(rawFeatures.matrixHeadPose.yaw * 180 / Math.PI).toFixed(1)}°M)</span>
+              )}
+            </div>
             <div>Roll:  {(rawFeatures.headPose.roll * 180 / Math.PI).toFixed(1)}°</div>
             <div>Z-Dist: {rawFeatures.zDistance?.toFixed(2)}</div>
+            {(rawFeatures.leftEAR !== undefined) && (
+              <div className="text-gray-600">
+                EAR: L {rawFeatures.leftEAR.toFixed(2)} / R {rawFeatures.rightEAR.toFixed(2)}
+              </div>
+            )}
+            {rawFeatures.blendshapes && (
+              <div className="text-gray-600">
+                Blend: U{((rawFeatures.blendshapes['eyeLookUpLeft'] ?? 0) * 100).toFixed(0)}
+                /D{((rawFeatures.blendshapes['eyeLookDownLeft'] ?? 0) * 100).toFixed(0)}
+                /I{((rawFeatures.blendshapes['eyeLookInLeft'] ?? 0) * 100).toFixed(0)}
+                /O{((rawFeatures.blendshapes['eyeLookOutLeft'] ?? 0) * 100).toFixed(0)}
+              </div>
+            )}
         </div>
         )}
 
         {loocvErrors && (
-          <div className="text-[9px] text-gray-400 font-mono space-y-1 mb-2 border-t border-gray-800 pt-1">
-            <div className="text-gray-500 mb-0.5">LOOCV Error:</div>
-            <div className={loocvErrors.ridge > 100 ? 'text-red-400' : 'text-green-400'}>
-              Ridge: {loocvErrors.ridge.toFixed(1)}px
+          <div className="text-[9px] text-gray-400 font-mono mb-2 border-t border-gray-800 pt-1 space-y-1">
+            {/* Header row */}
+            <div className="flex justify-between text-gray-600">
+              <span>LOOCV</span>
+              {loocvBaseline && <span className="text-gray-700">baseline / now</span>}
             </div>
-            <div className={loocvErrors.hybrid > 150 ? 'text-red-500 font-bold' : 'text-green-400'}>
-              k-NN: {loocvErrors.hybrid.toFixed(1)}px
+
+            {/* Ridge row */}
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500">Ridge</span>
+              <span>
+                {loocvBaseline && (
+                  <span className="text-gray-600 mr-1">{loocvBaseline.ridge.toFixed(1)} /</span>
+                )}
+                <span className={loocvErrors.ridge > 100 ? 'text-red-400' : 'text-green-400'}>
+                  {loocvErrors.ridge.toFixed(1)}px
+                </span>
+                {loocvBaseline && loocvErrors.ridge < loocvBaseline.ridge && (
+                  <span className="text-green-500 ml-1">▼{(loocvBaseline.ridge - loocvErrors.ridge).toFixed(1)}</span>
+                )}
+                {loocvBaseline && loocvErrors.ridge > loocvBaseline.ridge && (
+                  <span className="text-red-500 ml-1">▲{(loocvErrors.ridge - loocvBaseline.ridge).toFixed(1)}</span>
+                )}
+              </span>
             </div>
+
+            {/* Hybrid/k-NN row */}
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500">k-NN</span>
+              <span>
+                {loocvBaseline && (
+                  <span className="text-gray-600 mr-1">{loocvBaseline.hybrid.toFixed(1)} /</span>
+                )}
+                <span className={loocvErrors.hybrid > 150 ? 'text-red-500 font-bold' : 'text-green-400'}>
+                  {loocvErrors.hybrid.toFixed(1)}px
+                </span>
+                {loocvBaseline && loocvErrors.hybrid < loocvBaseline.hybrid && (
+                  <span className="text-green-500 ml-1">▼{(loocvBaseline.hybrid - loocvErrors.hybrid).toFixed(1)}</span>
+                )}
+                {loocvBaseline && loocvErrors.hybrid > loocvBaseline.hybrid && (
+                  <span className="text-red-500 ml-1">▲{(loocvErrors.hybrid - loocvBaseline.hybrid).toFixed(1)}</span>
+                )}
+              </span>
+            </div>
+
+            {/* Re-evaluate button (shown after calibration when rawEyeFeatures are stored) */}
+            {onReEvaluate && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onReEvaluate(); }}
+                className="w-full mt-1 px-2 py-0.5 rounded text-[9px] font-mono bg-blue-900/40 border border-blue-700/50 text-blue-400 hover:bg-blue-800/60 hover:text-blue-300 transition-colors"
+                title="Re-extract feature vectors with current flags and recompute LOOCV"
+              >
+                ↺ Re-evaluate flags
+              </button>
+            )}
           </div>
         )}
         

@@ -23,8 +23,13 @@ export interface EyeFeatures {
   // Normalized vector (0-1) of pupil position relative to eye corners
   leftRelative: Point;
   rightRelative: Point;
-  headPose: HeadPose; // Added for compensation
+  headPose: HeadPose; // Geometric head pose (heuristic approximation)
   zDistance: number;  // Pseudo-Z axis measurement (inter-ocular distance scaled)
+  // --- Optimization fields (populated when MediaPipe outputs are enabled) ---
+  leftEAR: number;           // Eye Aspect Ratio: openness metric to compensate partial closure
+  rightEAR: number;
+  blendshapes?: Record<string, number>; // MediaPipe neural-network eye-gaze blendshape scores
+  matrixHeadPose?: HeadPose;            // Head pose from 4×4 transformation matrix (more accurate than geometric)
 }
 
 export interface TrainingSample {
@@ -40,6 +45,12 @@ export interface TrainingSample {
   blobForUpload?: Blob;
   /** Pattern name for display (e.g. "Grid point 1", "horizontal", "h_pattern"). */
   patternName?: string;
+  /**
+   * Raw averaged EyeFeatures at capture time.
+   * Stored so feature flags can be toggled and LOOCV re-evaluated without re-calibrating.
+   * Only populated for grid calibration points (not exercise data).
+   */
+  rawEyeFeatures?: EyeFeatures;
 }
 
 /** Serializable head validation snapshot for calibration samples. */
@@ -181,6 +192,16 @@ export interface AppConfig {
   // Eye Movement Exercises (additional calibration patterns for better accuracy)
   enableExercises: boolean;
 
+  // --- FEATURE FLAGS (can be toggled; re-evaluate LOOCV without re-calibrating) ---
+  /** Include Eye Aspect Ratio (openness) in feature vector. Compensates partial-closure noise. */
+  useEAR: boolean;
+  /** Include MediaPipe neural-network eye-gaze blendshape scores in feature vector. */
+  useBlendshapes: boolean;
+  /** Use head pose from 3D transformation matrix instead of geometric approximation. */
+  useTransformationMatrix: boolean;
+  /** Add rx², ry², and binocular vergence (lx−rx) to feature vector for symmetric coverage. */
+  useSymmetricFeatures: boolean;
+
   // --- RECORDING & CAPTURE ---
   enableVideoRecording: boolean;
   faceCaptureInterval: number; // Seconds. 0 to disable.
@@ -205,9 +226,10 @@ export const DEFAULT_CONFIG: AppConfig = {
   calibrationPointsCount: 9, // Default to 9 points
   clickDuration: 1.5, // 1.5 seconds hold
 
-  // Outlier Defaults
+  // Outlier Defaults — 10% trim keeps the middle 80% of each capture window,
+  // up from the previous 50% (was 25% each end). More data = more stable regression.
   outlierMethod: OutlierMethod.TRIM_TAILS,
-  outlierThreshold: 0.25, // Trim 25% from each end
+  outlierThreshold: 0.10, // Trim 10% from each end (was 0.25)
   
   // Distance
   faceDistance: 60, // Standard desktop distance (60cm)
@@ -216,6 +238,12 @@ export const DEFAULT_CONFIG: AppConfig = {
 
   // Exercises
   enableExercises: true,
+
+  // Feature Flags — all off by default; enable one at a time and re-evaluate LOOCV
+  useEAR: false,
+  useBlendshapes: false,
+  useTransformationMatrix: false,
+  useSymmetricFeatures: false,
 
   // Recording Defaults
   enableVideoRecording: true,

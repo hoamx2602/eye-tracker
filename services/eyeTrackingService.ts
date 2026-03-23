@@ -1,5 +1,17 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark, FaceLandmarkerResult } from "@mediapipe/tasks-vision";
-import { EyeLandmarkIndices, EyeFeatures, HeadPose } from "../types";
+import { EyeLandmarkIndices, EyeFeatures, HeadPose, AppConfig } from "../types";
+
+// Lightweight inline types for optional MediaPipe outputs (avoids importing extra @mediapipe types)
+interface BlendshapeCategory { categoryName: string; score: number; }
+interface TransformMatrixData { data: number[] | Float32Array; }
+
+/** Eye-gaze relevant blendshape names from MediaPipe FaceLandmarker. */
+const GAZE_BLENDSHAPES = [
+  'eyeLookDownLeft', 'eyeLookDownRight',
+  'eyeLookInLeft',   'eyeLookInRight',
+  'eyeLookOutLeft',  'eyeLookOutRight',
+  'eyeLookUpLeft',   'eyeLookUpRight',
+] as const;
 
 export interface HeadValidationResult {
   valid: boolean;
@@ -21,8 +33,10 @@ export class EyeTrackingService {
         modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
         delegate: "GPU"
       },
-      outputFaceBlendshapes: false,
-      outputFacialTransformationMatrixes: false,
+      // Always enabled so data is available for feature-flag re-evaluation without re-init.
+      // Feature flags in AppConfig control whether they are USED in the feature vector.
+      outputFaceBlendshapes: true,
+      outputFacialTransformationMatrixes: true,
       runningMode: this.runningMode,
       numFaces: 1,
       minFaceDetectionConfidence: 0.5,
@@ -140,82 +154,181 @@ export class EyeTrackingService {
     return { pitch, yaw, roll };
   }
 
-  extractEyeFeatures(landmarks: NormalizedLandmark[]): EyeFeatures | null {
+  extractEyeFeatures(
+    landmarks: NormalizedLandmark[],
+    blendshapeCategories?: BlendshapeCategory[],
+    transformMatrixData?: TransformMatrixData
+  ): EyeFeatures | null {
     if (!landmarks || landmarks.length < 478) return null;
 
     const getPoint = (index: number) => ({ x: landmarks[index].x, y: landmarks[index].y });
 
     const leftPupil = getPoint(EyeLandmarkIndices.LEFT_IRIS_CENTER);
     const rightPupil = getPoint(EyeLandmarkIndices.RIGHT_IRIS_CENTER);
-    
-    // Eye Centers (Anchor points)
-    const leftInner = getPoint(EyeLandmarkIndices.LEFT_INNER);
-    const leftOuter = getPoint(EyeLandmarkIndices.LEFT_OUTER);
-    const rightInner = getPoint(EyeLandmarkIndices.RIGHT_INNER);
-    const rightOuter = getPoint(EyeLandmarkIndices.RIGHT_OUTER);
-    
-    const leftCenter = { x: (leftInner.x + leftOuter.x)/2, y: (leftInner.y + leftOuter.y)/2 };
-    const rightCenter = { x: (rightInner.x + rightOuter.x)/2, y: (rightInner.y + rightOuter.y)/2 };
 
-    const leftWidth = Math.sqrt(Math.pow(leftOuter.x - leftInner.x, 2) + Math.pow(leftOuter.y - leftInner.y, 2));
-    const rightWidth = Math.sqrt(Math.pow(rightOuter.x - rightInner.x, 2) + Math.pow(rightOuter.y - rightInner.y, 2));
-    
-    // Vector from Center to Pupil
-    const lx = (leftPupil.x - leftCenter.x) / leftWidth;
-    const ly = (leftPupil.y - leftCenter.y) / leftWidth; 
-    
-    const rx = (rightPupil.x - rightCenter.x) / rightWidth;
-    const ry = (rightPupil.y - rightCenter.y) / rightWidth;
+    // Eye corners
+    const leftInner  = getPoint(EyeLandmarkIndices.LEFT_INNER);
+    const leftOuter  = getPoint(EyeLandmarkIndices.LEFT_OUTER);
+    const leftTop    = getPoint(EyeLandmarkIndices.LEFT_TOP);
+    const leftBottom = getPoint(EyeLandmarkIndices.LEFT_BOTTOM);
+    const rightInner  = getPoint(EyeLandmarkIndices.RIGHT_INNER);
+    const rightOuter  = getPoint(EyeLandmarkIndices.RIGHT_OUTER);
+    const rightTop    = getPoint(EyeLandmarkIndices.RIGHT_TOP);
+    const rightBottom = getPoint(EyeLandmarkIndices.RIGHT_BOTTOM);
+
+    const leftCenter  = { x: (leftInner.x  + leftOuter.x)  / 2, y: (leftInner.y  + leftOuter.y)  / 2 };
+    const rightCenter = { x: (rightInner.x + rightOuter.x) / 2, y: (rightInner.y + rightOuter.y) / 2 };
+
+    const dist = (a: {x:number;y:number}, b: {x:number;y:number}) =>
+      Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+
+    const leftWidth  = dist(leftOuter,  leftInner);
+    const rightWidth = dist(rightOuter, rightInner);
+
+    // Normalized pupil-to-center vectors
+    const lx = leftWidth  > 0 ? (leftPupil.x  - leftCenter.x)  / leftWidth  : 0;
+    const ly = leftWidth  > 0 ? (leftPupil.y  - leftCenter.y)  / leftWidth  : 0;
+    const rx = rightWidth > 0 ? (rightPupil.x - rightCenter.x) / rightWidth : 0;
+    const ry = rightWidth > 0 ? (rightPupil.y - rightCenter.y) / rightWidth : 0;
 
     const headPose = this.calculateGeometricHeadPose(landmarks);
 
-    // Calculate Z-Distance proxy (inter-ocular distance scaled up)
-    // The larger this is, the closer the face is to the camera.
+    // Z-Distance proxy (inter-ocular distance; larger = closer to camera)
     const zDistance = Math.abs(leftOuter.x - rightOuter.x) * 10;
+
+    // --- EAR: Eye Aspect Ratio (openness) ---
+    // EAR = vertical_opening / horizontal_width. Drops toward 0 when squinting/blinking.
+    const leftEAR  = leftWidth  > 0 ? dist(leftTop,  leftBottom)  / leftWidth  : 0;
+    const rightEAR = rightWidth > 0 ? dist(rightTop, rightBottom) / rightWidth : 0;
+
+    // --- Blendshapes (MediaPipe neural-network gaze estimates) ---
+    let blendshapes: Record<string, number> | undefined;
+    if (blendshapeCategories && blendshapeCategories.length > 0) {
+      blendshapes = {};
+      for (const cat of blendshapeCategories) {
+        if ((GAZE_BLENDSHAPES as readonly string[]).includes(cat.categoryName)) {
+          blendshapes[cat.categoryName] = cat.score;
+        }
+      }
+    }
+
+    // --- Matrix Head Pose (from 4×4 column-major transform matrix) ---
+    // More accurate than the geometric heuristic for larger rotation angles.
+    let matrixHeadPose: HeadPose | undefined;
+    if (transformMatrixData?.data && transformMatrixData.data.length >= 16) {
+      const m = transformMatrixData.data;
+      // Column-major layout: m[col*4 + row]
+      // R[row][col] → R[0][0]=m[0], R[1][0]=m[1], R[2][0]=m[2]
+      //               R[0][1]=m[4], R[1][1]=m[5], R[2][1]=m[6]
+      //               R[0][2]=m[8], R[1][2]=m[9], R[2][2]=m[10]
+      const r00=m[0], r10=m[1], r20=m[2];
+      const r01=m[4],            r21=m[6], r22=m[10];
+      const sy = Math.sqrt(r00 * r00 + r10 * r10);
+      if (sy > 1e-6) {
+        matrixHeadPose = {
+          pitch: Math.atan2(-r20, sy),           // up/down
+          yaw:   Math.atan2(r10, r00),            // left/right
+          roll:  Math.atan2(r21, r22),            // tilt
+        };
+      }
+    }
 
     return {
       leftPupil,
       rightPupil,
-      leftEyeCenter: leftCenter,
+      leftEyeCenter:  leftCenter,
       rightEyeCenter: rightCenter,
-      leftRelative: { x: lx * 10, y: ly * 10 }, 
-      rightRelative: { x: rx * 10, y: ry * 10 },
+      leftRelative:   { x: lx * 10, y: ly * 10 },
+      rightRelative:  { x: rx * 10, y: ry * 10 },
       headPose,
-      zDistance
+      zDistance,
+      leftEAR,
+      rightEAR,
+      blendshapes,
+      matrixHeadPose,
     };
   }
 
-  prepareFeatureVector(features: EyeFeatures): number[] {
+  /**
+   * Builds the regression feature vector from raw EyeFeatures.
+   *
+   * @param features   Raw eye/head measurements from extractEyeFeatures()
+   * @param config     Optional AppConfig (or subset). Feature flags default to false when omitted.
+   *
+   * Feature flags control which optional features are appended after the fixed core vector,
+   * so toggling a flag changes vector dimensionality — the regressor must be re-trained
+   * (or re-evaluated via reEvaluateWithCurrentFlags) after any flag change.
+   *
+   * Core vector layout (always present, indices 0-24):
+   *   [0]       bias
+   *   [1..4]    lx, ly, rx, ry          (normalized pupil-center vectors ×10)
+   *   [5..8]    lR, lΘ, rR, rΘ          (polar form)
+   *   [9..11]   pitch, yaw, roll         (geometric or matrix head pose)
+   *   [12..15]  lx·yaw, rx·yaw, ly·pitch, ry·pitch   (cross terms)
+   *   [16..17]  lx², ly²
+   *   [18]      z                        (inter-ocular distance proxy)
+   *   [19..24]  lx·z, ly·z, rx·z, ry·z, pitch·z, yaw·z
+   *
+   * Optional appended features (enabled via flags):
+   *   useSymmetricFeatures → rx², ry², (lx−rx)       (+3)
+   *   useEAR               → leftEAR, rightEAR        (+2)
+   *   useBlendshapes       → 8 gaze blendshape scores (+8)
+   */
+  prepareFeatureVector(
+    features: EyeFeatures,
+    config?: Pick<AppConfig, 'useEAR' | 'useBlendshapes' | 'useTransformationMatrix' | 'useSymmetricFeatures'>
+  ): number[] {
     const lx = features.leftRelative.x;
     const ly = features.leftRelative.y;
     const rx = features.rightRelative.x;
     const ry = features.rightRelative.y;
-    
-    const pitch = features.headPose.pitch;
-    const yaw = features.headPose.yaw;
-    const roll = features.headPose.roll;
 
-    const lR = Math.sqrt(lx*lx + ly*ly);
+    // Use matrix-derived pose if flag is enabled and data is available; else fallback to geometric
+    const pose = (config?.useTransformationMatrix && features.matrixHeadPose)
+      ? features.matrixHeadPose
+      : features.headPose;
+    const { pitch, yaw, roll } = pose;
+
+    const lR     = Math.sqrt(lx*lx + ly*ly);
     const lTheta = Math.atan2(ly, lx);
-    const rR = Math.sqrt(rx*rx + ry*ry);
+    const rR     = Math.sqrt(rx*rx + ry*ry);
     const rTheta = Math.atan2(ry, rx);
+    const z      = features.zDistance;
 
-    const z = features.zDistance;
-
-    return [
-      1, // Bias
-      lx, ly, rx, ry, 
-      lR, lTheta, rR, rTheta,
-      pitch, yaw, roll,
-      lx * yaw, rx * yaw,
-      ly * pitch, ry * pitch,
-      lx * lx, ly * ly,
-      // Phase 1: Z-Axis Compensation Terms
-      z,
-      lx * z, ly * z,
-      rx * z, ry * z,
-      pitch * z, yaw * z
+    // Core vector (fixed layout — same as original, backward-compatible)
+    const vec: number[] = [
+      1,                                          // bias
+      lx, ly, rx, ry,                             // eye vectors
+      lR, lTheta, rR, rTheta,                     // polar form
+      pitch, yaw, roll,                           // head pose
+      lx * yaw,  rx * yaw,                        // cross: horizontal gaze × yaw
+      ly * pitch, ry * pitch,                     // cross: vertical gaze × pitch
+      lx * lx, ly * ly,                           // quadratic (left eye)
+      z,                                          // Z proxy
+      lx * z, ly * z, rx * z, ry * z,             // gaze × distance
+      pitch * z, yaw * z,                         // head pose × distance
     ];
+
+    // --- Optional features (change dimensionality; require regressor re-train) ---
+
+    if (config?.useSymmetricFeatures) {
+      // Mirror of left-eye quadratic terms + binocular vergence
+      vec.push(rx * rx, ry * ry, lx - rx);
+    }
+
+    if (config?.useEAR) {
+      // Eye openness — compensates for iris position shift when squinting
+      vec.push(features.leftEAR, features.rightEAR);
+    }
+
+    if (config?.useBlendshapes && features.blendshapes) {
+      // Neural-network gaze estimates from MediaPipe (higher accuracy than geometric)
+      for (const name of GAZE_BLENDSHAPES) {
+        vec.push(features.blendshapes[name] ?? 0);
+      }
+    }
+
+    return vec;
   }
 }
 

@@ -161,7 +161,7 @@ function App() {
   // Exercise state
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const exerciseTargetRef = useRef<{ x: number; y: number } | null>(null);
-  const exerciseDataRef = useRef<{ screenX: number; screenY: number; features: number[]; head?: HeadSnapshot }[]>([]);
+  const exerciseDataRef = useRef<{ screenX: number; screenY: number; features: number[]; head?: HeadSnapshot; rawEyeFeatures?: EyeFeatures }[]>([]);
   const exerciseBlobsRef = useRef<Blob[]>([]);
   const exerciseActiveRef = useRef(false);
   const exerciseKindRef = useRef<EyeMovementKind>('wiggling');
@@ -177,6 +177,8 @@ function App() {
 
   const [accuracyScore, setAccuracyScore] = useState<number | null>(null);
   const [loocvErrors, setLoocvErrors] = useState<{ ridge: number; hybrid: number } | null>(null);
+  /** Frozen LOOCV from the very first train — baseline for comparing flag improvements. */
+  const [loocvBaseline, setLoocvBaseline] = useState<{ ridge: number; hybrid: number } | null>(null);
   
   const [gazePos, setGazePos] = useState({ x: 0, y: 0 });
   /** Regressor đã train — nếu false, predictGaze không có tọa độ thật, chỉ (0,0). */
@@ -204,6 +206,10 @@ function App() {
   const detectionAvgMsRef = useRef(0);
   const isCollectingRef = useRef(false);
   const collectionBufferRef = useRef<number[][]>([]);
+  /** Parallel raw-features buffer — same lifecycle as collectionBufferRef. Used to store
+   *  EyeFeatures per frame so the averaged result can be saved in TrainingSample.rawEyeFeatures,
+   *  enabling flag re-evaluation without re-calibrating. */
+  const rawCollectionBufferRef = useRef<EyeFeatures[]>([]);
   const trainingSamplesRef = useRef<TrainingSample[]>([]);
   const validationErrorsRef = useRef<number[]>([]); 
   const timerRef = useRef<(number | ReturnType<typeof setTimeout>)[]>([]);
@@ -800,23 +806,29 @@ function App() {
             setIsBlinking(blinking);
 
             if (!blinking) {
-                const features = eyeTrackingService.extractEyeFeatures(landmarks);
-                
+                // Pass optional MediaPipe outputs for richer feature extraction
+                const features = eyeTrackingService.extractEyeFeatures(
+                  landmarks,
+                  results.faceBlendshapes?.[0]?.categories as { categoryName: string; score: number }[] | undefined,
+                  results.facialTransformationMatrixes?.[0] as { data: number[] | Float32Array } | undefined
+                );
+
                 if (features) {
                   setRawFeatures(features);
                   const currentStatus = statusRef.current;
-                  
+
                   // 1. Data Collection (grid points)
                   if (currentStatus === 'CALIBRATION' && isCollectingRef.current) {
-                    const inputVector = eyeTrackingService.prepareFeatureVector(features);
+                    const inputVector = eyeTrackingService.prepareFeatureVector(features, configRef.current);
                     collectionBufferRef.current.push(inputVector);
+                    rawCollectionBufferRef.current.push(features);
                   }
 
                   // 1b. Data Collection (eye movement exercises)
                   if (currentStatus === 'CALIBRATION' && exerciseActiveRef.current) {
                     const target = exerciseTargetRef.current;
                     if (target) {
-                      const inputVector = eyeTrackingService.prepareFeatureVector(features);
+                      const inputVector = eyeTrackingService.prepareFeatureVector(features, configRef.current);
                       if (runModeRef.current === 'test') {
                         // Test mode: record target vs predicted gaze for deviation charts (throttle ~50ms)
                         if (now - lastTestRecordTimeRef.current >= 50) {
@@ -836,6 +848,7 @@ function App() {
                           screenY: target.y,
                           features: inputVector,
                           head: toHeadSnapshot(headValidationRef.current),
+                          rawEyeFeatures: features, // stored for re-evaluation with different flags
                         });
                         if (len % 5 === 0) {
                           captureCurrentFrameAsBlob().then((b) => b && exerciseBlobsRef.current.push(b));
@@ -968,8 +981,9 @@ function App() {
   // --- CALIBRATION INTERACTION LOGIC (CLICK & HOLD) ---
   const handlePointMouseDown = () => {
     if (config.calibrationMethod !== CalibrationMethod.CLICK_HOLD) return;
-    
+
     collectionBufferRef.current = [];
+    rawCollectionBufferRef.current = [];
     isCollectingRef.current = true;
     holdStartTimeRef.current = performance.now();
     
@@ -1002,6 +1016,7 @@ function App() {
         // Failed / Released early
         console.warn("Released too early");
         collectionBufferRef.current = []; // Discard bad data
+        rawCollectionBufferRef.current = [];
     }
     
     setCalibrationProgress(0);
@@ -1009,7 +1024,8 @@ function App() {
 
   const processClickHoldData = () => {
     const rawBuffer = collectionBufferRef.current;
-    
+    const rawFeatBuffer = rawCollectionBufferRef.current;
+
     // TEMPORAL TRIMMING: Remove first 20% and last 20% of frames
     // This removes jitter from the click action and the release anticipation
     if (rawBuffer.length > 5) {
@@ -1017,12 +1033,13 @@ function App() {
         // Ensure we have data left after cutting 40%
         if (rawBuffer.length - (cutAmount * 2) > 2) {
              const trimmedBuffer = rawBuffer.slice(cutAmount, rawBuffer.length - cutAmount);
-             // Now process this trimmed buffer using standard logic
-             processCalibBuffer(trimmedBuffer);
+             // Apply same temporal trim to raw features for re-evaluation support
+             const trimmedRawFeat = rawFeatBuffer.slice(cutAmount, rawFeatBuffer.length - cutAmount);
+             processCalibBuffer(trimmedBuffer, trimmedRawFeat);
              return;
         }
     }
-    
+
     // Fallback if data is too short
     console.warn("Buffer too short after trimming");
     setRetryCount(c => c + 1);
@@ -1057,6 +1074,7 @@ function App() {
 
     const tStart = setTimeout(() => {
       collectionBufferRef.current = [];
+      rawCollectionBufferRef.current = [];
       isCollectingRef.current = true;
       setIsCapturing(true);
     }, prepTime);
@@ -1066,9 +1084,10 @@ function App() {
       setIsCapturing(false);
 
       const buffer = collectionBufferRef.current;
+      const rawFeatBuffer = rawCollectionBufferRef.current;
       // Use standard cleaning for timer method
       const cleanBuffer = DataCleaner.clean(buffer, configRef.current.outlierMethod, configRef.current.outlierThreshold);
-      processCalibBuffer(cleanBuffer);
+      processCalibBuffer(cleanBuffer, rawFeatBuffer);
 
     }, prepTime + captureTime);
 
@@ -1095,20 +1114,64 @@ function App() {
     };
   };
 
+  /** Average a buffer of EyeFeatures frames into a single representative sample. */
+  const averageEyeFeatures = (feats: EyeFeatures[]): EyeFeatures => {
+    const n = feats.length;
+    const avgN = (fn: (f: EyeFeatures) => number): number =>
+      feats.reduce((s, f) => s + fn(f), 0) / n;
+    const gazeBlendshapeKeys = ['eyeLookDownLeft','eyeLookDownRight','eyeLookInLeft','eyeLookInRight','eyeLookOutLeft','eyeLookOutRight','eyeLookUpLeft','eyeLookUpRight'];
+    const hasBlendshapes = !!feats[0]?.blendshapes;
+    const hasMatrixPose  = !!feats[0]?.matrixHeadPose;
+    return {
+      leftPupil:      { x: avgN(f=>f.leftPupil.x),      y: avgN(f=>f.leftPupil.y) },
+      rightPupil:     { x: avgN(f=>f.rightPupil.x),     y: avgN(f=>f.rightPupil.y) },
+      leftEyeCenter:  { x: avgN(f=>f.leftEyeCenter.x),  y: avgN(f=>f.leftEyeCenter.y) },
+      rightEyeCenter: { x: avgN(f=>f.rightEyeCenter.x), y: avgN(f=>f.rightEyeCenter.y) },
+      leftRelative:   { x: avgN(f=>f.leftRelative.x),   y: avgN(f=>f.leftRelative.y) },
+      rightRelative:  { x: avgN(f=>f.rightRelative.x),  y: avgN(f=>f.rightRelative.y) },
+      headPose: {
+        pitch: avgN(f=>f.headPose.pitch),
+        yaw:   avgN(f=>f.headPose.yaw),
+        roll:  avgN(f=>f.headPose.roll),
+      },
+      zDistance: avgN(f=>f.zDistance),
+      leftEAR:  avgN(f=>f.leftEAR),
+      rightEAR: avgN(f=>f.rightEAR),
+      blendshapes: hasBlendshapes
+        ? Object.fromEntries(gazeBlendshapeKeys.map(k => [k, avgN(f => f.blendshapes?.[k] ?? 0)]))
+        : undefined,
+      matrixHeadPose: hasMatrixPose ? {
+        pitch: avgN(f=>f.matrixHeadPose?.pitch ?? 0),
+        yaw:   avgN(f=>f.matrixHeadPose?.yaw   ?? 0),
+        roll:  avgN(f=>f.matrixHeadPose?.roll  ?? 0),
+      } : undefined,
+    };
+  };
+
   // Common function to process buffer and advance state
-  const processCalibBuffer = (buffer: number[][]) => {
+  const processCalibBuffer = (buffer: number[][], rawFeatBuffer?: EyeFeatures[]) => {
      const point = calibPoints[currentCalibIndex];
-     
-     if (buffer.length > 2) { 
-        const numFeatures = buffer[0].length;
-        const avgVector = new Array(numFeatures).fill(0);
-        for (const vec of buffer) {
-          for (let i = 0; i < numFeatures; i++) {
-            avgVector[i] += vec[i];
+
+     if (buffer.length > 2) {
+        // Average raw EyeFeatures first (when available), then recompute the feature vector
+        // from the averaged coordinates. This is the correct approach: avg(lx) * avg(yaw)
+        // is more accurate than avg(lx * yaw) for cross-terms and quadratic features.
+        const avgRaw = (rawFeatBuffer && rawFeatBuffer.length > 1)
+          ? averageEyeFeatures(rawFeatBuffer)
+          : undefined;
+
+        // Primary feature vector: derive from averaged raw features when possible,
+        // fall back to averaging the processed vectors if rawFeatBuffer is missing.
+        let avgVector: number[];
+        if (avgRaw) {
+          avgVector = eyeTrackingService.prepareFeatureVector(avgRaw, configRef.current);
+        } else {
+          const numFeatures = buffer[0].length;
+          avgVector = new Array(numFeatures).fill(0);
+          for (const vec of buffer) {
+            for (let i = 0; i < numFeatures; i++) avgVector[i] += vec[i];
           }
-        }
-        for (let i = 0; i < numFeatures; i++) {
-          avgVector[i] /= buffer.length;
+          for (let i = 0; i < numFeatures; i++) avgVector[i] /= buffer.length;
         }
 
         const screenX = (point.x / 100) * window.innerWidth;
@@ -1122,6 +1185,7 @@ function App() {
               timestamp: Date.now(),
               head: toHeadSnapshot(headValidationRef.current),
               patternName: `Calibration point ${point.id}`,
+              rawEyeFeatures: avgRaw,
             };
             trainingSamplesRef.current.push(newSample);
             setTrainingData([...trainingSamplesRef.current]);
@@ -1137,6 +1201,7 @@ function App() {
               timestamp: Date.now(),
               head: toHeadSnapshot(headValidationRef.current),
               patternName: `Validation point ${currentCalibIndex + 1}`,
+              rawEyeFeatures: avgRaw,
             };
             trainingSamplesRef.current.push(validationSample);
             setTrainingData([...trainingSamplesRef.current]);
@@ -1191,23 +1256,32 @@ function App() {
       const window = trimmed.slice(i, windowEnd);
       if (window.length === 0) continue;
 
-      const numFeatures = window[0].features.length;
-      const avgFeatures = new Array(numFeatures).fill(0);
       let avgX = 0, avgY = 0;
-
       for (const sample of window) {
         avgX += sample.screenX;
         avgY += sample.screenY;
-        for (let j = 0; j < numFeatures; j++) {
-          avgFeatures[j] += sample.features[j];
-        }
       }
-
       avgX /= window.length;
       avgY /= window.length;
-      for (let j = 0; j < numFeatures; j++) {
-        avgFeatures[j] /= window.length;
+
+      // Average raw EyeFeatures (when available), then recompute feature vector correctly.
+      // Falls back to averaging processed vectors if rawEyeFeatures are missing.
+      const rawFeatWindow = window.map(s => s.rawEyeFeatures).filter(Boolean) as EyeFeatures[];
+      let avgFeatures: number[];
+      if (rawFeatWindow.length === window.length) {
+        const avgRaw = averageEyeFeatures(rawFeatWindow);
+        avgFeatures = eyeTrackingService.prepareFeatureVector(avgRaw, configRef.current);
+      } else {
+        const numFeatures = window[0].features.length;
+        avgFeatures = new Array(numFeatures).fill(0);
+        for (const sample of window) {
+          for (let j = 0; j < numFeatures; j++) avgFeatures[j] += sample.features[j];
+        }
+        for (let j = 0; j < numFeatures; j++) avgFeatures[j] /= window.length;
       }
+
+      // Also store avgRaw on the TrainingSample so re-evaluate covers exercise data too
+      const avgRawForSample = rawFeatWindow.length > 0 ? averageEyeFeatures(rawFeatWindow) : undefined;
 
       const originalIndex = startIdx + i;
       const blobIdx = Math.floor(originalIndex / 5);
@@ -1220,6 +1294,7 @@ function App() {
         timestamp: Date.now(),
         head: window[0].head,
         patternName: patternLabel,
+        rawEyeFeatures: avgRawForSample,
         ...(blobForUpload && { blobForUpload }),
       });
       added++;
@@ -1313,6 +1388,8 @@ function App() {
         const cvHybrid = hybridRegressorRef.current.lastMeanCVErrorHybrid;
         const cvRidge = hybridRegressorRef.current.lastMeanCVErrorRidge;
         setLoocvErrors({ ridge: cvRidge, hybrid: cvHybrid });
+        // Freeze baseline on first train so we can compare flag improvements later
+        setLoocvBaseline(prev => prev ?? { ridge: cvRidge, hybrid: cvHybrid });
         console.log(`[Calibration] Hybrid CV: ${cvHybrid.toFixed(1)}, Ridge CV: ${cvRidge.toFixed(1)}`);
         
         // If Hybrid CV is extremely bad (worse than Ridge or just crazy high), force fallback to Ridge.
@@ -1940,7 +2017,7 @@ function App() {
   }, [neuroTestOrder, neuroConfigSnapshot?.testEnabled, NEURO_TEST_PROGRESS_LS_KEY, router]);
 
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
-    const inputVector = eyeTrackingService.prepareFeatureVector(features);
+    const inputVector = eyeTrackingService.prepareFeatureVector(features, configRef.current);
     
     // Pass the configured method to the regressor
     const prediction = hybridRegressorRef.current.predict(inputVector, configRef.current.regressionMethod);
@@ -1961,6 +2038,39 @@ function App() {
       });
     }
   };
+
+  /**
+   * Re-extract feature vectors from stored rawEyeFeatures using current AppConfig flags,
+   * then re-train the regressor and recompute LOOCV — without requiring re-calibration.
+   *
+   * Only samples that have rawEyeFeatures stored (grid calibration points) are used.
+   * Updates the live regressor so predictions immediately reflect the new flags.
+   */
+  const reEvaluateWithCurrentFlags = useCallback(() => {
+    const samples = trainingSamplesRef.current.filter(s => !!s.rawEyeFeatures);
+    if (samples.length < 5) {
+      console.warn('[reEvaluate] Not enough samples with rawEyeFeatures (need ≥5, have', samples.length, ')');
+      return;
+    }
+
+    const newX = samples.map(s => eyeTrackingService.prepareFeatureVector(s.rawEyeFeatures!, configRef.current));
+    const Y    = samples.map(s => [s.screenX, s.screenY]);
+
+    const tempRegressor = new HybridRegressor();
+    const success = tempRegressor.train(newX, Y);
+    if (!success) {
+      console.warn('[reEvaluate] Training failed (singular matrix). Try a different flag combination.');
+      return;
+    }
+
+    const newRidge  = tempRegressor.lastMeanCVErrorRidge;
+    const newHybrid = tempRegressor.lastMeanCVErrorHybrid;
+    console.log(`[reEvaluate] LOOCV → Ridge: ${newRidge.toFixed(1)}px | Hybrid: ${newHybrid.toFixed(1)}px (${samples.length} grid samples)`);
+
+    setLoocvErrors({ ridge: newRidge, hybrid: newHybrid });
+    hybridRegressorRef.current = tempRegressor;
+    smootherRef.current.reset();
+  }, []);
 
   const handleStartProcess = async () => {
     try {
@@ -2126,6 +2236,8 @@ function App() {
     trackingHistoryRef.current = [];
     hybridRegressorRef.current = new HybridRegressor();
     setGazeModelReady(false);
+    setLoocvErrors(null);
+    setLoocvBaseline(null);
     neuroLiveGazeRef.current = { x: 0, y: 0 };
     setShowHeatmap(false);
     // Reset exercise state
@@ -2237,6 +2349,9 @@ function App() {
         onStopSaveCancel={() => setShowStopSaveModal(false)}
         onSetShowCamera={setShowCamera}
         rawFeatures={rawFeatures}
+        loocvErrors={loocvErrors}
+        loocvBaseline={loocvBaseline}
+        onReEvaluate={reEvaluateWithCurrentFlags}
       />
 
       <NeurologicalFlowSection

@@ -81,6 +81,8 @@ type AppMainOverlaysProps = {
   onSetShowCamera: (value: boolean) => void;
   rawFeatures: unknown;
   loocvErrors?: { ridge: number; hybrid: number } | null;
+  loocvBaseline?: { ridge: number; hybrid: number } | null;
+  onReEvaluate?: () => void;
 };
 
 export default function AppMainOverlays(props: AppMainOverlaysProps) {
@@ -141,6 +143,8 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
     onSetShowCamera,
     rawFeatures,
     loocvErrors,
+    loocvBaseline,
+    onReEvaluate,
   } = props;
 
   return (
@@ -403,6 +407,8 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
           status={status}
           lightLevel={lightLevel}
           loocvErrors={loocvErrors}
+          loocvBaseline={loocvBaseline}
+          onReEvaluate={onReEvaluate}
         />
       )}
     </>
