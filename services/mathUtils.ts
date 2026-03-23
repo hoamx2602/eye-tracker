@@ -548,104 +548,147 @@ export class KalmanFilter {
     }
 }
 
-// Wrapper class for 2D Smoothing with Saccade Detection
+// Wrapper class for 2D Smoothing with Saccade Detection and Fixation Boosting
 export class GazeSmoother {
     method: SmoothingMethod = SmoothingMethod.ONE_EURO;
     saccadeThreshold: number = 50;
-    
+
     private lastX: number = 0;
     private lastY: number = 0;
-    
+
+    // --- Fixation detection ---
+    // Track last N raw (unfiltered) positions to detect when gaze is stable.
+    // Uses ~8 frames ≈ 267ms at 30fps; variance < 400px² (~20px std-dev) = fixation.
+    private rawBuffer: { x: number; y: number }[] = [];
+    private static readonly FIXATION_BUF  = 8;
+    private static readonly FIXATION_VAR  = 400; // px² threshold
+    // When in fixation, multiply OneEuro minCutoff by this factor for stronger smoothing.
+    private static readonly FIXATION_BOOST = 2.0;
+
     // Filters
     oneEuroX: OneEuroFilter;
     oneEuroY: OneEuroFilter;
-    
+
     maX: MovingAverageFilter;
     maY: MovingAverageFilter;
-    
+
     kalmanX: KalmanFilter;
     kalmanY: KalmanFilter;
 
     constructor(minCutoff: number, beta: number) {
         this.oneEuroX = new OneEuroFilter(minCutoff, beta);
         this.oneEuroY = new OneEuroFilter(minCutoff, beta);
-        
+
         this.maX = new MovingAverageFilter(5);
         this.maY = new MovingAverageFilter(5);
-        
+
         this.kalmanX = new KalmanFilter(0.1, 0.1);
         this.kalmanY = new KalmanFilter(0.1, 0.1);
     }
-    
+
     updateConfig(method: SmoothingMethod, params: any) {
         this.method = method;
         this.saccadeThreshold = params.saccadeThreshold || 50;
 
         this.oneEuroX.updateParams(params.minCutoff, params.beta);
         this.oneEuroY.updateParams(params.minCutoff, params.beta);
-        
+
         this.maX.updateParams(params.maWindow);
         this.maY.updateParams(params.maWindow);
-        
+
         this.kalmanX.updateParams(params.kalmanQ, params.kalmanR);
         this.kalmanY.updateParams(params.kalmanQ, params.kalmanR);
     }
-    
+
+    /** Returns true when the last FIXATION_BUF raw positions cluster tightly. */
+    private detectFixation(): boolean {
+        if (this.rawBuffer.length < GazeSmoother.FIXATION_BUF) return false;
+        const mx = this.rawBuffer.reduce((s, p) => s + p.x, 0) / this.rawBuffer.length;
+        const my = this.rawBuffer.reduce((s, p) => s + p.y, 0) / this.rawBuffer.length;
+        const variance = this.rawBuffer.reduce(
+            (s, p) => s + (p.x - mx) ** 2 + (p.y - my) ** 2, 0
+        ) / this.rawBuffer.length;
+        return variance < GazeSmoother.FIXATION_VAR;
+    }
+
     process(x: number, y: number, timestamp: number) {
-        // SACCADE DETECTION
-        // Calculate raw distance from last filtered point
-        const dist = Math.sqrt(Math.pow(x - this.lastX, 2) + Math.pow(y - this.lastY, 2));
-        
-        // If the jump is massive (Saccade), temporarily bypass or reset filters to avoid lag
-        let isSaccade = dist > this.saccadeThreshold;
-        
-        // If it is a saccade, we might want to reset the filter to catch up instantly
-        // For OneEuro, we can just feed it, but for MA/Kalman, reset might be better.
-        // Here we perform a "Soft Reset" by forcing the filter to jump closer to raw value
-        
+        // --- 1. Update raw buffer for fixation detection (before any filtering) ---
+        this.rawBuffer.push({ x, y });
+        if (this.rawBuffer.length > GazeSmoother.FIXATION_BUF) this.rawBuffer.shift();
+
+        // --- 2. Saccade detection: distance from last smoothed position ---
+        const dist = Math.sqrt((x - this.lastX) ** 2 + (y - this.lastY) ** 2);
+        const isSaccade = dist > this.saccadeThreshold;
+
         if (isSaccade) {
-             // Optional: You could log this event
-             // Force state to current position to eliminate lag tail
-             if (this.method === SmoothingMethod.KALMAN) {
-                 this.kalmanX.reset();
-                 this.kalmanY.reset();
-             } else if (this.method === SmoothingMethod.MOVING_AVERAGE) {
-                 this.maX.reset();
-                 this.maY.reset();
-             }
+            // Reset all filters so cursor snaps immediately to the new target position.
+            // OneEuro reset causes next call to initialise at the new value and return it raw,
+            // eliminating the "chasing tail" artifact after fast eye movements.
+            this.oneEuroX.reset();
+            this.oneEuroY.reset();
+            this.kalmanX.reset();
+            this.kalmanY.reset();
+            this.maX.reset();
+            this.maY.reset();
+            // Clear fixation history — saccade invalidates the stability window.
+            this.rawBuffer = [{ x, y }];
         }
 
+        // --- 3. Fixation boost: strengthen OneEuro smoothing when gaze is stable ---
+        const inFixation = !isSaccade && this.detectFixation();
+        if (inFixation && this.method === SmoothingMethod.ONE_EURO) {
+            // Temporarily raise minCutoff so the filter damps micro-tremor more aggressively.
+            // Restoring after the call keeps the user-configured value intact for normal frames.
+            const savedX = this.oneEuroX.minCutoff;
+            const savedY = this.oneEuroY.minCutoff;
+            this.oneEuroX.minCutoff = savedX * GazeSmoother.FIXATION_BOOST;
+            this.oneEuroY.minCutoff = savedY * GazeSmoother.FIXATION_BOOST;
+
+            const result = {
+                x: this.oneEuroX.filter(x, timestamp),
+                y: this.oneEuroY.filter(y, timestamp),
+            };
+
+            this.oneEuroX.minCutoff = savedX;
+            this.oneEuroY.minCutoff = savedY;
+
+            this.lastX = result.x;
+            this.lastY = result.y;
+            return result;
+        }
+
+        // --- 4. Normal filtering ---
         let result = { x, y };
 
         switch (this.method) {
             case SmoothingMethod.ONE_EURO:
                 result = {
                     x: this.oneEuroX.filter(x, timestamp),
-                    y: this.oneEuroY.filter(y, timestamp)
+                    y: this.oneEuroY.filter(y, timestamp),
                 };
                 break;
             case SmoothingMethod.MOVING_AVERAGE:
                 result = {
                     x: this.maX.filter(x),
-                    y: this.maY.filter(y)
+                    y: this.maY.filter(y),
                 };
                 break;
             case SmoothingMethod.KALMAN:
                 result = {
                     x: this.kalmanX.filter(x),
-                    y: this.kalmanY.filter(y)
+                    y: this.kalmanY.filter(y),
                 };
                 break;
             case SmoothingMethod.NONE:
             default:
                 result = { x, y };
         }
-        
+
         this.lastX = result.x;
         this.lastY = result.y;
         return result;
     }
-    
+
     reset() {
         this.oneEuroX.reset();
         this.oneEuroY.reset();
@@ -655,6 +698,7 @@ export class GazeSmoother {
         this.kalmanY.reset();
         this.lastX = 0;
         this.lastY = 0;
+        this.rawBuffer = [];
     }
 }
 

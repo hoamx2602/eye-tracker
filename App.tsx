@@ -1244,8 +1244,12 @@ function App() {
       return;
     }
 
-    // Downsample to ~30 training samples per exercise
-    const targetCount = 30;
+    // Downsample to ~10 training samples per exercise.
+    // Keeping this low prevents exercise data from overwhelming the 9-point calibration grid.
+    // With 6 exercises × 10 = 60 exercise samples vs ~9 grid samples, ratio is ~6.7:1 instead of ~20:1.
+    // More importantly, exercises like "horizontal" produce samples with Y ≈ 0.5 (center) only —
+    // over-representing them biases regression toward center-Y predictions.
+    const targetCount = 10;
     const step = Math.max(1, Math.floor(trimmed.length / targetCount));
     let added = 0;
     const kindName = EXERCISE_KINDS[currentExerciseIndex] || 'unknown';
