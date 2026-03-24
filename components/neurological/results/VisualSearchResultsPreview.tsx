@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useReplayControls, ReplayControlsBar } from './ReplayControls';
 import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
 import { applyGazeModeToFixations, detectAndMapGazeToViewport } from '@/lib/visualSearchGazeCoords';
-import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
+import { ResultVizAspectSvg, ResultVizMaxFrame, RESULT_VIZ_OUTER, useResultVizInnerFrameStyle } from './resultVizLayout';
 import { GazeHeatmapLayer, GazePathDirectionArrows } from './gazeVizSvg';
 import { useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
 
@@ -141,6 +141,7 @@ export default function VisualSearchResultsPreview({
   }, [completionTimeMs]);
 
   const { effectiveReplay, playing, speed, setSpeed, toggle, handleScrub } = useReplayControls(durationSec);
+  const innerFrame = useResultVizInnerFrameStyle();
 
   const layout = useMemo(() => {
     const path = scanningPath ?? [];
@@ -384,8 +385,19 @@ export default function VisualSearchResultsPreview({
 
   const noPath = layout.rawPathLen === 0;
 
+  const replayBar = durationSec > 0 ? (
+    <ReplayControlsBar
+      effectiveReplay={effectiveReplay}
+      durationSec={durationSec}
+      playing={playing}
+      speed={speed}
+      onToggle={toggle}
+      onScrub={handleScrub}
+      onSpeedChange={setSpeed}
+    />
+  ) : null;
+
   const svgBlock = (
-    <>
     <ResultVizMaxFrame>
       <ResultVizAspectSvg
         contentWidth={layout.vw}
@@ -536,22 +548,28 @@ export default function VisualSearchResultsPreview({
           ))}
       </ResultVizAspectSvg>
     </ResultVizMaxFrame>
-    {durationSec > 0 && layout && (
-      <ReplayControlsBar
-        effectiveReplay={effectiveReplay}
-        durationSec={durationSec}
-        playing={playing}
-        speed={speed}
-        onToggle={toggle}
-        onScrub={handleScrub}
-        onSpeedChange={setSpeed}
-      />
-    )}
-    </>
   );
 
   if (visualOnly) {
-    return svgBlock;
+    return (
+      <div className={RESULT_VIZ_OUTER}>
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          <div
+            className={`${innerFrame.className} relative flex min-h-0 flex-col overflow-hidden`}
+            style={innerFrame.style}
+          >
+            <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
+              <span className="text-slate-400">Scrub the slider to replay gaze.</span> Scanpath and fixations animate. Full metrics in{' '}
+              <strong>Parameters</strong>.
+            </p>
+            <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 pt-9 sm:px-3">
+              <div className="min-h-0 flex-1 overflow-hidden">{svgBlock}</div>
+            </div>
+          </div>
+        </div>
+        {replayBar}
+      </div>
+    );
   }
 
   return (
@@ -586,6 +604,7 @@ export default function VisualSearchResultsPreview({
         </p>
       )}
       {svgBlock}
+      {replayBar}
     </div>
   );
 }

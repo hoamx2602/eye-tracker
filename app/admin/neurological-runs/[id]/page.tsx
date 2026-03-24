@@ -624,12 +624,25 @@ export default function AdminNeuroRunDetailPage() {
       )}
 
       {/* Section D — Actions */}
-      <div className="flex gap-3 flex-wrap pt-2">
+      <div className="flex gap-3 flex-wrap items-center pt-2">
         <Link href="/admin/neurological-runs" className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition">
           ← All neurological runs
         </Link>
         <Link href={`/admin/sessions/${run.sessionId}`} className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition">
           View calibration session
+        </Link>
+        <div className="flex-1" />
+        {/* Export Report — opens a print-ready report in a new tab */}
+        <Link
+          href={`/admin/neurological-runs/${run.id}/report`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white text-sm font-semibold shadow-lg hover:shadow-xl transition-all active:translate-y-[1px]"
+        >
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v5a2 2 0 002 2h1v2a1 1 0 001 1h8a1 1 0 001-1v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a1 1 0 00-1-1H6a1 1 0 00-1 1zm2 0h6v3H7V4zm-1 9H5a1 1 0 110-2h1v2zm8 0h-1v-2h1a1 1 0 110 2zm-7 2v-2h6v2H8z" clipRule="evenodd" />
+          </svg>
+          Export Report
         </Link>
       </div>
     </div>

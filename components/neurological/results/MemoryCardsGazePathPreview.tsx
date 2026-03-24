@@ -4,7 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { useReplayControls, ReplayControlsBar } from './ReplayControls';
 import { FLIP_BACK_DELAY_MS } from '../tests/memoryCards/constants';
 import type { MemoryCardsGridRect, MemoryCardsMove } from '../tests/memoryCards/MemoryCardsTest';
-import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
+import { ResultVizAspectSvg, ResultVizMaxFrame, RESULT_VIZ_OUTER } from './resultVizLayout';
 import { GazeHeatmapLayer, GazePathDirectionArrows } from './gazeVizSvg';
 import { useNeurologicalResultsViewOptions } from './neuroResultsViewOptions';
 import { detectAndMapGazeToViewport } from '@/lib/visualSearchGazeCoords';
@@ -314,10 +314,10 @@ export default function MemoryCardsGazePathPreview({
 
   const showReplaySlider = durationSec > 0 && (moves?.length ?? 0) > 0 && startTime != null;
 
-  const chart = (
-    <div className="flex min-h-0 w-full flex-1 flex-col gap-2">
-      <ResultVizMaxFrame>
-        <ResultVizAspectSvg
+  /** SVG block — reused by both visualOnly and full layouts. */
+  const svgBlock = (
+    <ResultVizMaxFrame>
+      <ResultVizAspectSvg
           contentWidth={layout.vw}
           contentHeight={layout.vh}
           panelFill="rgb(15 23 42 / 0.4)"
@@ -394,28 +394,38 @@ export default function MemoryCardsGazePathPreview({
             <circle cx={last.x} cy={last.y} r={6} fill="rgb(251 191 36)" stroke="rgb(15 23 42)" strokeWidth={1} />
           )}
         </ResultVizAspectSvg>
-      </ResultVizMaxFrame>
-      {showReplaySlider && (
-        <ReplayControlsBar
-          effectiveReplay={effectiveReplay}
-          durationSec={durationSec}
-          playing={playing}
-          speed={speed}
-          onToggle={toggle}
-          onScrub={handleScrub}
-          onSpeedChange={setSpeed}
-        />
-      )}
-    </div>
+    </ResultVizMaxFrame>
   );
 
+  const replayBar = showReplaySlider ? (
+    <ReplayControlsBar
+      effectiveReplay={effectiveReplay}
+      durationSec={durationSec}
+      playing={playing}
+      speed={speed}
+      onToggle={toggle}
+      onScrub={handleScrub}
+      onSpeedChange={setSpeed}
+    />
+  ) : null;
+
   if (visualOnly) {
-    return chart;
+    // Wrap in RESULT_VIZ_OUTER (h-full) so the height chain from the admin
+    // TestResultCard (lg:h-[400px]) propagates into ResultVizMaxFrame correctly.
+    return (
+      <div className={RESULT_VIZ_OUTER}>
+        <div className="relative flex min-h-0 h-full flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden">{svgBlock}</div>
+          {replayBar}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      {chart}
+    <div className="flex min-h-0 w-full flex-1 flex-col gap-2">
+      <div className="min-h-0 flex-1 overflow-hidden">{svgBlock}</div>
+      {replayBar}
       <p className="shrink-0 text-xs text-slate-500">
         {layout.sampleCount} samples · path = gaze up to scrub time · dot = last point
         {!layout.hasSavedGrid && ' · estimated grid (missing gridRect)'}

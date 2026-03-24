@@ -308,29 +308,31 @@ export default function FixationBceaPreview({
   if (visualOnly) {
     return (
       <div className={RESULT_VIZ_OUTER}>
-        <div
-          className={`${innerFrame.className} relative flex min-h-0 flex-col overflow-hidden`}
-          style={innerFrame.style}
-        >
-          <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
-            <span className="text-slate-400">Scrub the slider to replay gaze.</span> BCEA ellipse uses samples up to that time. Full metrics in{' '}
-            <strong>Parameters</strong>.
-          </p>
-          <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 pt-9 sm:px-3">
-            <div className="min-h-0 flex-1 overflow-hidden">{svgBlock}</div>
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          <div
+            className={`${innerFrame.className} relative flex min-h-0 flex-col overflow-hidden`}
+            style={innerFrame.style}
+          >
+            <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
+              <span className="text-slate-400">Scrub the slider to replay gaze.</span> BCEA ellipse uses samples up to that time. Full metrics in{' '}
+              <strong>Parameters</strong>.
+            </p>
+            <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 pt-9 sm:px-3">
+              <div className="min-h-0 flex-1 overflow-hidden">{svgBlock}</div>
+            </div>
           </div>
-          {durationSec > 0 && (
-            <ReplayControlsBar
-              effectiveReplay={effectiveReplay}
-              durationSec={durationSec}
-              playing={playing}
-              speed={speed}
-              onToggle={toggle}
-              onScrub={handleScrub}
-              onSpeedChange={setSpeed}
-            />
-          )}
         </div>
+        {durationSec > 0 && (
+          <ReplayControlsBar
+            effectiveReplay={effectiveReplay}
+            durationSec={durationSec}
+            playing={playing}
+            speed={speed}
+            onToggle={toggle}
+            onScrub={handleScrub}
+            onSpeedChange={setSpeed}
+          />
+        )}
       </div>
     );
   }

@@ -403,37 +403,39 @@ export default function AntiSaccadeGazeDirectionPreview({
   if (visualOnly) {
     return (
       <div className={RESULT_VIZ_OUTER}>
-        <div
-          className={`${innerFrame.className} relative flex min-h-0 flex-col overflow-hidden`}
-          style={innerFrame.style}
-        >
-          <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
-            <span className="text-slate-400">Colored lines = gaze path per trial.</span> Red = bright stimulus, green = dim (target). Compass in{' '}
-            <strong>Parameters</strong>. Turn on <strong>Gaze heatmap</strong> in the toolbar for a density view.
-          </p>
-          {totalGazeSamples === 0 && (
-            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4 pt-10">
-              <p className="max-w-md rounded-lg border border-amber-800/60 bg-amber-950/90 px-3 py-2.5 text-center text-xs leading-relaxed text-amber-50/95 shadow-lg">
-                No <strong>gaze</strong> samples in results (<code className="text-amber-200/90">trials[].gazeSamples</code> is empty) — path cannot be drawn.
-                Re-run with gaze tracking or check saved data.
-              </p>
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          <div
+            className={`${innerFrame.className} relative flex min-h-0 flex-col overflow-hidden`}
+            style={innerFrame.style}
+          >
+            <p className="pointer-events-none absolute left-0 right-0 top-2 z-10 px-3 text-center text-[10px] text-slate-500">
+              <span className="text-slate-400">Colored lines = gaze path per trial.</span> Red = bright stimulus, green = dim (target). Compass in{' '}
+              <strong>Parameters</strong>. Turn on <strong>Gaze heatmap</strong> in the toolbar for a density view.
+            </p>
+            {totalGazeSamples === 0 && (
+              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4 pt-10">
+                <p className="max-w-md rounded-lg border border-amber-800/60 bg-amber-950/90 px-3 py-2.5 text-center text-xs leading-relaxed text-amber-50/95 shadow-lg">
+                  No <strong>gaze</strong> samples in results (<code className="text-amber-200/90">trials[].gazeSamples</code> is empty) — path cannot be drawn.
+                  Re-run with gaze tracking or check saved data.
+                </p>
+              </div>
+            )}
+            <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 pt-9 sm:px-3">
+              <div className="min-h-0 flex-1 overflow-hidden">{viewportSvg}</div>
             </div>
-          )}
-          <div className="flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 pt-9 sm:px-3">
-            <div className="min-h-0 flex-1 overflow-hidden">{viewportSvg}</div>
           </div>
-          {durationSec > 0 && (
-            <ReplayControlsBar
-              effectiveReplay={effectiveReplay}
-              durationSec={durationSec}
-              playing={playing}
-              speed={speed}
-              onToggle={toggle}
-              onScrub={handleScrub}
-              onSpeedChange={setSpeed}
-            />
-          )}
         </div>
+        {durationSec > 0 && (
+          <ReplayControlsBar
+            effectiveReplay={effectiveReplay}
+            durationSec={durationSec}
+            playing={playing}
+            speed={speed}
+            onToggle={toggle}
+            onScrub={handleScrub}
+            onSpeedChange={setSpeed}
+          />
+        )}
       </div>
     );
   }
