@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useReplayControls, ReplayControlsBar } from './ReplayControls';
 import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
 import { applyGazeModeToFixations, detectAndMapGazeToViewport } from '@/lib/visualSearchGazeCoords';
 import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
@@ -139,8 +140,7 @@ export default function VisualSearchResultsPreview({
     return Math.max(0, completionTimeMs / 1000);
   }, [completionTimeMs]);
 
-  const [replayTimeSec, setReplayTimeSec] = useState<number | null>(null);
-  const effectiveReplay = replayTimeSec ?? durationSec;
+  const { effectiveReplay, playing, speed, setSpeed, toggle, handleScrub } = useReplayControls(durationSec);
 
   const layout = useMemo(() => {
     const path = scanningPath ?? [];
@@ -537,21 +537,15 @@ export default function VisualSearchResultsPreview({
       </ResultVizAspectSvg>
     </ResultVizMaxFrame>
     {durationSec > 0 && layout && (
-      <label className="flex shrink-0 flex-col gap-1 px-1 mt-2 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:gap-3">
-        <span className="whitespace-nowrap">Replay time</span>
-        <input
-          type="range"
-          min={0}
-          max={durationSec}
-          step={0.01}
-          value={Math.min(effectiveReplay, durationSec)}
-          onChange={(e) => setReplayTimeSec(Number(e.target.value))}
-          className="min-w-0 flex-1 accent-sky-500"
-        />
-        <span className="font-mono text-slate-300 tabular-nums">
-          {effectiveReplay.toFixed(1)}s / {durationSec.toFixed(1)}s
-        </span>
-      </label>
+      <ReplayControlsBar
+        effectiveReplay={effectiveReplay}
+        durationSec={durationSec}
+        playing={playing}
+        speed={speed}
+        onToggle={toggle}
+        onScrub={handleScrub}
+        onSpeedChange={setSpeed}
+      />
     )}
     </>
   );

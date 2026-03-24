@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import { useReplayControls, ReplayControlsBar } from './ReplayControls';
 import { FLIP_BACK_DELAY_MS } from '../tests/memoryCards/constants';
 import type { MemoryCardsGridRect, MemoryCardsMove } from '../tests/memoryCards/MemoryCardsTest';
 import { ResultVizAspectSvg, ResultVizMaxFrame } from './resultVizLayout';
@@ -106,8 +107,7 @@ export default function MemoryCardsGazePathPreview({
     return maxT;
   }, [completionTimeMs, gazePath]);
 
-  const [replayTimeSec, setReplayTimeSec] = useState<number | null>(null);
-  const effectiveReplay = replayTimeSec ?? durationSec;
+  const { effectiveReplay, playing, speed, setSpeed, toggle, handleScrub } = useReplayControls(durationSec);
 
   const layout = useMemo(() => {
     if (gazePath.length === 0) return null;
@@ -396,21 +396,15 @@ export default function MemoryCardsGazePathPreview({
         </ResultVizAspectSvg>
       </ResultVizMaxFrame>
       {showReplaySlider && (
-        <label className="flex shrink-0 flex-col gap-1 px-1 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:gap-3">
-          <span className="whitespace-nowrap">Replay time</span>
-          <input
-            type="range"
-            min={0}
-            max={durationSec}
-            step={0.01}
-            value={Math.min(effectiveReplay, durationSec)}
-            onChange={(e) => setReplayTimeSec(Number(e.target.value))}
-            className="min-w-0 flex-1 accent-sky-500"
-          />
-          <span className="font-mono text-slate-300 tabular-nums">
-            {effectiveReplay.toFixed(1)}s / {durationSec.toFixed(1)}s
-          </span>
-        </label>
+        <ReplayControlsBar
+          effectiveReplay={effectiveReplay}
+          durationSec={durationSec}
+          playing={playing}
+          speed={speed}
+          onToggle={toggle}
+          onScrub={handleScrub}
+          onSpeedChange={setSpeed}
+        />
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import { useReplayControls, ReplayControlsBar } from './ReplayControls';
 import type { AntiSaccadeTrialResult } from '../tests/antiSaccade/AntiSaccadeTest';
 import type { AntiSaccadeDirection } from '../tests/antiSaccade/constants';
 import { TRAVEL_DISTANCE_PX } from '../tests/antiSaccade/constants';
@@ -172,8 +173,7 @@ export default function AntiSaccadeGazeDirectionPreview({
     return maxMs / 1000;
   }, [trials]);
 
-  const [replayTimeSec, setReplayTimeSec] = useState<number | null>(null);
-  const effectiveReplay = replayTimeSec ?? durationSec;
+  const { effectiveReplay, playing, speed, setSpeed, toggle, handleScrub } = useReplayControls(durationSec);
 
   const filteredTrials = useMemo(() => {
     if (!trials?.length) return [];
@@ -423,22 +423,15 @@ export default function AntiSaccadeGazeDirectionPreview({
             <div className="min-h-0 flex-1 overflow-hidden">{viewportSvg}</div>
           </div>
           {durationSec > 0 && (
-            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-800 bg-gray-900/40 px-3 pb-3 pt-3 text-xs text-slate-400 sm:px-4 sm:pb-4">
-              <span className="shrink-0 w-28 whitespace-nowrap">Replay time</span>
-              <input
-                type="range"
-                min={0}
-                max={durationSec}
-                step={0.01}
-                value={Math.min(effectiveReplay, durationSec)}
-                onChange={(e) => setReplayTimeSec(Number(e.target.value))}
-                className="min-w-0 flex-1 accent-sky-500"
-              />
-              <span className="shrink-0 w-[4.5rem] text-right font-mono text-[10px] leading-[13px] tracking-tight">
-                {effectiveReplay.toFixed(1)}s <br />
-                <span className="text-slate-600"> {durationSec.toFixed(1)}s</span>
-              </span>
-            </div>
+            <ReplayControlsBar
+              effectiveReplay={effectiveReplay}
+              durationSec={durationSec}
+              playing={playing}
+              speed={speed}
+              onToggle={toggle}
+              onScrub={handleScrub}
+              onSpeedChange={setSpeed}
+            />
           )}
         </div>
       </div>

@@ -32,3 +32,5 @@ export const GAZE_PATH_INTERVAL_MS = 100;
 export const DEFAULT_ALLOW_CLICK_TARGETS = false;
 /** Minimum press duration (ms) before release counts as a pointer confirmation (0 = any tap). */
 export const DEFAULT_CLICK_HOLD_DURATION_MS = 300;
+/** Gaze dwell duration (ms) on a number before it is visually confirmed (turns green). */
+export const DWELL_CONFIRM_MS = 1500;
