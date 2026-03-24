@@ -421,16 +421,17 @@ function App() {
   }, [status, createdSessionId, hasCameraStream]);
 
   // Neurological flow needs camera for Head Orientation (and other tests). Start camera when entering NEURO_FLOW if not already running.
+  // Do NOT start on neuro_done — tests are finished, camera should stay off.
   const hasTriedStartCameraNeuroRef = useRef(false);
   useEffect(() => {
-    if (status !== 'NEURO_FLOW' || hasCameraStream) {
+    if (status !== 'NEURO_FLOW' || hasCameraStream || neuroPhase === 'done') {
       if (status !== 'NEURO_FLOW') hasTriedStartCameraNeuroRef.current = false;
       return;
     }
     if (hasTriedStartCameraNeuroRef.current) return;
     hasTriedStartCameraNeuroRef.current = true;
     startCamera();
-  }, [status, hasCameraStream]);
+  }, [status, hasCameraStream, neuroPhase]);
 
   const startCamera = async () => {
     if (!videoRef.current) return;
@@ -489,6 +490,27 @@ function App() {
       alert("Camera permission denied.");
     }
   };
+
+  const stopCamera = useCallback(() => {
+    // Cancel the animation-frame loop so processVideo stops calling itself.
+    if (requestRef.current) {
+      cancelAnimationFrame(requestRef.current);
+      requestRef.current = 0;
+    }
+    // Stop the zoom-lock interval.
+    if (zoomLockIntervalRef.current) {
+      clearInterval(zoomLockIntervalRef.current);
+      zoomLockIntervalRef.current = null;
+    }
+    // Stop all media tracks so the OS camera indicator turns off.
+    if (videoRef.current?.srcObject) {
+      (videoRef.current.srcObject as MediaStream).getTracks().forEach((t) => t.stop());
+      videoRef.current.srcObject = null;
+    }
+    setHasCameraStream(false);
+    // Allow the camera to restart if the user redoes tests later.
+    hasTriedStartCameraNeuroRef.current = false;
+  }, []);
 
   // --- VIDEO RECORDING FUNCTIONS ---
   const startVideoRecording = () => {
@@ -1966,6 +1988,8 @@ function App() {
         mergedKeys: Object.keys(mergedResults),
       });
     }
+    // Stop camera now that the run is saved — the OS indicator should turn off.
+    stopCamera();
     setNeuroPhase('done');
     pathSyncSourceRef.current = 'internal';
     if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_DONE);
@@ -1979,6 +2003,7 @@ function App() {
     readNeuroTestResultsFromProgressLs,
     resolveNeuroRunIdFromStorage,
     buildQuestionnairePayload,
+    stopCamera,
     router,
   ]);
 
