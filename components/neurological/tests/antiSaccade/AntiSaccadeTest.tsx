@@ -141,6 +141,7 @@ export default function AntiSaccadeTest() {
   const stimulusShape = getStimulusShape(config);
   const primaryRectColor = getRectColor(config, 'primaryRectColor', 'red');
   const dimRectColor = getRectColor(config, 'dimRectColor', 'blue');
+  const gazeIntervalMs = Math.max(16, Number(config.gazeSampleIntervalMs) || GAZE_SAMPLE_INTERVAL_MS);
 
   const directions = useMemo(() => generateTrialDirections(trialCount), [trialCount]);
   const startTimeRef = useRef(0);
@@ -282,10 +283,10 @@ export default function AntiSaccadeTest() {
           trialGazeSamplesRef.current = [];
         }
       }
-    }, GAZE_SAMPLE_INTERVAL_MS);
+    }, gazeIntervalMs);
 
     return () => clearInterval(interval);
-  }, [trialIndex, trialCount, phase, directions, speedPxPerSec, fallbackDurationMs, intervalMs, center.x, center.y, trialDurationMs, travelPx, completeTest]);
+  }, [trialIndex, trialCount, phase, directions, speedPxPerSec, fallbackDurationMs, intervalMs, gazeIntervalMs, center.x, center.y, trialDurationMs, travelPx, completeTest]);
 
   if (trialIndex >= trialCount) {
     return (

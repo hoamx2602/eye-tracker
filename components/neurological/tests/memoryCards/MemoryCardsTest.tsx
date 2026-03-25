@@ -71,6 +71,7 @@ export default function MemoryCardsTest() {
     ? (cardCountNum as MemoryCardsCardCount)
     : DEFAULT_CARD_COUNT;
   const dwellMs = Math.max(300, Number(config.dwellMs) ?? DEFAULT_DWELL_MS);
+  const gazeIntervalMs = Math.max(16, Number(config.gazeSampleIntervalMs) || GAZE_PATH_INTERVAL_MS);
   const presetSize = (MEMORY_CARDS_SYMBOL_SIZES as readonly string[]).includes(String(config.symbolSize))
     ? (String(config.symbolSize) as MemoryCardsSymbolSize)
     : 'lg';
@@ -167,11 +168,11 @@ export default function MemoryCardsTest() {
       const g = neuroLiveGazeRef.current;
       const t = (performance.now() - startTimeRef.current) / 1000;
       gazePathRef.current.push({ t, x: g.x, y: g.y });
-    }, GAZE_PATH_INTERVAL_MS);
+    }, gazeIntervalMs);
     return () => {
       if (pathIntervalRef.current) clearInterval(pathIntervalRef.current);
     };
-  }, []);
+  }, [gazeIntervalMs]);
 
   // Dwell: which card is gaze over? If same card for dwellMs, select it.
   useEffect(() => {

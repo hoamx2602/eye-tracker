@@ -82,6 +82,7 @@ export default function FixationStabilityTest() {
   const blinkIntervalMs = Math.max(0, Number(config.blinkIntervalMs) ?? DEFAULT_BLINK_INTERVAL_MS);
   const centerDotSizePx = Math.max(6, Math.min(64, Number(config.centerDotSizePx) ?? 12));
   const centerDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.centerDotColor ?? '')) ? String(config.centerDotColor) : '#f59e0b';
+  const gazeIntervalMs = Math.max(16, Number(config.gazeSampleIntervalMs) || GAZE_SAMPLE_INTERVAL_MS);
 
   const center = getCenter();
   const startTimeRef = useRef(0);
@@ -111,7 +112,7 @@ export default function FixationStabilityTest() {
       const t = (now - startTimeRef.current) / 1000;
       const g = neuroLiveGazeRef.current;
       gazeSamplesRef.current.push({ t, x: g.x, y: g.y });
-    }, GAZE_SAMPLE_INTERVAL_MS);
+    }, gazeIntervalMs);
 
     endTimeoutRef.current = setTimeout(() => {
       if (intervalRef.current) {

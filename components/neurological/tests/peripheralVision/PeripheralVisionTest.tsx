@@ -108,6 +108,7 @@ export default function PeripheralVisionTest() {
   const centerDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.centerDotColor ?? '')) ? String(config.centerDotColor) : '#f59e0b';
   const stimulusDotSizePx = Math.max(8, Math.min(64, Number(config.stimulusDotSizePx) ?? 16));
   const stimulusDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.stimulusDotColor ?? '')) ? String(config.stimulusDotColor) : '#ffffff';
+  const gazeIntervalMs = Math.max(16, Number(config.gazeSampleIntervalMs) || GAZE_SAMPLE_INTERVAL_MS);
 
   const startTimeRef = useRef(0);
   const [trialIndex, setTrialIndex] = useState(0);
@@ -262,7 +263,7 @@ export default function PeripheralVisionTest() {
       const t = (now - trialStartRef.current) / 1000;
       const g = neuroLiveGazeRef.current;
       trialGazeRef.current.push({ t, x: g.x, y: g.y });
-    }, GAZE_SAMPLE_INTERVAL_MS);
+    }, gazeIntervalMs);
 
     return () => {
       if (delayTimeoutRef.current) clearTimeout(delayTimeoutRef.current);

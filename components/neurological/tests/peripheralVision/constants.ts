@@ -37,7 +37,7 @@ export const RESPONSE_WINDOW_MS = 500;
 /** Practice: number of trials. */
 export const PRACTICE_TRIALS = 4;
 /** Gaze sample interval (ms) per trial. */
-export const GAZE_SAMPLE_INTERVAL_MS = 30;
+export const GAZE_SAMPLE_INTERVAL_MS = 100;
 
 /** Zone positions as fraction of viewport (x, y). Peripheral = near edges. */
 export const ZONE_POSITIONS: Record<PeripheralZone, { x: number; y: number }> = {

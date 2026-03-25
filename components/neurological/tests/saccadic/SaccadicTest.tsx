@@ -92,6 +92,7 @@ export default function SaccadicTest() {
   const targetDurationMs = Math.max(400, Number(config.targetDurationMs) ?? DEFAULT_TARGET_DURATION_MS);
   const targetDotSizePx = Math.max(16, Math.min(64, Number(config.targetDotSizePx) ?? 64));
   const targetDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.targetDotColor ?? '')) ? String(config.targetDotColor) : '#f59e0b';
+  const gazeIntervalMs = Math.max(16, Number(config.gazeSampleIntervalMs) || GAZE_SAMPLE_INTERVAL_MS);
 
   const viewport = getViewport();
   const startTimeRef = useRef(0);
@@ -226,10 +227,10 @@ export default function SaccadicTest() {
         firstFixationTimeRef.current = null;
         cycleGazeSamplesRef.current = [];
       }
-    }, GAZE_SAMPLE_INTERVAL_MS);
+    }, gazeIntervalMs);
 
     return () => clearInterval(interval);
-  }, [cycleIndex, totalCycles, targetDurationMs, viewport.w, viewport.h, completeTest]);
+  }, [cycleIndex, totalCycles, targetDurationMs, gazeIntervalMs, viewport.w, viewport.h, completeTest]);
 
   if (cycleIndex >= totalCycles) {
     return (

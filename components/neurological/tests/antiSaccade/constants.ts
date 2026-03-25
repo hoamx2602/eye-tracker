@@ -46,7 +46,7 @@ export const TRAVEL_DISTANCE_PX = 180;
 /** AOI radius (px): gaze within this distance of dim rect center counts as "correct". */
 export const AOI_RADIUS_PX = 70;
 /** Gaze sample interval (ms) during trial. */
-export const GAZE_SAMPLE_INTERVAL_MS = 20;
+export const GAZE_SAMPLE_INTERVAL_MS = 100;
 
 /** Stimulus shape: rectangle, circle, triangle, ball, table, chair. */
 export type AntiSaccadeStimulusShape =

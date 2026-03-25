@@ -42,7 +42,7 @@ export const SYMBOL_SIZE_PX: Record<MemoryCardsSymbolSize, number> = {
 /** Practice grid: 2×2 = 2 cards = 1 pair. */
 export const PRACTICE_GRID_SIZE = 2;
 /** Gaze path sample interval (ms). */
-export const GAZE_PATH_INTERVAL_MS = 50;
+export const GAZE_PATH_INTERVAL_MS = 100;
 /** Dwell time (ms) on a card to select it via gaze. */
 export const DEFAULT_DWELL_MS = 800;
 /** Delay (ms) before flipping non-matching pair back. */

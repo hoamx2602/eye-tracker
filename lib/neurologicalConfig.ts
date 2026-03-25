@@ -14,6 +14,9 @@ export const DEFAULT_TEST_ORDER = [
 
 export type NeuroTestId = (typeof DEFAULT_TEST_ORDER)[number];
 
+/** Default gaze sampling interval in ms — applied to all tests unless overridden per-test. */
+export const DEFAULT_GAZE_SAMPLE_INTERVAL_MS = 100;
+
 export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = {
   head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
   visual_search: {
@@ -22,8 +25,14 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     aoiRadiusPx: 80,
     allowClickTargets: false,
     clickHoldDurationMs: 300,
+    gazeSampleIntervalMs: DEFAULT_GAZE_SAMPLE_INTERVAL_MS,
   },
-  memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
+  memory_cards: {
+    cardCount: 16,
+    dwellMs: 800,
+    symbolSize: 'lg',
+    gazeSampleIntervalMs: DEFAULT_GAZE_SAMPLE_INTERVAL_MS,
+  },
   anti_saccade: {
     trialCount: 12,
     movementSpeedPxPerSec: 120,
@@ -34,18 +43,21 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     stimulusShape: 'rectangle',
     primaryRectColor: 'red',
     dimRectColor: 'blue',
+    gazeSampleIntervalMs: DEFAULT_GAZE_SAMPLE_INTERVAL_MS,
   },
   saccadic: {
     targetDurationMs: 1000,
     totalCycles: 18,
     targetDotSizePx: 64,
     targetDotColor: '#f59e0b',
+    gazeSampleIntervalMs: DEFAULT_GAZE_SAMPLE_INTERVAL_MS,
   },
   fixation_stability: {
     durationSec: 5,
     blinkIntervalMs: 600,
     centerDotSizePx: 12,
     centerDotColor: '#f59e0b',
+    gazeSampleIntervalMs: DEFAULT_GAZE_SAMPLE_INTERVAL_MS,
   },
   peripheral_vision: {
     trialCount: 16,
@@ -56,6 +68,7 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     centerDotColor: '#f59e0b',
     stimulusDotSizePx: 16,
     stimulusDotColor: '#ffffff',
+    gazeSampleIntervalMs: DEFAULT_GAZE_SAMPLE_INTERVAL_MS,
   },
 };
 

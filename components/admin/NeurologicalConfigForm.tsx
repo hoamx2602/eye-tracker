@@ -288,6 +288,12 @@ export default function NeurologicalConfigForm() {
                         />
                         <p className="text-xs text-slate-500">0 = single tap/click counts without a minimum hold.</p>
                       </div>
+                      <SelectNumber
+                        label="Gaze sample interval (ms)"
+                        value={Number(params.gazeSampleIntervalMs) || 100}
+                        onChange={(v) => setParam(id, 'gazeSampleIntervalMs', v)}
+                        options={[50, 100, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
                     </>
                   )}
                   {id === 'memory_cards' && (
@@ -329,6 +335,12 @@ export default function NeurologicalConfigForm() {
                         </select>
                       </div>
                       <p className="text-xs text-slate-500">Save then select Neurological to apply.</p>
+                      <SelectNumber
+                        label="Gaze sample interval (ms)"
+                        value={Number(params.gazeSampleIntervalMs) || 100}
+                        onChange={(v) => setParam(id, 'gazeSampleIntervalMs', v)}
+                        options={[50, 100, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
                     </>
                   )}
                   {id === 'anti_saccade' && (
@@ -420,6 +432,12 @@ export default function NeurologicalConfigForm() {
                         onChange={(v) => setParam(id, 'practiceRestartDelaySec', v)}
                         options={[1, 2, 3, 4].map((n) => ({ value: n, label: `${n} s` }))}
                       />
+                      <SelectNumber
+                        label="Gaze sample interval (ms)"
+                        value={Number(params.gazeSampleIntervalMs) || 100}
+                        onChange={(v) => setParam(id, 'gazeSampleIntervalMs', v)}
+                        options={[50, 100, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
                     </>
                   )}
                   {id === 'saccadic' && (
@@ -450,6 +468,12 @@ export default function NeurologicalConfigForm() {
                           onChange={(v) => setParam(id, 'targetDotColor', v)}
                         />
                       </div>
+                      <SelectNumber
+                        label="Gaze sample interval (ms)"
+                        value={Number(params.gazeSampleIntervalMs) || 100}
+                        onChange={(v) => setParam(id, 'gazeSampleIntervalMs', v)}
+                        options={[50, 100, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
                     </>
                   )}
                   {id === 'fixation_stability' && (
@@ -480,6 +504,12 @@ export default function NeurologicalConfigForm() {
                           onChange={(v) => setParam(id, 'centerDotColor', v)}
                         />
                       </div>
+                      <SelectNumber
+                        label="Gaze sample interval (ms)"
+                        value={Number(params.gazeSampleIntervalMs) || 100}
+                        onChange={(v) => setParam(id, 'gazeSampleIntervalMs', v)}
+                        options={[50, 100, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
                     </>
                   )}
                   {id === 'peripheral_vision' && (
@@ -543,6 +573,12 @@ export default function NeurologicalConfigForm() {
                           else setParam(id, 'maxDelayMs', v);
                         }}
                         options={[1000, 1500, 2000, 2500, 3000, 4000, 5000, 10000].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
+                      <SelectNumber
+                        label="Gaze sample interval (ms)"
+                        value={Number(params.gazeSampleIntervalMs) || 100}
+                        onChange={(v) => setParam(id, 'gazeSampleIntervalMs', v)}
+                        options={[50, 100, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
                     </>
                   )}

@@ -25,6 +25,6 @@ export const MAX_DURATION_SEC = 15;
 /** Blink interval (ms) for the center dot. 0 = no blink. */
 export const DEFAULT_BLINK_INTERVAL_MS = 600;
 /** Gaze sample interval (ms). ~33 ms ≈ 30 Hz. */
-export const GAZE_SAMPLE_INTERVAL_MS = 33;
+export const GAZE_SAMPLE_INTERVAL_MS = 100;
 /** Practice duration (seconds). */
 export const PRACTICE_DURATION_SEC = 3;

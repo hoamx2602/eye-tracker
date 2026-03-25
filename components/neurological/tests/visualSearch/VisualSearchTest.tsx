@@ -70,6 +70,7 @@ export default function VisualSearchTest() {
     0,
     Math.min(2000, Number(config.clickHoldDurationMs ?? DEFAULT_CLICK_HOLD_DURATION_MS))
   );
+  const gazeIntervalMs = Math.max(16, Number(config.gazeSampleIntervalMs) || GAZE_PATH_INTERVAL_MS);
 
   const positions = useMemo(
     () => generateNumberPositions(numberCount),
@@ -284,9 +285,9 @@ export default function VisualSearchTest() {
       const g = neuroLiveGazeRef.current;
       const t = (performance.now() - startTimeRef.current) / 1000;
       gazePathRef.current.push({ t, x: g.x, y: g.y });
-    }, GAZE_PATH_INTERVAL_MS);
+    }, gazeIntervalMs);
     return () => window.clearInterval(pathInterval);
-  }, []);
+  }, [gazeIntervalMs]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);

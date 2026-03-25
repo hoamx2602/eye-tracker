@@ -35,4 +35,4 @@ export const TARGET_Y_FRACTION = 0.5;
 /** AOI radius (px): gaze within this distance of target center counts as fixation. */
 export const AOI_RADIUS_PX = 80;
 /** Gaze sample interval (ms) per cycle. */
-export const GAZE_SAMPLE_INTERVAL_MS = 20;
+export const GAZE_SAMPLE_INTERVAL_MS = 100;
