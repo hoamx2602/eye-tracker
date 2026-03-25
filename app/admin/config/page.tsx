@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AppConfigForm from '@/components/admin/AppConfigForm';
 import NeurologicalConfigForm from '@/components/admin/NeurologicalConfigForm';
 
 type ConfigTab = 'app' | 'neuro';
 
-export default function AdminConfigPage() {
+function AdminConfigPageInner() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<ConfigTab>('app');
 
@@ -51,5 +51,17 @@ export default function AdminConfigPage() {
       {tab === 'app' && <AppConfigForm />}
       {tab === 'neuro' && <NeurologicalConfigForm />}
     </div>
+  );
+}
+
+export default function AdminConfigPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="text-slate-400 text-sm py-8 text-center">Loading configuration…</div>
+      }
+    >
+      <AdminConfigPageInner />
+    </Suspense>
   );
 }
