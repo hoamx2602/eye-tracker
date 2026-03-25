@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePracticeGate } from '../../PracticeGate';
 import {
+  DEFAULT_FIXATION_PAUSE_MS,
   DEFAULT_MOVEMENT_DURATION_MS,
   OPPOSITE_DIRECTION,
   PRACTICE_TRIALS,
@@ -52,14 +53,27 @@ function getMovementDurationMs(config?: Record<string, unknown>, travelPx: numbe
   return Math.min(10000, v);
 }
 
+function getFixationPauseMs(config?: Record<string, unknown>): number {
+  const v = Number(config?.fixationPauseMs);
+  if (!Number.isFinite(v) || v < 0) return DEFAULT_FIXATION_PAUSE_MS;
+  return Math.min(5000, v);
+}
+
 const DIM_OPACITY_MIN = 0;
 const DIM_OPACITY_MAX = 0.9;
 const DIM_OPACITY_DEFAULT = 0.1;
+/** Minimum opacity for the dim rect in practice — always visible so the user understands the mechanic. */
+const DIM_OPACITY_PRACTICE_MIN = 0.05;
 
 function getDimRectOpacity(config?: Record<string, unknown>): number {
   const v = Number(config?.dimRectOpacity);
   if (!Number.isFinite(v)) return DIM_OPACITY_DEFAULT;
   return Math.max(DIM_OPACITY_MIN, Math.min(DIM_OPACITY_MAX, v));
+}
+
+/** In practice the dim rect is always shown at ≥5% so the user can see it move. */
+function getPracticeDimRectOpacity(config?: Record<string, unknown>): number {
+  return Math.max(DIM_OPACITY_PRACTICE_MIN, getDimRectOpacity(config));
 }
 
 function isHorizontalDirection(d: AntiSaccadeDirection): boolean {
@@ -94,12 +108,13 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   practiceGateRef.current = practiceGate;
   const restartDelaySec = getRestartDelaySec(config);
   const movementDurationMs = getMovementDurationMs(config, TRAVEL_DISTANCE_PX);
-  const dimOpacity = getDimRectOpacity(config);
-  const showDimRect = dimOpacity > 0;
+  const dimOpacity = getPracticeDimRectOpacity(config);
+  const showDimRect = true; // always show dim rect in practice so users understand the mechanic
   const stimulusShape = getStimulusShape(config);
   const primaryRectColor = getRectColor(config, 'primaryRectColor', 'red');
   const dimRectColor = getRectColor(config, 'dimRectColor', 'blue');
 
+  const fixationPauseMs = getFixationPauseMs(config);
   const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS));
   const [trialIndex, setTrialIndex] = useState(0);
   const [visualStarted, setVisualStarted] = useState(false);
@@ -109,13 +124,19 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   const dimEnd = direction ? offset(OPPOSITE_DIRECTION[direction], 1, TRAVEL_DISTANCE_PX) : { x: 0, y: 0 };
 
   // High-frequency animation is handled by CSS transition (GPU-friendly).
-  // We only toggle visualStarted twice per trial (start -> animate), not every frame.
+  // Fixation pause: rects stay at center for fixationPauseMs, then animate to end positions.
   useEffect(() => {
     if (restartIn !== null) return;
 
     setVisualStarted(false);
-    const raf = requestAnimationFrame(() => setVisualStarted(true));
+    let rafId: number;
 
+    // After fixation pause, trigger the CSS animation
+    const fixTimer = window.setTimeout(() => {
+      rafId = requestAnimationFrame(() => setVisualStarted(true));
+    }, fixationPauseMs);
+
+    // After fixation + movement, advance to next trial
     const t = window.setTimeout(() => {
       if (trialIndex + 1 >= PRACTICE_TRIALS) {
         practiceGateRef.current?.markPracticeDone();
@@ -123,13 +144,14 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
       } else {
         setTrialIndex((i) => i + 1);
       }
-    }, movementDurationMs);
+    }, fixationPauseMs + movementDurationMs);
 
     return () => {
-      cancelAnimationFrame(raf);
+      clearTimeout(fixTimer);
       clearTimeout(t);
+      if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [trialIndex, restartIn, movementDurationMs, restartDelaySec]);
+  }, [trialIndex, restartIn, movementDurationMs, restartDelaySec, fixationPauseMs]);
 
   // Countdown then restart
   useEffect(() => {
@@ -167,37 +189,9 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
         </p>
       )}
       <div className="relative rounded-xl overflow-hidden bg-gray-900" style={{ width: BOX_SIZE, height: BOX_SIZE }}>
-        {(!visualStarted && direction && showDimRect) ? (
-          <StimulusShape
-            shape={stimulusShape}
-            left={isHorizontalDirection(direction) ? CENTER - RECT_HALF_PX : CENTER - RECT_HALF_PX / 2}
-            top={isHorizontalDirection(direction) ? CENTER - RECT_HALF_PX / 2 : CENTER - RECT_HALF_PX}
-            width={isHorizontalDirection(direction) ? RECT_HALF_PX * 2 : RECT_HALF_PX}
-            height={isHorizontalDirection(direction) ? RECT_HALF_PX : RECT_HALF_PX * 2}
-            isPrimary={false}
-            primaryColor={primaryRectColor}
-            dimColor={dimRectColor}
-            opacity={dimOpacity}
-          />
-        ) : null}
-
         {direction ? (
           <>
-            <StimulusShape
-              shape={stimulusShape}
-              left={CENTER - RECT_HALF_PX / 2}
-              top={CENTER - RECT_HALF_PX / 2}
-              width={RECT_HALF_PX}
-              height={RECT_HALF_PX}
-              isPrimary={true}
-              primaryColor={primaryRectColor}
-              dimColor={dimRectColor}
-              opacity={visualStarted ? 1 : 0}
-              style={{
-                transition: visualStarted ? `transform ${movementDurationMs}ms linear` : 'none',
-                transform: `translate(${visualStarted ? primaryEnd.x : 0}px, ${visualStarted ? primaryEnd.y : 0}px)`,
-              }}
-            />
+            {/* Dim rect — always at center before animation, moves opposite to primary when started */}
             {showDimRect && (
               <StimulusShape
                 shape={stimulusShape}
@@ -208,13 +202,29 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
                 isPrimary={false}
                 primaryColor={primaryRectColor}
                 dimColor={dimRectColor}
-                opacity={visualStarted ? dimOpacity : 0}
+                opacity={dimOpacity}
                 style={{
                   transition: visualStarted ? `transform ${movementDurationMs}ms linear` : 'none',
                   transform: `translate(${visualStarted ? dimEnd.x : 0}px, ${visualStarted ? dimEnd.y : 0}px)`,
                 }}
               />
             )}
+            {/* Primary rect — always at center before animation, moves to primary direction when started */}
+            <StimulusShape
+              shape={stimulusShape}
+              left={CENTER - RECT_HALF_PX / 2}
+              top={CENTER - RECT_HALF_PX / 2}
+              width={RECT_HALF_PX}
+              height={RECT_HALF_PX}
+              isPrimary={true}
+              primaryColor={primaryRectColor}
+              dimColor={dimRectColor}
+              opacity={1}
+              style={{
+                transition: visualStarted ? `transform ${movementDurationMs}ms linear` : 'none',
+                transform: `translate(${visualStarted ? primaryEnd.x : 0}px, ${visualStarted ? primaryEnd.y : 0}px)`,
+              }}
+            />
           </>
         ) : null}
       </div>

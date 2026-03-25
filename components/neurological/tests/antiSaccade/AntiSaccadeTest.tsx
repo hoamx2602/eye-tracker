@@ -8,6 +8,7 @@ import {
   DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
   DEFAULT_MOVEMENT_DURATION_MS,
   DEFAULT_TRIAL_COUNT,
+  DEFAULT_FIXATION_PAUSE_MS,
   GAZE_SAMPLE_INTERVAL_MS,
   RECT_HALF_PX,
   TRAVEL_DISTANCE_PX,
@@ -145,11 +146,15 @@ export default function AntiSaccadeTest() {
   const gazeIntervalMs = Math.max(16, Number(config.gazeSampleIntervalMs) || GAZE_SAMPLE_INTERVAL_MS);
   /** Minimum px from screen edge where stimuli can appear — read from global config. */
   const edgePaddingPx = Math.max(0, Number(config.edgePaddingPx) || 80);
+  /** How long (ms) both rects stay at center before moving apart each trial. */
+  const rawFixationPause = Number(config.fixationPauseMs);
+  const fixationPauseMs = Math.max(0, Number.isFinite(rawFixationPause) ? rawFixationPause : DEFAULT_FIXATION_PAUSE_MS);
 
   const directions = useMemo(() => generateTrialDirections(trialCount), [trialCount]);
   const startTimeRef = useRef(0);
   const [trialIndex, setTrialIndex] = useState(0);
-  const [phase, setPhase] = useState<'moving' | 'between'>('moving');
+  const [phase, setPhase] = useState<'fixation' | 'moving' | 'between'>('fixation');
+  const fixationStartRef = useRef(0);
   const [visualStarted, setVisualStarted] = useState(false);
   const movementStartRef = useRef(0);
   const firstCorrectGazeTimeRef = useRef<number | null>(null);
@@ -180,16 +185,22 @@ export default function AntiSaccadeTest() {
   const dimTranslate = { x: dimEndPos.x - center.x, y: dimEndPos.y - center.y };
 
   useEffect(() => {
-    startTimeRef.current = performance.now();
-    movementStartRef.current = performance.now();
+    const now = performance.now();
+    startTimeRef.current = now;
+    fixationStartRef.current = now;
+    movementStartRef.current = now;
     firstCorrectGazeTimeRef.current = null;
     trialGazeSamplesRef.current = [];
     trialsResultsRef.current = [];
   }, []);
 
   // Visual movement is driven by CSS transitions (no React setState per frame).
-  // We only toggle visualStarted at the start of each trial movement phase.
+  // Fixation phase: rects frozen at center. Moving phase: trigger CSS transition once.
   useEffect(() => {
+    if (phase === 'fixation') {
+      setVisualStarted(false); // ensure rects stay at center
+      return;
+    }
     if (phase !== 'moving') return;
     if (trialIndex >= trialCount) return;
     setVisualStarted(false);
@@ -205,7 +216,15 @@ export default function AntiSaccadeTest() {
       const dir = directions[trialIndex];
       if (!dir) return;
 
-      if (phase === 'moving') {
+      if (phase === 'fixation') {
+        // Wait fixationPauseMs before starting movement
+        if (now - fixationStartRef.current >= fixationPauseMs) {
+          movementStartRef.current = now;
+          firstCorrectGazeTimeRef.current = null;
+          trialGazeSamplesRef.current = [];
+          setPhase('moving');
+        }
+      } else if (phase === 'moving') {
         const elapsed = now - movementStartRef.current;
         const p = Math.min(1, elapsed / trialDurationMs);
 
@@ -252,6 +271,7 @@ export default function AntiSaccadeTest() {
           betweenStartRef.current = now;
         }
       } else {
+        // 'between' phase
         if (now - betweenStartRef.current >= intervalMs) {
           if (trialIndex + 1 >= trialCount) {
             const endTime = performance.now();
@@ -280,16 +300,14 @@ export default function AntiSaccadeTest() {
             return;
           }
           setTrialIndex((i) => i + 1);
-          setPhase('moving');
-          movementStartRef.current = performance.now();
-          firstCorrectGazeTimeRef.current = null;
-          trialGazeSamplesRef.current = [];
+          setPhase('fixation');
+          fixationStartRef.current = performance.now();
         }
       }
     }, gazeIntervalMs);
 
     return () => clearInterval(interval);
-  }, [trialIndex, trialCount, phase, directions, speedPxPerSec, fallbackDurationMs, intervalMs, gazeIntervalMs, center.x, center.y, trialDurationMs, travelPx, completeTest]);
+  }, [trialIndex, trialCount, phase, directions, speedPxPerSec, fallbackDurationMs, intervalMs, gazeIntervalMs, fixationPauseMs, center.x, center.y, trialDurationMs, travelPx, completeTest]);
 
   if (trialIndex >= trialCount) {
     return (
@@ -339,7 +357,7 @@ export default function AntiSaccadeTest() {
             isPrimary={true}
             primaryColor={primaryRectColor}
             dimColor={dimRectColor}
-            opacity={visualStarted ? 1 : 0}
+            opacity={visualStarted || phase === 'fixation' ? 1 : 0}
             ariaHidden
             style={{
               transition: visualStarted ? `transform ${trialDurationMs}ms linear` : 'none',

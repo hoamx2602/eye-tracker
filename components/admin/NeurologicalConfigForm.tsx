@@ -49,6 +49,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
     anti_saccade: {
       trialCount: 12,
       movementSpeedPxPerSec: 120,
+      fixationPauseMs: 1000,
       intervalBetweenTrialsMs: 800,
       practiceRestartDelaySec: 3,
       dimRectOpacity: 0.1,
@@ -441,6 +442,12 @@ export default function NeurologicalConfigForm() {
                           className="w-full accent-blue-500 h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer"
                         />
                       </div>
+                      <SelectNumber
+                        label="Fixation pause (ms)"
+                        value={Number(params.fixationPauseMs) || 1000}
+                        onChange={(v) => setParam(id, 'fixationPauseMs', v)}
+                        options={[0, 300, 500, 750, 1000, 1500, 2000].map((n) => ({ value: n, label: n === 0 ? 'Off' : `${n} ms` }))}
+                      />
                       <SelectNumber
                         label="Interval between trials (ms)"
                         value={Number(params.intervalBetweenTrialsMs) ?? 800}

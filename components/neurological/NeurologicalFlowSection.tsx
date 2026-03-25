@@ -32,6 +32,7 @@ import AntiSaccadeTest from '@/components/neurological/tests/antiSaccade/AntiSac
 import AntiSaccadePractice from '@/components/neurological/tests/antiSaccade/AntiSaccadePractice';
 import {
   ANTI_SACCADE_GUIDE_STEPS,
+  getAntiSaccadeGuideSteps,
   DEFAULT_TRIAL_COUNT,
   DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
 } from '@/components/neurological/tests/antiSaccade/constants';
@@ -205,7 +206,7 @@ export default function NeurologicalFlowSection({
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="anti_saccade"
-            guideSteps={ANTI_SACCADE_GUIDE_STEPS}
+            guideSteps={getAntiSaccadeGuideSteps(true)}
             enablePractice={true}
             practiceContent={(config) => <AntiSaccadePractice config={config} />}
             practiceTitle="Practice: Anti-Saccade"

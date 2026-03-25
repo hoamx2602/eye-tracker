@@ -50,6 +50,7 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     trialCount: 12,
     movementSpeedPxPerSec: 120,
     intervalBetweenTrialsMs: 800,
+    fixationPauseMs: 1000,
     practiceRestartDelaySec: 3,
     dimRectOpacity: 0.1,
     showDimRect: true,

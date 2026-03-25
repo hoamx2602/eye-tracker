@@ -1,22 +1,36 @@
 import type { GuideStep } from '../../types';
 
-/** Guide steps for Test 4: Opposite Direction Gaze Control (Anti-Saccade) — PDF. */
-export const ANTI_SACCADE_GUIDE_STEPS: GuideStep[] = [
-  {
-    id: '1',
-    title: 'Anti-Saccade',
-    body: 'Two rectangles will appear: one bright and one dim. They will move in opposite directions. Your task is to look at the dim rectangle, not the bright one.',
-  },
-  {
-    id: '2',
-    body: 'Keep your gaze on the dim (faint) rectangle as it moves. Try not to follow the bright one — that is the opposite direction we want you to look.',
-  },
-  {
-    id: '3',
-    title: 'Trials',
-    body: 'You will see several trials. Each time the direction changes at random. Look at the dim rectangle as quickly and accurately as you can.',
-  },
-];
+/**
+ * Returns guide steps for Anti-Saccade, adapted based on whether the dim rect is shown.
+ * When showDimRect is false (dimRectOpacity = 0), instructions do not mention a dim rectangle.
+ */
+export function getAntiSaccadeGuideSteps(showDimRect = true): GuideStep[] {
+  return [
+    {
+      id: '1',
+      title: 'Anti-Saccade',
+      body: showDimRect
+        ? 'Two rectangles will appear: one bright and one dim. They will move in opposite directions. Your task is to look at the dim rectangle, not the bright one.'
+        : 'A rectangle will appear at the center. It will move to one side. Your task is to look in the OPPOSITE direction from where it moves.',
+    },
+    {
+      id: '2',
+      body: showDimRect
+        ? 'Keep your gaze on the dim (faint) rectangle as it moves. Try not to follow the bright one — that is the opposite direction we want you to look.'
+        : 'Resist the urge to follow the rectangle. Instead, shift your gaze to the opposite side as quickly and accurately as you can.',
+    },
+    {
+      id: '3',
+      title: 'Trials',
+      body: showDimRect
+        ? 'You will see several trials. Each time the direction changes at random. Look at the dim rectangle as quickly and accurately as you can.'
+        : 'You will see several trials. Each time the direction changes at random. Always look in the opposite direction as quickly and accurately as you can.',
+    },
+  ];
+}
+
+/** Backward-compatible default (dim rect visible). Use getAntiSaccadeGuideSteps() for dynamic text. */
+export const ANTI_SACCADE_GUIDE_STEPS: GuideStep[] = getAntiSaccadeGuideSteps(true);
 
 export type AntiSaccadeDirection = 'left' | 'right' | 'up' | 'down';
 
@@ -47,6 +61,8 @@ export const TRAVEL_DISTANCE_PX = 180;
 export const AOI_RADIUS_PX = 70;
 /** Gaze sample interval (ms) during trial. */
 export const GAZE_SAMPLE_INTERVAL_MS = 100;
+/** Fixation pause (ms) at trial start — both rects stay at center before moving apart. */
+export const DEFAULT_FIXATION_PAUSE_MS = 1000;
 
 /** Stimulus shape: rectangle, circle, triangle, ball, table, chair. */
 export type AntiSaccadeStimulusShape =
