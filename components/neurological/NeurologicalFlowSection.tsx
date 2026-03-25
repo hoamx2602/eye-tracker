@@ -122,6 +122,11 @@ export default function NeurologicalFlowSection({
   neuroVerifyBanner,
   resultsInitialFocusTestId,
 }: NeurologicalFlowSectionProps) {
+  // Global parameters stored under _global key; merged into every test config so each test
+  // can read globalParams like edgePaddingPx from its own config object.
+  const globalParams: Record<string, unknown> =
+    (neuroConfigSnapshot?.testParameters?.['_global'] as Record<string, unknown>) ?? {};
+
   return (
     <>
       {status === 'NEURO_FLOW' && neuroRunStatus === 'creating' && (
@@ -153,7 +158,7 @@ export default function NeurologicalFlowSection({
               guideSteps={HEAD_ORIENTATION_GUIDE_STEPS}
               enablePractice={false}
               testContent={<HeadOrientationTest />}
-              config={(neuroConfigSnapshot?.testParameters?.head_orientation as Record<string, unknown>) ?? { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] }}
+              config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.head_orientation as Record<string, unknown>) ?? { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] }) }}
               onTestComplete={(payload) => onTestComplete('head_orientation', payload)}
             />
           </NeuroHeadPoseProvider>
@@ -168,15 +173,16 @@ export default function NeurologicalFlowSection({
             practiceContent={<VisualSearchPractice />}
             practiceTitle="Practice: Visual Search"
             testContent={<VisualSearchTest />}
-            config={
-              (neuroConfigSnapshot?.testParameters?.visual_search as Record<string, unknown>) ?? {
+            config={{
+              ...globalParams,
+              ...((neuroConfigSnapshot?.testParameters?.visual_search as Record<string, unknown>) ?? {
                 numberCount: DEFAULT_NUMBER_COUNT,
                 practiceCount: PRACTICE_COUNT,
                 aoiRadiusPx: DEFAULT_AOI_RADIUS_PX,
                 allowClickTargets: DEFAULT_ALLOW_CLICK_TARGETS,
                 clickHoldDurationMs: DEFAULT_CLICK_HOLD_DURATION_MS,
-              }
-            }
+              }),
+            }}
             onTestComplete={(payload) => onTestComplete('visual_search', payload)}
           />
         </NeuroGazeProvider>
@@ -190,7 +196,7 @@ export default function NeurologicalFlowSection({
             practiceContent={<MemoryCardsPractice />}
             practiceTitle="Practice: Memory Cards (2x2)"
             testContent={<MemoryCardsTest />}
-            config={(neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { cardCount: 16, dwellMs: DEFAULT_DWELL_MS, symbolSize: 'lg' }}
+            config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { cardCount: 16, dwellMs: DEFAULT_DWELL_MS, symbolSize: 'lg' }) }}
             onTestComplete={(payload) => onTestComplete('memory_cards', payload)}
           />
         </NeuroGazeProvider>
@@ -204,8 +210,9 @@ export default function NeurologicalFlowSection({
             practiceContent={(config) => <AntiSaccadePractice config={config} />}
             practiceTitle="Practice: Anti-Saccade"
             testContent={<AntiSaccadeTest />}
-            config={
-              (neuroConfigSnapshot?.testParameters?.anti_saccade as Record<string, unknown>) ?? {
+            config={{
+              ...globalParams,
+              ...((neuroConfigSnapshot?.testParameters?.anti_saccade as Record<string, unknown>) ?? {
                 trialCount: DEFAULT_TRIAL_COUNT,
                 movementSpeedPxPerSec: 120,
                 intervalBetweenTrialsMs: DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
@@ -214,8 +221,8 @@ export default function NeurologicalFlowSection({
                 stimulusShape: 'rectangle',
                 primaryRectColor: 'red',
                 dimRectColor: 'blue',
-              }
-            }
+              }),
+            }}
             onTestComplete={(payload) => onTestComplete('anti_saccade', payload)}
           />
         </NeuroGazeProvider>
@@ -229,7 +236,7 @@ export default function NeurologicalFlowSection({
             practiceContent={<SaccadicPractice />}
             practiceTitle="Practice: Saccadic"
             testContent={<SaccadicTest />}
-            config={(neuroConfigSnapshot?.testParameters?.saccadic as Record<string, unknown>) ?? { targetDurationMs: DEFAULT_TARGET_DURATION_MS, totalCycles: DEFAULT_TOTAL_CYCLES }}
+            config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.saccadic as Record<string, unknown>) ?? { targetDurationMs: DEFAULT_TARGET_DURATION_MS, totalCycles: DEFAULT_TOTAL_CYCLES }) }}
             onTestComplete={(payload) => onTestComplete('saccadic', payload)}
           />
         </NeuroGazeProvider>
@@ -243,7 +250,7 @@ export default function NeurologicalFlowSection({
             practiceContent={<FixationStabilityPractice />}
             practiceTitle="Practice: Fixation Stability"
             testContent={<FixationStabilityTest />}
-            config={(neuroConfigSnapshot?.testParameters?.fixation_stability as Record<string, unknown>) ?? { durationSec: DEFAULT_DURATION_SEC, blinkIntervalMs: DEFAULT_BLINK_INTERVAL_MS }}
+            config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.fixation_stability as Record<string, unknown>) ?? { durationSec: DEFAULT_DURATION_SEC, blinkIntervalMs: DEFAULT_BLINK_INTERVAL_MS }) }}
             onTestComplete={(payload) => onTestComplete('fixation_stability', payload)}
           />
         </NeuroGazeProvider>
@@ -257,7 +264,7 @@ export default function NeurologicalFlowSection({
             practiceContent={<PeripheralVisionPractice />}
             practiceTitle="Practice: Peripheral Vision"
             testContent={<PeripheralVisionTest />}
-            config={(neuroConfigSnapshot?.testParameters?.peripheral_vision as Record<string, unknown>) ?? { trialCount: PERIPHERAL_DEFAULT_TRIAL_COUNT, stimulusDurationMs: DEFAULT_STIMULUS_DURATION_MS, minDelayMs: DEFAULT_MIN_DELAY_MS, maxDelayMs: DEFAULT_MAX_DELAY_MS }}
+            config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.peripheral_vision as Record<string, unknown>) ?? { trialCount: PERIPHERAL_DEFAULT_TRIAL_COUNT, stimulusDurationMs: DEFAULT_STIMULUS_DURATION_MS, minDelayMs: DEFAULT_MIN_DELAY_MS, maxDelayMs: DEFAULT_MAX_DELAY_MS }) }}
             onTestComplete={(payload) => onTestComplete('peripheral_vision', payload)}
           />
         </NeuroGazeProvider>

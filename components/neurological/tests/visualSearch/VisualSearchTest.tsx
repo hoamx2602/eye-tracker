@@ -71,10 +71,11 @@ export default function VisualSearchTest() {
     Math.min(2000, Number(config.clickHoldDurationMs ?? DEFAULT_CLICK_HOLD_DURATION_MS))
   );
   const gazeIntervalMs = Math.max(16, Number(config.gazeSampleIntervalMs) || GAZE_PATH_INTERVAL_MS);
+  const edgePaddingPx = Math.max(0, Number(config.edgePaddingPx) || 0);
 
   const positions = useMemo(
-    () => generateNumberPositions(numberCount),
-    [numberCount]
+    () => generateNumberPositions(numberCount, undefined, edgePaddingPx, typeof window !== 'undefined' ? window.innerWidth : 0, typeof window !== 'undefined' ? window.innerHeight : 0),
+    [numberCount, edgePaddingPx]
   );
 
   // ── Data recording refs ────────────────────────────────────────────────────

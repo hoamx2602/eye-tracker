@@ -4,10 +4,16 @@
  */
 export function generateNumberPositions(
   count: number,
-  minSpacingPct: number = 12
+  minSpacingPct: number = 12,
+  edgePaddingPx = 0,
+  viewportWidth = 0,
+  viewportHeight = 0
 ): Array<{ number: number; x: number; y: number }> {
   const positions: Array<{ number: number; x: number; y: number }> = [];
-  const margin = 10; // keep away from edges (%)
+  // Convert edgePaddingPx to a percentage margin, taking the max of the default 10% and px-derived values
+  const mxFromPx = (edgePaddingPx > 0 && viewportWidth > 0) ? (edgePaddingPx / viewportWidth) * 100 : 0;
+  const myFromPx = (edgePaddingPx > 0 && viewportHeight > 0) ? (edgePaddingPx / viewportHeight) * 100 : 0;
+  const margin = Math.min(40, Math.max(10, mxFromPx, myFromPx)); // keep away from edges (%)
 
   for (let n = 1; n <= count; n++) {
     let attempts = 0;

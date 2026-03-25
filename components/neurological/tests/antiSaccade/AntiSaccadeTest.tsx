@@ -105,20 +105,21 @@ export function buildAntiSaccadeScanningPath(
   return out;
 }
 
-const EDGE_MARGIN_PX = 24;
-
 function getCenter(): { x: number; y: number } {
   if (typeof window === 'undefined') return { x: 960, y: 540 };
   return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 }
 
-/** Distance from screen center to near edge (used for real test). */
-function getTravelToEdges(): { travelX: number; travelY: number } {
+/** Distance from screen center to near edge (used for real test).
+ *  edgeMarginPx: minimum gap (px) between stimulus edge and screen edge — should match
+ *  the calibration boundary (~4% of viewport) to avoid gaze model extrapolation. */
+function getTravelToEdges(edgeMarginPx: number): { travelX: number; travelY: number } {
   if (typeof window === 'undefined') return { travelX: TRAVEL_DISTANCE_PX, travelY: TRAVEL_DISTANCE_PX };
   const cx = window.innerWidth / 2;
   const cy = window.innerHeight / 2;
-  const travelX = Math.max(TRAVEL_DISTANCE_PX, Math.min(cx - EDGE_MARGIN_PX, window.innerWidth - cx - EDGE_MARGIN_PX));
-  const travelY = Math.max(TRAVEL_DISTANCE_PX, Math.min(cy - EDGE_MARGIN_PX, window.innerHeight - cy - EDGE_MARGIN_PX));
+  // Clamp travel so the stimulus center stops at least edgeMarginPx from screen edge
+  const travelX = Math.max(TRAVEL_DISTANCE_PX, Math.min(cx - edgeMarginPx, window.innerWidth - cx - edgeMarginPx));
+  const travelY = Math.max(TRAVEL_DISTANCE_PX, Math.min(cy - edgeMarginPx, window.innerHeight - cy - edgeMarginPx));
   return { travelX, travelY };
 }
 
@@ -142,6 +143,8 @@ export default function AntiSaccadeTest() {
   const primaryRectColor = getRectColor(config, 'primaryRectColor', 'red');
   const dimRectColor = getRectColor(config, 'dimRectColor', 'blue');
   const gazeIntervalMs = Math.max(16, Number(config.gazeSampleIntervalMs) || GAZE_SAMPLE_INTERVAL_MS);
+  /** Minimum px from screen edge where stimuli can appear — read from global config. */
+  const edgePaddingPx = Math.max(0, Number(config.edgePaddingPx) || 80);
 
   const directions = useMemo(() => generateTrialDirections(trialCount), [trialCount]);
   const startTimeRef = useRef(0);
@@ -155,7 +158,7 @@ export default function AntiSaccadeTest() {
   const betweenStartRef = useRef(0);
 
   const center = getCenter();
-  const { travelX, travelY } = getTravelToEdges();
+  const { travelX, travelY } = getTravelToEdges(edgePaddingPx);
   const direction = directions[trialIndex];
   const travelPx = direction ? (isHorizontalDirection(direction) ? travelX : travelY) : TRAVEL_DISTANCE_PX;
 

@@ -93,6 +93,7 @@ export default function SaccadicTest() {
   const targetDotSizePx = Math.max(16, Math.min(64, Number(config.targetDotSizePx) ?? 64));
   const targetDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.targetDotColor ?? '')) ? String(config.targetDotColor) : '#f59e0b';
   const gazeIntervalMs = Math.max(16, Number(config.gazeSampleIntervalMs) || GAZE_SAMPLE_INTERVAL_MS);
+  const edgePaddingPx = Math.max(0, Number(config.edgePaddingPx) || 0);
 
   const viewport = getViewport();
   const startTimeRef = useRef(0);
@@ -104,8 +105,8 @@ export default function SaccadicTest() {
 
   const targetSide: SaccadicTargetSide = cycleIndex % 2 === 0 ? 'left' : 'right';
   const targetPos = useMemo(
-    () => getTargetPosition(targetSide, viewport.w, viewport.h),
-    [targetSide, viewport.w, viewport.h]
+    () => getTargetPosition(targetSide, viewport.w, viewport.h, edgePaddingPx),
+    [targetSide, viewport.w, viewport.h, edgePaddingPx]
   );
 
   useEffect(() => {
@@ -137,7 +138,8 @@ export default function SaccadicTest() {
       const pos = getTargetPosition(
         cycleIndex % 2 === 0 ? 'left' : 'right',
         viewport.w,
-        viewport.h
+        viewport.h,
+        edgePaddingPx
       );
       const g = neuroLiveGazeRef.current;
       const tRel = (now - cycleStartRef.current) / 1000;
@@ -172,7 +174,7 @@ export default function SaccadicTest() {
             cycles.length > 0 ? (withLatency.length / cycles.length) * 100 : undefined;
           let correctiveSaccadeCount = 0;
           cycles.forEach((cy) => {
-            const posCycle = getTargetPosition(cy.targetSide, viewport.w, viewport.h);
+            const posCycle = getTargetPosition(cy.targetSide, viewport.w, viewport.h, edgePaddingPx);
             const firstFixIdx = cy.gazeSamples.findIndex(
               (s) => Math.hypot(s.x - posCycle.x, s.y - posCycle.y) <= AOI_RADIUS_PX
             );

@@ -83,9 +83,12 @@ export default function NeurologicalConfigForm() {
         const data = await res.json();
         if (cancelled) return;
         const order = Array.isArray(data.testOrder) ? data.testOrder : [...ALL_TEST_IDS];
+        const rawParams = (data.testParameters ?? {}) as Record<string, Record<string, unknown>>;
         const params: Record<string, Record<string, unknown>> = {};
+        // Load global settings (stored under _global key)
+        params['_global'] = { edgePaddingPx: 80, ...((rawParams['_global'] as Record<string, unknown>) ?? {}) };
         for (const id of ALL_TEST_IDS) {
-          params[id] = ensureParams(id, (data.testParameters ?? {}) as Record<string, Record<string, unknown>>);
+          params[id] = ensureParams(id, rawParams);
         }
         const enabled: Record<string, boolean> = { ...data.testEnabled };
         ALL_TEST_IDS.forEach((id) => {
@@ -183,6 +186,24 @@ export default function NeurologicalConfigForm() {
           {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
+
+      <section className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">
+        <h3 className="text-sm font-bold text-slate-300">Global settings</h3>
+        <p className="text-slate-400 text-xs">
+          Applies to all tests. Stimuli and moving objects will stay at least this many pixels from
+          the screen edge — matching the calibration area boundary (~4% of screen width/height ≈ 77 px
+          on 1920 px wide). Keeping this consistent avoids asking the gaze model to extrapolate
+          outside its trained region.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <SelectNumber
+            label="Edge padding (px)"
+            value={Number((config.testParameters['_global'] ?? {}).edgePaddingPx) || 80}
+            onChange={(v) => setParam('_global', 'edgePaddingPx', v)}
+            options={[40, 60, 80, 100, 120, 150, 200].map((n) => ({ value: n, label: `${n} px` }))}
+          />
+        </div>
+      </section>
 
       <section className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">
         <h3 className="text-sm font-bold text-slate-300">Test order</h3>

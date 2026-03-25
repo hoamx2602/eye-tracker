@@ -109,6 +109,7 @@ export default function PeripheralVisionTest() {
   const stimulusDotSizePx = Math.max(8, Math.min(64, Number(config.stimulusDotSizePx) ?? 16));
   const stimulusDotColor = /^#[0-9A-Fa-f]{6}$/.test(String(config.stimulusDotColor ?? '')) ? String(config.stimulusDotColor) : '#ffffff';
   const gazeIntervalMs = Math.max(16, Number(config.gazeSampleIntervalMs) || GAZE_SAMPLE_INTERVAL_MS);
+  const edgePaddingPx = Math.max(0, Number(config.edgePaddingPx) || 0);
 
   const startTimeRef = useRef(0);
   const [trialIndex, setTrialIndex] = useState(0);
@@ -156,7 +157,7 @@ export default function PeripheralVisionTest() {
   useEffect(() => {
     if (trialIndex >= trialCount) return;
 
-    const pos = randomPeripheralStimulusPosition(viewport.w, viewport.h);
+    const pos = randomPeripheralStimulusPosition(viewport.w, viewport.h, undefined, edgePaddingPx);
     setStimulusPos(pos);
 
     trialStartRef.current = performance.now();

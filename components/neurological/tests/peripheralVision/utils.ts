@@ -8,12 +8,16 @@ import { PERIPHERAL_STIMULUS_MARGIN_FRAC, ZONE_POSITIONS } from './constants';
 export function randomPeripheralStimulusPosition(
   viewportWidth: number,
   viewportHeight: number,
-  marginFrac: number = PERIPHERAL_STIMULUS_MARGIN_FRAC
+  marginFrac: number = PERIPHERAL_STIMULUS_MARGIN_FRAC,
+  edgePaddingPx = 0
 ): { x: number; y: number } {
   const w = Math.max(1, viewportWidth);
   const h = Math.max(1, viewportHeight);
-  const mx = Math.min(0.45, Math.max(0.06, marginFrac));
-  const my = Math.min(0.45, Math.max(0.06, marginFrac));
+  // Convert px-based padding to fraction, take the max of fraction and px-derived values
+  const mxFromPx = edgePaddingPx > 0 ? edgePaddingPx / w : 0;
+  const myFromPx = edgePaddingPx > 0 ? edgePaddingPx / h : 0;
+  const mx = Math.min(0.45, Math.max(0.06, marginFrac, mxFromPx));
+  const my = Math.min(0.45, Math.max(0.06, marginFrac, myFromPx));
   const cx = w / 2;
   const cy = h / 2;
   const a = cx - mx * w;

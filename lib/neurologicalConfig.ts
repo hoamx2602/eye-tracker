@@ -17,6 +17,19 @@ export type NeuroTestId = (typeof DEFAULT_TEST_ORDER)[number];
 /** Default gaze sampling interval in ms — applied to all tests unless overridden per-test. */
 export const DEFAULT_GAZE_SAMPLE_INTERVAL_MS = 100;
 
+/**
+ * Minimum distance (px) that any stimulus/object must stay from the screen edge during all tests.
+ * Calibration uses ~4% of viewport (~77px on 1920px wide) as its outermost point; keeping this
+ * value at or above that prevents gaze predictions from being asked to extrapolate beyond the
+ * calibrated region, which is the main cause of "off-screen" gaze samples in Anti-Saccade.
+ */
+export const DEFAULT_EDGE_PADDING_PX = 80;
+
+/** Global parameters shared across all tests. Stored as testParameters['_global'] in DB. */
+export const DEFAULT_GLOBAL_PARAMETERS: Record<string, unknown> = {
+  edgePaddingPx: DEFAULT_EDGE_PADDING_PX,
+};
+
 export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = {
   head_orientation: { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] },
   visual_search: {
@@ -86,7 +99,10 @@ export const DEFAULT_TEST_ENABLED: Record<string, boolean> = {
 export function getDefaultConfigSnapshot() {
   return {
     testOrder: [...DEFAULT_TEST_ORDER],
-    testParameters: { ...DEFAULT_TEST_PARAMETERS },
+    testParameters: {
+      _global: { ...DEFAULT_GLOBAL_PARAMETERS },
+      ...DEFAULT_TEST_PARAMETERS,
+    },
     testEnabled: { ...DEFAULT_TEST_ENABLED },
   };
 }
