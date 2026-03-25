@@ -3,6 +3,7 @@
  * Body: { sessionId }. Server fetches config (default or from DB) and stores snapshot.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getDefaultConfigSnapshot } from '@/lib/neurologicalConfig';
 
@@ -64,15 +65,15 @@ export async function POST(request: NextRequest) {
       ? await prisma.neurologicalRun.update({
           where: { id: existing.id },
           data: {
-            configSnapshot,
-            testOrderSnapshot,
+            configSnapshot: configSnapshot as Prisma.InputJsonValue,
+            testOrderSnapshot: testOrderSnapshot as Prisma.InputJsonValue,
           },
         })
       : await prisma.neurologicalRun.create({
           data: {
             sessionId,
-            configSnapshot,
-            testOrderSnapshot,
+            configSnapshot: configSnapshot as Prisma.InputJsonValue,
+            testOrderSnapshot: testOrderSnapshot as Prisma.InputJsonValue,
             status: 'in_progress',
           },
         });

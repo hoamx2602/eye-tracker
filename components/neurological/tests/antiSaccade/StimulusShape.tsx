@@ -109,7 +109,7 @@ export default function StimulusShape({
 
   return (
     <div
-      className={`${baseClass} rounded-lg ${isPrimary ? primaryClass : dimClass} ${className}`}
+      className={`${baseClass} rounded-lg ${borderClass} ${className}`}
       style={commonStyle}
       aria-hidden={ariaHidden}
     />
