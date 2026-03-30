@@ -14,6 +14,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -426,6 +427,7 @@ function StepPanel({ step }: { step: Step }) {
 
 export default function HomePage() {
   const [selected, setSelected] = useState<Step>(CALIBRATION_STEPS[0]);
+  const router = useRouter();
 
   // globals.css sets html { overflow: hidden } for the full-screen test flow.
   // Override here so this page can scroll normally, restore on unmount.
@@ -523,7 +525,7 @@ export default function HomePage() {
                 </div>
                 {/* Phase 2: router.push('/setup') */}
                 <button
-                  onClick={() => {/* wired in Phase 2 */}}
+                  onClick={() => router.push('/consent')}
                   className="
                     flex items-center gap-2 px-5 py-2.5 rounded-xl flex-shrink-0
                     bg-blue-600 hover:bg-blue-500 active:scale-[0.97]

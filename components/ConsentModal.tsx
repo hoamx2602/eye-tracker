@@ -7,6 +7,7 @@ type ConsentModalProps = {
   open: boolean;
   onAgree: () => void;
   onDecline: () => void;
+  isPage?: boolean;
 };
 
 const CONSENT_TEXT = `
@@ -18,40 +19,52 @@ const CONSENT_TEXT = `
 • Will not capture or store any personal data about individuals who access the website except where they voluntarily choose to give us personal details by using an electronic form to use our services.
 `;
 
-export default function ConsentModal({ open, onAgree, onDecline }: ConsentModalProps) {
+export default function ConsentModal({ open, onAgree, onDecline, isPage = false }: ConsentModalProps) {
+  const content = (
+    <div className={`bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl max-w-lg w-full flex flex-col ${isPage ? '' : 'max-h-[90vh]'}`}>
+      <div className="p-6 border-b border-gray-700">
+        <h2 className="text-xl font-bold text-white">I understand that Eye Tracker:</h2>
+        <p className="text-sm text-gray-400 mt-1">Please read before starting calibration</p>
+      </div>
+      <div className="p-6 overflow-y-auto flex-1 text-sm text-gray-300 whitespace-pre-line leading-relaxed [&>*]:mb-2 scrollbar-invisible">
+        {CONSENT_TEXT.split('\n').map((line, i) => {
+          if (line.startsWith('**') && line.endsWith('**'))
+            return <p key={i} className="font-semibold text-white mt-3 first:mt-0">{line.replace(/\*\*/g, '')}</p>;
+          if (line.startsWith('• '))
+            return <p key={i} className="pl-2">{line}</p>;
+          return <p key={i}>{line || <br />}</p>;
+        })}
+      </div>
+      <div className="p-6 border-t border-gray-700 flex gap-3 justify-end">
+        <button
+          type="button"
+          onClick={onDecline}
+          className="px-5 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium rounded-xl transition"
+        >
+          Decline
+        </button>
+        <button
+          type="button"
+          onClick={onAgree}
+          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition"
+        >
+          I agree
+        </button>
+      </div>
+    </div>
+  );
+
+  if (isPage) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        {content}
+      </div>
+    );
+  }
+
   return (
     <Modal open={open} size="md" zIndexClassName="z-[100]">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col">
-        <div className="p-6 border-b border-gray-700">
-          <h2 className="text-xl font-bold text-white">I understand that Eye Tracker:</h2>
-          <p className="text-sm text-gray-400 mt-1">Please read before starting calibration</p>
-        </div>
-        <div className="p-6 overflow-y-auto flex-1 text-sm text-gray-300 whitespace-pre-line leading-relaxed [&>*]:mb-2 scrollbar-invisible">
-          {CONSENT_TEXT.split('\n').map((line, i) => {
-            if (line.startsWith('**') && line.endsWith('**'))
-              return <p key={i} className="font-semibold text-white mt-3 first:mt-0">{line.replace(/\*\*/g, '')}</p>;
-            if (line.startsWith('• '))
-              return <p key={i} className="pl-2">{line}</p>;
-            return <p key={i}>{line || <br />}</p>;
-          })}
-        </div>
-        <div className="p-6 border-t border-gray-700 flex gap-3 justify-end">
-          <button
-            type="button"
-            onClick={onDecline}
-            className="px-5 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium rounded-xl transition"
-          >
-            Decline
-          </button>
-          <button
-            type="button"
-            onClick={onAgree}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition"
-          >
-            I agree
-          </button>
-        </div>
-      </div>
+      {content}
     </Modal>
   );
 }

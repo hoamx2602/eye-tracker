@@ -111,6 +111,7 @@ function App() {
   const lastNeuroHeadPoseTimeRef = useRef<number>(0);
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [showDemographicsForm, setShowDemographicsForm] = useState(false);
+  const [currentScreen, setCurrentScreen] = useState<string>('home');
   const demographicsRef = useRef<DemographicsData | null>(null);
 
   // Head Positioning State
@@ -336,12 +337,26 @@ function App() {
       return;
     }
     const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
+    setCurrentScreen(parsed.screen);
     switch (parsed.screen) {
       case 'home':
         // Don't override status when at / (could be IDLE, HEAD_POSITIONING, CALIBRATION, or CHOICE)
         break;
       case 'choice':
         if (status !== 'POST_CALIBRATION_CHOICE') setStatus('POST_CALIBRATION_CHOICE');
+        break;
+      case 'consent':
+        if (!showConsentModal) setShowConsentModal(true);
+        if (showDemographicsForm) setShowDemographicsForm(false);
+        break;
+      case 'demographics':
+        if (showConsentModal) setShowConsentModal(false);
+        if (!showDemographicsForm) setShowDemographicsForm(true);
+        break;
+      case 'calibration':
+        if (status !== 'HEAD_POSITIONING' && status !== 'CALIBRATION') {
+          handleStartProcess();
+        }
         break;
       case 'tracking':
         if (status !== 'TRACKING') {
@@ -2110,16 +2125,30 @@ function App() {
   };
 
   const handleConsentAgree = () => {
+    pathSyncSourceRef.current = 'internal';
+    router.push('/demographics');
     setShowConsentModal(false);
     setShowDemographicsForm(true);
   };
 
   const handleConsentDecline = () => {
+    pathSyncSourceRef.current = 'internal';
+    router.push('/');
     setShowConsentModal(false);
   };
 
+  const handleDemographicsBack = () => {
+    pathSyncSourceRef.current = 'internal';
+    router.push('/consent');
+    setShowDemographicsForm(false);
+    setShowConsentModal(true);
+  };
+
   const handleDemographicsSubmit = (data: DemographicsData) => {
+    pathSyncSourceRef.current = 'internal';
+    router.push('/calibration');
     demographicsRef.current = data;
+    setShowDemographicsForm(false);
     handleStartProcess();
   };
 
@@ -2272,7 +2301,9 @@ function App() {
   };
 
   return (
-    <div className="relative w-full h-screen bg-gray-900 text-white overflow-hidden selection:bg-none">
+    <div className={`relative w-full h-screen bg-gray-900 text-white selection:bg-none ${
+      currentScreen === 'consent' || currentScreen === 'demographics' ? 'overflow-y-auto' : 'overflow-hidden'
+    }`}>
       {/* 
         Video & Canvas Logic:
         1. IDLE: Video hidden, Canvas hidden.
@@ -2315,6 +2346,7 @@ function App() {
 
       <AppMainOverlays
         status={status}
+        currentScreen={currentScreen}
         showConsentModal={showConsentModal}
         showDemographicsForm={showDemographicsForm}
         headPosCanvasRef={headPosCanvasRef}
@@ -2352,12 +2384,13 @@ function App() {
         onConsentAgree={handleConsentAgree}
         onConsentDecline={handleConsentDecline}
         onDemographicsSubmit={handleDemographicsSubmit}
-        onDemographicsBack={() => setShowDemographicsForm(false)}
+        onDemographicsBack={handleDemographicsBack}
         onSetCapturedImageModalIndex={setCapturedImageModalIndex}
         onSetRunMode={setRunMode}
         onSetShowConsentModal={setShowConsentModal}
         onGoHome={() => {
-          if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.HOME);
+          pathSyncSourceRef.current = 'internal';
+          router.push('/');
         }}
         onChooseRealTime={startRealTimeTracking}
         onChooseNeurological={handleChooseNeurological}

@@ -26,6 +26,7 @@ type CapturedImage = {
 
 type AppMainOverlaysProps = {
   status: AppState;
+  currentScreen?: string;
   showConsentModal: boolean;
   showDemographicsForm: boolean;
   headPosCanvasRef: React.RefObject<HTMLCanvasElement>;
@@ -88,6 +89,7 @@ type AppMainOverlaysProps = {
 export default function AppMainOverlays(props: AppMainOverlaysProps) {
   const {
     status,
+    currentScreen,
     showConsentModal,
     showDemographicsForm,
     headPosCanvasRef,
@@ -154,6 +156,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
           open={showConsentModal}
           onAgree={onConsentAgree}
           onDecline={onConsentDecline}
+          isPage={currentScreen === 'consent'}
         />
       )}
 
@@ -161,6 +164,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
         <DemographicsForm
           onSubmit={onDemographicsSubmit}
           onBack={onDemographicsBack}
+          isPage={currentScreen === 'demographics'}
         />
       )}
 

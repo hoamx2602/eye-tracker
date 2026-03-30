@@ -6,6 +6,12 @@
 export const PATHS = {
   /** Entry: idle, head positioning, calibration */
   HOME: '/',
+  /** Consent screen */
+  CONSENT: '/consent',
+  /** Demographics screen */
+  DEMOGRAPHICS: '/demographics',
+  /** Actual calibration flow */
+  CALIBRATION: '/calibration',
   /** Post-calibration: choose Real-time vs Neurological */
   CHOICE: '/choice',
   /** Real-time eye tracking */
@@ -32,6 +38,9 @@ const NEURO_TEST_IDS = [
 
 export type ParsedPath =
   | { screen: 'home' }
+  | { screen: 'consent' }
+  | { screen: 'demographics' }
+  | { screen: 'calibration' }
   | { screen: 'choice' }
   | { screen: 'tracking' }
   | { screen: 'neuro_pre' }
@@ -45,6 +54,9 @@ export type ParsedPath =
 export function parsePathname(pathname: string): ParsedPath {
   const normalized = pathname.replace(/\/$/, '') || '/';
   if (normalized === '/') return { screen: 'home' };
+  if (normalized === '/consent') return { screen: 'consent' };
+  if (normalized === '/demographics') return { screen: 'demographics' };
+  if (normalized === '/calibration') return { screen: 'calibration' };
   if (normalized === '/choice') return { screen: 'choice' };
   if (normalized === '/tracking') return { screen: 'tracking' };
   if (normalized === '/neuro/pre') return { screen: 'neuro_pre' };
