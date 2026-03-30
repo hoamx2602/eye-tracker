@@ -21,7 +21,7 @@ const CONSENT_TEXT = `
 
 export default function ConsentModal({ open, onAgree, onDecline, isPage = false }: ConsentModalProps) {
   const content = (
-    <div className={`bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl max-w-lg w-full flex flex-col ${isPage ? '' : 'max-h-[90vh]'}`}>
+    <div className={`bg-gray-900 border border-gray-700 rounded-3xl shadow-2xl max-w-xl w-full flex flex-col ${isPage ? 'h-[640px]' : 'max-h-[90vh]'}`}>
       <div className="p-6 border-b border-gray-700">
         <h2 className="text-xl font-bold text-white">I understand that Eye Tracker:</h2>
         <p className="text-sm text-gray-400 mt-1">Please read before starting calibration</p>
@@ -55,11 +55,7 @@ export default function ConsentModal({ open, onAgree, onDecline, isPage = false 
   );
 
   if (isPage) {
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-        {content}
-      </div>
-    );
+    return content;
   }
 
   return (

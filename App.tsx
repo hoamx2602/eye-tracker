@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PATHS, parsePathname } from '@/lib/paths';
@@ -109,9 +109,7 @@ function App() {
   /** Head pose during NEURO_FLOW for tests that need it (e.g. Head Orientation). Throttled ~15 Hz. */
   const [neuroHeadPose, setNeuroHeadPose] = useState<{ pitch: number; yaw: number; roll: number } | null>(null);
   const lastNeuroHeadPoseTimeRef = useRef<number>(0);
-  const [showConsentModal, setShowConsentModal] = useState(false);
-  const [showDemographicsForm, setShowDemographicsForm] = useState(false);
-  const [currentScreen, setCurrentScreen] = useState<string>('home');
+
   const demographicsRef = useRef<DemographicsData | null>(null);
 
   // Head Positioning State
@@ -134,6 +132,11 @@ function App() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  const currentScreen = useMemo(() => {
+    return parsePathname(typeof pathname === 'string' ? pathname : '/').screen;
+  }, [pathname]);
+
   const pathnameRef = useRef<string>(typeof pathname === 'string' ? pathname : '/');
   pathnameRef.current = typeof pathname === 'string' ? pathname : '/';
   /** When we push a path from internal transition we skip one pathname sync to avoid overwriting state. */
@@ -337,7 +340,6 @@ function App() {
       return;
     }
     const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
-    setCurrentScreen(parsed.screen);
     switch (parsed.screen) {
       case 'home':
         // Don't override status when at / (could be IDLE, HEAD_POSITIONING, CALIBRATION, or CHOICE)
@@ -346,12 +348,8 @@ function App() {
         if (status !== 'POST_CALIBRATION_CHOICE') setStatus('POST_CALIBRATION_CHOICE');
         break;
       case 'consent':
-        if (!showConsentModal) setShowConsentModal(true);
-        if (showDemographicsForm) setShowDemographicsForm(false);
-        break;
       case 'demographics':
-        if (showConsentModal) setShowConsentModal(false);
-        if (!showDemographicsForm) setShowDemographicsForm(true);
+        // UI is purely driven by `currentScreen` derived from URL pathname
         break;
       case 'calibration':
         if (status !== 'HEAD_POSITIONING' && status !== 'CALIBRATION') {
@@ -2116,39 +2114,32 @@ function App() {
       console.warn("Fullscreen denied", e);
     }
     await startCamera();
-    setShowDemographicsForm(false);
     setStatus('HEAD_POSITIONING');
   };
 
   const handleStartCalibrationClick = () => {
-    setShowConsentModal(true);
+    router.push('/consent');
   };
 
   const handleConsentAgree = () => {
     pathSyncSourceRef.current = 'internal';
     router.push('/demographics');
-    setShowConsentModal(false);
-    setShowDemographicsForm(true);
   };
 
   const handleConsentDecline = () => {
     pathSyncSourceRef.current = 'internal';
     router.push('/');
-    setShowConsentModal(false);
   };
 
   const handleDemographicsBack = () => {
     pathSyncSourceRef.current = 'internal';
     router.push('/consent');
-    setShowDemographicsForm(false);
-    setShowConsentModal(true);
   };
 
   const handleDemographicsSubmit = (data: DemographicsData) => {
     pathSyncSourceRef.current = 'internal';
     router.push('/calibration');
     demographicsRef.current = data;
-    setShowDemographicsForm(false);
     handleStartProcess();
   };
 
@@ -2302,7 +2293,7 @@ function App() {
 
   return (
     <div className={`relative w-full h-screen bg-gray-900 text-white selection:bg-none ${
-      currentScreen === 'consent' || currentScreen === 'demographics' ? 'overflow-y-auto' : 'overflow-hidden'
+      currentScreen === 'consent' || currentScreen === 'demographics' ? 'overflow-y-scroll' : 'overflow-hidden'
     }`}>
       {/* 
         Video & Canvas Logic:
@@ -2321,7 +2312,7 @@ function App() {
             className={
               isHeadOrientation
                 ? 'fixed inset-0 flex items-center justify-center z-40 bg-gray-950'
-                : 'fixed inset-0'
+                : 'fixed inset-0 pointer-events-none'
             }
           >
             <div className={isHeadOrientation ? 'w-full max-w-5xl aspect-video rounded-2xl overflow-hidden border-2 border-white/30 shadow-2xl bg-black relative mx-4' : 'absolute inset-0'}>
@@ -2347,8 +2338,6 @@ function App() {
       <AppMainOverlays
         status={status}
         currentScreen={currentScreen}
-        showConsentModal={showConsentModal}
-        showDemographicsForm={showDemographicsForm}
         headPosCanvasRef={headPosCanvasRef}
         headValidation={headValidation}
         positionHoldTime={positionHoldTime}
@@ -2387,7 +2376,7 @@ function App() {
         onDemographicsBack={handleDemographicsBack}
         onSetCapturedImageModalIndex={setCapturedImageModalIndex}
         onSetRunMode={setRunMode}
-        onSetShowConsentModal={setShowConsentModal}
+        onStartCalibrationClick={handleStartCalibrationClick}
         onGoHome={() => {
           pathSyncSourceRef.current = 'internal';
           router.push('/');

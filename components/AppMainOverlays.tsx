@@ -27,8 +27,6 @@ type CapturedImage = {
 type AppMainOverlaysProps = {
   status: AppState;
   currentScreen?: string;
-  showConsentModal: boolean;
-  showDemographicsForm: boolean;
   headPosCanvasRef: React.RefObject<HTMLCanvasElement>;
   headValidation: HeadValidationResult | null;
   positionHoldTime: number | null;
@@ -67,7 +65,7 @@ type AppMainOverlaysProps = {
   onDemographicsBack: () => void;
   onSetCapturedImageModalIndex: (index: number | null) => void;
   onSetRunMode: (mode: 'calibration' | 'test') => void;
-  onSetShowConsentModal: (value: boolean) => void;
+  onStartCalibrationClick: () => void;
   onGoHome: () => void;
   onChooseRealTime: () => void;
   onChooseNeurological: () => Promise<void>;
@@ -90,8 +88,6 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
   const {
     status,
     currentScreen,
-    showConsentModal,
-    showDemographicsForm,
     headPosCanvasRef,
     headValidation,
     positionHoldTime,
@@ -130,7 +126,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
     onDemographicsBack,
     onSetCapturedImageModalIndex,
     onSetRunMode,
-    onSetShowConsentModal,
+    onStartCalibrationClick,
     onGoHome,
     onChooseRealTime,
     onChooseNeurological,
@@ -150,25 +146,28 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
   } = props;
 
   return (
-    <>
-      {showConsentModal && (
+    <div className="absolute inset-0 pointer-events-none font-sans">
+      <div className={`relative w-full h-full pointer-events-auto transition-colors duration-300 ${
+        (currentScreen === 'consent' || currentScreen === 'demographics') ? 'bg-gray-950 flex items-center justify-center p-4' : ''
+      }`}>
+      {currentScreen === 'consent' && (
         <ConsentModal
-          open={showConsentModal}
+          open={currentScreen === 'consent'}
           onAgree={onConsentAgree}
           onDecline={onConsentDecline}
-          isPage={currentScreen === 'consent'}
+          isPage={true}
         />
       )}
 
-      {showDemographicsForm && (
+      {currentScreen === 'demographics' && (
         <DemographicsForm
           onSubmit={onDemographicsSubmit}
           onBack={onDemographicsBack}
-          isPage={currentScreen === 'demographics'}
+          isPage={true}
         />
       )}
 
-      {status === 'IDLE' && (
+      {status === 'IDLE' && currentScreen !== 'consent' && currentScreen !== 'demographics' && (
         <div className="flex flex-col items-center justify-center h-full space-y-8 p-4 z-10 relative">
           <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
             EYE TRACKER
@@ -220,13 +219,13 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
           <div className="flex flex-wrap items-center justify-center gap-4">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => { onSetRunMode('calibration'); onSetShowConsentModal(true); }}
+                onClick={() => { onSetRunMode('calibration'); onStartCalibrationClick(); }}
                 className="group relative px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-full transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(37,99,235,0.5)]"
               >
                 Start Calibration
               </button>
               <button
-                onClick={() => { onSetRunMode('test'); onSetShowConsentModal(true); }}
+                onClick={() => { onSetRunMode('test'); onStartCalibrationClick(); }}
                 className="px-8 py-4 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-full transition-all hover:scale-105 active:scale-95 border border-violet-500/50"
               >
                 Start Test
@@ -415,6 +414,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
           onReEvaluate={onReEvaluate}
         />
       )}
-    </>
+      </div>
+    </div>
   );
 }
