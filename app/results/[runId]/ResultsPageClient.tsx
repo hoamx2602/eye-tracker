@@ -14,6 +14,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts';
+import Link from 'next/link';
 import TestModeCharts, { TestTrajectorySegment } from '@/components/neurological/TestModeCharts';
 import {
   computeAllScores,
@@ -224,8 +225,14 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
               </svg>
             </div>
             <span className="text-sm font-semibold text-white">Eye Assessment</span>
-          <span className="ml-auto text-xs text-gray-500">{assessmentDate}</span>
-        </div>
+            <Link 
+              href="/tracking"
+              className="ml-auto px-4 py-1.5 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 text-[10px] sm:text-xs font-semibold hover:bg-blue-600/20 hover:border-blue-500/40 transition-all flex items-center gap-2"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+              Real-time Eye Tracking
+            </Link>
+          </div>
       </div>
 
       <div className="mx-auto max-w-4xl px-4 py-10 print:py-16 print:px-8 space-y-12">
