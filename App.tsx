@@ -329,7 +329,8 @@ function App() {
         }
 
         // Don't overwrite path-driven state: only set IDLE when we're on home
-        if (parsed.screen === 'home') {
+        // Sync state from URL on initial load
+        if (parsed.screen === 'home' || parsed.screen === 'setup' || parsed.screen === 'consent' || parsed.screen === 'demographics') {
           setStatus('IDLE');
         } else {
           // Keep current path's screen so /tracking etc. don't flash back to home
@@ -339,6 +340,8 @@ function App() {
             smootherRef.current.reset();
             if (heatmapRef.current) heatmapRef.current.reset();
             trackingHistoryRef.current = [];
+          } else if (parsed.screen === 'calibration') {
+            setStatus('HEAD_POSITIONING');
           } else if (parsed.screen === 'choice') {
             setStatus('POST_CALIBRATION_CHOICE');
           } else if (parsed.screen === 'neuro_pre' || parsed.screen === 'neuro_post' || parsed.screen === 'neuro_done' || parsed.screen === 'neuro_test') {
@@ -496,11 +499,14 @@ function App() {
   // Do NOT start on neuro_done — tests are finished, camera should stay off.
   const hasTriedStartCameraNeuroRef = useRef(false);
   useEffect(() => {
-    // Start camera if we are in neuro flow (uncompleted) OR if we are in special tracking mode (re-hydrated or active)
-    const shouldStart = (status === 'NEURO_FLOW' && neuroPhase !== 'done') || (status === 'TRACKING' && createdSessionId);
+    // Start camera if we are in neuro flow (uncompleted) OR if we are in tracking (with session) OR if we are in normal setup flows
+    const shouldStart = (status === 'NEURO_FLOW' && neuroPhase !== 'done') || 
+                       (status === 'TRACKING' && createdSessionId) ||
+                       (status === 'CALIBRATION') ||
+                       (status === 'HEAD_POSITIONING');
     
     if (!shouldStart || hasCameraStream) {
-      if (status !== 'NEURO_FLOW' && status !== 'TRACKING') {
+      if (status !== 'NEURO_FLOW' && status !== 'TRACKING' && status !== 'CALIBRATION' && status !== 'HEAD_POSITIONING') {
         hasTriedStartCameraNeuroRef.current = false;
       }
       return;
