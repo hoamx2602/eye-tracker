@@ -122,67 +122,147 @@ function SymptomTable({ pre, post }: { pre: SymptomPayload | null; post: Symptom
     return <p className="text-slate-500 text-sm">No symptom data recorded.</p>;
   }
 
-  const totalPre  = SYMPTOM_QUESTIONS.reduce((s, q) => s + (preScores[q.id]  ?? 0), 0);
-  const totalPost = SYMPTOM_QUESTIONS.reduce((s, q) => s + (postScores[q.id] ?? 0), 0);
+  const totalPre   = SYMPTOM_QUESTIONS.reduce((s, q) => s + (preScores[q.id]  ?? 0), 0);
+  const totalPost  = SYMPTOM_QUESTIONS.reduce((s, q) => s + (postScores[q.id] ?? 0), 0);
   const totalDelta = hasPre && hasPost ? totalPost - totalPre : null;
 
+  const scaleColour = (val: number) =>
+    val === 0 ? 'bg-slate-700/60 text-slate-400 border-slate-600'
+    : val === 1 ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+    : val === 2 ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+    : val === 3 ? 'bg-orange-500/15 text-orange-300 border-orange-500/30'
+    : 'bg-red-500/15 text-red-300 border-red-500/30';
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-slate-700">
-            <th className="py-2 pr-4 text-left text-xs font-medium text-slate-500 uppercase">Symptom</th>
-            {hasPre  && <th className="py-2 px-3 text-center text-xs font-medium text-slate-500 uppercase">Pre</th>}
-            {hasPost && <th className="py-2 px-3 text-center text-xs font-medium text-slate-500 uppercase">Post</th>}
-            {hasPre && hasPost && <th className="py-2 pl-3 text-center text-xs font-medium text-slate-500 uppercase">Δ</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {SYMPTOM_QUESTIONS.map((q) => {
-            const preVal  = preScores[q.id]  ?? null;
-            const postVal = postScores[q.id] ?? null;
-            const delta   = preVal != null && postVal != null ? postVal - preVal : null;
-            const deltaColor = delta == null ? '' : delta > 0 ? 'text-red-400' : delta < 0 ? 'text-emerald-400' : 'text-slate-500';
-            return (
-              <tr key={q.id} className="border-b border-slate-700/40 hover:bg-slate-700/20">
-                <td className="py-2 pr-4 text-slate-300">
-                  <span className="font-medium">{q.category}</span>
-                  <span className="text-slate-500 text-xs ml-2">{q.question}</span>
-                </td>
-                {hasPre && (
-                  <td className="py-2 px-3 text-center tabular-nums text-slate-200">
-                    {preVal != null ? <>{preVal} <span className="text-slate-500 text-xs">{SYMPTOM_LABELS[preVal]}</span></> : '—'}
-                  </td>
-                )}
-                {hasPost && (
-                  <td className="py-2 px-3 text-center tabular-nums text-slate-200">
-                    {postVal != null ? <>{postVal} <span className="text-slate-500 text-xs">{SYMPTOM_LABELS[postVal]}</span></> : '—'}
-                  </td>
-                )}
-                {hasPre && hasPost && (
-                  <td className={`py-2 pl-3 text-center tabular-nums font-medium ${deltaColor}`}>
-                    {delta != null ? (delta > 0 ? `+${delta}` : delta === 0 ? '0' : `${delta}`) : '—'}
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-        <tfoot>
-          <tr className="border-t border-slate-600">
-            <td className="py-2 pr-4 text-xs font-medium text-slate-400 uppercase">Total</td>
-            {hasPre  && <td className="py-2 px-3 text-center font-semibold text-slate-200 tabular-nums">{totalPre}</td>}
-            {hasPost && <td className="py-2 px-3 text-center font-semibold text-slate-200 tabular-nums">{totalPost}</td>}
-            {hasPre && hasPost && (
-              <td className={`py-2 pl-3 text-center font-semibold tabular-nums ${
-                totalDelta == null ? '' : totalDelta > 0 ? 'text-red-400' : totalDelta < 0 ? 'text-emerald-400' : 'text-slate-500'
-              }`}>
-                {totalDelta != null ? (totalDelta > 0 ? `+${totalDelta}` : `${totalDelta}`) : '—'}
-              </td>
+    <div className="space-y-1.5">
+      {/* Column headers */}
+      <div className="flex items-center gap-2 px-3 pb-2 border-b border-slate-700/50">
+        <span className="flex-1 text-xs font-medium text-slate-500 uppercase">Question</span>
+        {hasPre  && <span className="text-xs font-medium text-blue-400 uppercase w-24 text-center">Pre</span>}
+        {hasPost && <span className="text-xs font-medium text-purple-400 uppercase w-24 text-center">Post</span>}
+        {hasPre && hasPost && <span className="text-xs font-medium text-slate-500 uppercase w-10 text-center">Δ</span>}
+      </div>
+
+      {/* One row per question */}
+      {SYMPTOM_QUESTIONS.map((q, idx) => {
+        const preVal  = preScores[q.id]  != null ? Number(preScores[q.id])  : null;
+        const postVal = postScores[q.id] != null ? Number(postScores[q.id]) : null;
+        const delta   = preVal != null && postVal != null ? postVal - preVal : null;
+        return (
+          <div key={q.id} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg ${idx % 2 === 0 ? 'bg-slate-800/40' : ''}`}>
+            {/* Full question text */}
+            <div className="flex-1 min-w-0">
+              <span className="text-[10px] font-mono text-slate-500 mr-1.5">{q.id}</span>
+              <span className="text-sm text-slate-200">{q.question}</span>
+            </div>
+
+            {/* Pre */}
+            {hasPre && (
+              <div className="w-24 flex justify-center shrink-0">
+                {preVal != null ? (
+                  <span className={`inline-flex flex-col items-center px-3 py-1 rounded-lg border text-xs font-semibold ${scaleColour(preVal)}`}>
+                    <span className="text-base leading-tight">{preVal}</span>
+                    <span className="text-[10px] opacity-80 leading-tight">{SYMPTOM_LABELS[preVal]}</span>
+                  </span>
+                ) : <span className="text-slate-600">—</span>}
+              </div>
             )}
-          </tr>
-        </tfoot>
-      </table>
+
+            {/* Post */}
+            {hasPost && (
+              <div className="w-24 flex justify-center shrink-0">
+                {postVal != null ? (
+                  <span className={`inline-flex flex-col items-center px-3 py-1 rounded-lg border text-xs font-semibold ${scaleColour(postVal)}`}>
+                    <span className="text-base leading-tight">{postVal}</span>
+                    <span className="text-[10px] opacity-80 leading-tight">{SYMPTOM_LABELS[postVal]}</span>
+                  </span>
+                ) : <span className="text-slate-600">—</span>}
+              </div>
+            )}
+
+            {/* Δ */}
+            {hasPre && hasPost && (
+              <div className="w-10 text-center text-sm font-bold tabular-nums shrink-0">
+                {delta != null ? (
+                  <span className={delta > 0 ? 'text-red-400' : delta < 0 ? 'text-emerald-400' : 'text-slate-500'}>
+                    {delta > 0 ? `+${delta}` : delta === 0 ? '0' : `${delta}`}
+                  </span>
+                ) : '—'}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Totals */}
+      <div className="flex items-center gap-2 px-3 py-2.5 border-t border-slate-600 mt-1">
+        <span className="flex-1 text-xs font-semibold text-slate-400 uppercase">Total</span>
+        {hasPre  && <div className="w-24 text-center font-bold text-slate-200 tabular-nums">{totalPre}</div>}
+        {hasPost && <div className="w-24 text-center font-bold text-slate-200 tabular-nums">{totalPost}</div>}
+        {hasPre && hasPost && (
+          <div className="w-10 text-center font-bold tabular-nums">
+            <span className={totalDelta == null ? '' : totalDelta > 0 ? 'text-red-400' : totalDelta < 0 ? 'text-emerald-400' : 'text-slate-500'}>
+              {totalDelta != null ? (totalDelta > 0 ? `+${totalDelta}` : `${totalDelta}`) : '—'}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+function SymptomToggleSection({ pre, post }: { pre: SymptomPayload | null; post: SymptomPayload | null }) {
+  const [open, setOpen] = useState(false);
+  const hasPre  = !!pre?.scores  && Object.keys(pre.scores).length  > 0;
+  const hasPost = !!post?.scores && Object.keys(post.scores).length > 0;
+  const preTotal  = hasPre  ? SYMPTOM_QUESTIONS.reduce((s, q) => s + ((pre!.scores![q.id])  ?? 0), 0) : null;
+  const postTotal = hasPost ? SYMPTOM_QUESTIONS.reduce((s, q) => s + ((post!.scores![q.id]) ?? 0), 0) : null;
+  const totalDelta = preTotal != null && postTotal != null ? postTotal - preTotal : null;
+
+  return (
+    <div className="rounded-xl bg-slate-800/60 border border-slate-700/80 shadow-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-700/30 transition text-left gap-4"
+      >
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-sm font-medium text-slate-400 uppercase tracking-wider">Pre / Post Symptoms</span>
+          <div className="flex items-center gap-2">
+            {hasPre  && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300">Pre: {preTotal}</span>}
+            {hasPost && <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300">Post: {postTotal}</span>}
+            {totalDelta != null && (
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                totalDelta < 0 ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                : totalDelta > 0 ? 'bg-red-500/15 border-red-500/30 text-red-300'
+                : 'bg-slate-700 border-slate-600 text-slate-400'
+              }`}>
+                Δ {totalDelta > 0 ? `+${totalDelta}` : totalDelta}
+              </span>
+            )}
+            {!hasPre && !hasPost && <span className="text-xs text-slate-600">No data</span>}
+          </div>
+        </div>
+        <svg
+          className={`w-4 h-4 text-slate-500 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+        >
+          <path d="M5 8l5 5 5-5" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 border-t border-slate-700/50">
+          <p className="text-xs text-slate-500 mt-4 mb-3">
+            Scale: 0 = None · 1 = Mild · 2 = Moderate · 3 = Strong · 4 = Severe.{' '}
+            Δ = Post − Pre.{' '}
+            <span className="text-emerald-400">Green</span> = improved,{' '}
+            <span className="text-red-400">red</span> = worsened.
+          </p>
+          <SymptomTable pre={pre} post={post} />
+        </div>
+      )}
     </div>
   );
 }
@@ -591,16 +671,9 @@ export default function AdminNeuroRunDetailPage() {
         )}
       </SectionCard>
 
-      {/* Section B — Pre / Post symptoms */}
-      <SectionCard title="Pre / Post symptoms">
-        <p className="text-xs text-slate-500 mb-3">
-          Scale: 0 = None · 1 = Mild · 2 = Moderate · 3 = Strong · 4 = Severe.{' '}
-          Δ = Post − Pre.{' '}
-          <span className="text-emerald-400">Green</span> = improved,{' '}
-          <span className="text-red-400">red</span> = worsened.
-        </p>
-        <SymptomTable pre={run.preSymptomScores} post={run.postSymptomScores} />
-      </SectionCard>
+      {/* Section B — Pre / Post symptoms (collapsible) */}
+      <SymptomToggleSection pre={run.preSymptomScores} post={run.postSymptomScores} />
+
 
       {/* Section C — Per-test results (visualization + metrics) */}
       {testOrder.length > 0 && run.testResults && (
