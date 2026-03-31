@@ -12,6 +12,8 @@ export const PATHS = {
   DEMOGRAPHICS: '/demographics',
   /** Actual calibration flow */
   CALIBRATION: '/calibration',
+  /** Setup guide: camera permission → lighting → posture */
+  SETUP: '/setup',
   /** Post-calibration: choose Real-time vs Neurological */
   CHOICE: '/choice',
   /** Real-time eye tracking */
@@ -41,6 +43,7 @@ export type ParsedPath =
   | { screen: 'consent' }
   | { screen: 'demographics' }
   | { screen: 'calibration' }
+  | { screen: 'setup' }
   | { screen: 'choice' }
   | { screen: 'tracking' }
   | { screen: 'neuro_pre' }
@@ -57,6 +60,7 @@ export function parsePathname(pathname: string): ParsedPath {
   if (normalized === '/consent') return { screen: 'consent' };
   if (normalized === '/demographics') return { screen: 'demographics' };
   if (normalized === '/calibration') return { screen: 'calibration' };
+  if (normalized === '/setup') return { screen: 'setup' };
   if (normalized === '/choice') return { screen: 'choice' };
   if (normalized === '/tracking') return { screen: 'tracking' };
   if (normalized === '/neuro/pre') return { screen: 'neuro_pre' };

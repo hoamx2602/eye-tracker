@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import EyeSpinner from '@/components/ui/EyeSpinner';
 import SymptomAssessment from '@/components/SymptomAssessment';
 import type { SymptomScores } from '@/lib/symptomAssessment';
 import {
@@ -132,8 +133,7 @@ export default function NeurologicalFlowSection({
     <>
       {status === 'NEURO_FLOW' && neuroRunStatus === 'creating' && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950">
-          <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-400">Starting neurological run...</p>
+          <EyeSpinner size="lg" label="Starting neurological run…" />
         </div>
       )}
       {status === 'NEURO_FLOW' && neuroRunStatus === 'error' && (

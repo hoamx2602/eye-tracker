@@ -349,6 +349,7 @@ function App() {
         break;
       case 'consent':
       case 'demographics':
+      case 'setup':
         // UI is purely driven by `currentScreen` derived from URL pathname
         break;
       case 'calibration':
@@ -500,7 +501,14 @@ function App() {
       videoRef.current.play();
       processVideo();
     } catch (err) {
-      alert("Camera permission denied.");
+      console.error('[Camera] getUserMedia failed:', err);
+      // Exit fullscreen so the user can see the in-app error, then send
+      // them back to the setup guide to re-grant camera access.
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+      pathSyncSourceRef.current = 'internal';
+      router.push('/setup');
     }
   };
 
@@ -2137,10 +2145,29 @@ function App() {
   };
 
   const handleDemographicsSubmit = (data: DemographicsData) => {
+    demographicsRef.current = data;
+    // Enter fullscreen immediately on this user gesture so setup guide
+    // runs inside fullscreen. By the time we reach /calibration, camera
+    // permission is already granted → no dialog → fullscreen stays intact.
+    document.documentElement.requestFullscreen().catch((e) => {
+      console.warn('Fullscreen denied', e);
+    });
+    pathSyncSourceRef.current = 'internal';
+    router.push('/setup');
+  };
+
+  const handleSetupComplete = () => {
     pathSyncSourceRef.current = 'internal';
     router.push('/calibration');
-    demographicsRef.current = data;
-    handleStartProcess();
+    // Defer handleStartProcess so React has time to unmount SetupGuideScreen
+    // and stop its preview stream before we call getUserMedia again.
+    // Without this delay the two getUserMedia calls overlap → camera denied.
+    setTimeout(() => handleStartProcess(), 300);
+  };
+
+  const handleSetupBack = () => {
+    pathSyncSourceRef.current = 'internal';
+    router.push('/demographics');
   };
 
   const startActualCalibration = () => {
@@ -2374,6 +2401,8 @@ function App() {
         onConsentDecline={handleConsentDecline}
         onDemographicsSubmit={handleDemographicsSubmit}
         onDemographicsBack={handleDemographicsBack}
+        onSetupComplete={handleSetupComplete}
+        onSetupBack={handleSetupBack}
         onSetCapturedImageModalIndex={setCapturedImageModalIndex}
         onSetRunMode={setRunMode}
         onStartCalibrationClick={handleStartCalibrationClick}

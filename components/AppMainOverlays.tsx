@@ -18,6 +18,8 @@ import CapturedImageModal from './CapturedImageModal';
 import TrackingToolbar from './TrackingToolbar';
 import HeadPositioningScreen from './HeadPositioningScreen';
 import PostCalibrationChoiceScreen from './PostCalibrationChoiceScreen';
+import SetupGuideScreen from './SetupGuideScreen';
+import EyeSpinner from './ui/EyeSpinner';
 
 type CapturedImage = {
   url: string;
@@ -63,6 +65,8 @@ type AppMainOverlaysProps = {
   onConsentDecline: () => void;
   onDemographicsSubmit: (data: DemographicsData) => void;
   onDemographicsBack: () => void;
+  onSetupComplete: () => void;
+  onSetupBack: () => void;
   onSetCapturedImageModalIndex: (index: number | null) => void;
   onSetRunMode: (mode: 'calibration' | 'test') => void;
   onStartCalibrationClick: () => void;
@@ -124,6 +128,8 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
     onConsentDecline,
     onDemographicsSubmit,
     onDemographicsBack,
+    onSetupComplete,
+    onSetupBack,
     onSetCapturedImageModalIndex,
     onSetRunMode,
     onStartCalibrationClick,
@@ -149,7 +155,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
     <div className="absolute inset-0 pointer-events-none font-sans">
       <div className={`relative w-full h-full pointer-events-auto transition-colors duration-300 ${
         (currentScreen === 'consent' || currentScreen === 'demographics') ? 'bg-gray-950 flex items-center justify-center p-4' : ''
-      }`}>
+      } ${currentScreen === 'setup' ? 'bg-gray-900 overflow-y-auto' : ''}`}>
       {currentScreen === 'consent' && (
         <ConsentModal
           open={currentScreen === 'consent'}
@@ -167,7 +173,21 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
         />
       )}
 
-      {status === 'IDLE' && currentScreen !== 'consent' && currentScreen !== 'demographics' && (
+      {currentScreen === 'setup' && (
+        <SetupGuideScreen
+          onComplete={onSetupComplete}
+          onBack={onSetupBack}
+        />
+      )}
+
+      {/* Brief loading gap while camera initialises after setup guide */}
+      {status === 'IDLE' && currentScreen === 'calibration' && (
+        <div className="flex items-center justify-center h-full">
+          <EyeSpinner size="xl" label="Starting camera…" />
+        </div>
+      )}
+
+      {status === 'IDLE' && currentScreen !== 'consent' && currentScreen !== 'demographics' && currentScreen !== 'setup' && currentScreen !== 'calibration' && (
         <div className="flex flex-col items-center justify-center h-full space-y-8 p-4 z-10 relative">
           <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
             EYE TRACKER
@@ -238,7 +258,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
       {status === 'LOADING_MODEL' && (
         <div className="flex items-center justify-center h-full">
           <div className="flex flex-col items-center space-y-4">
-            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <EyeSpinner size="lg" />
             <p className={`animate-pulse font-bold ${accuracyScore && accuracyScore > 400 ? 'text-orange-400' : 'text-blue-300'}`}>
               {loadingMsg}
             </p>

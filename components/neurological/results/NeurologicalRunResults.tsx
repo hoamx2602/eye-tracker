@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import EyeSpinner from '@/components/ui/EyeSpinner';
 import type { TestResultPayload } from '../types';
 import type { AntiSaccadeTrialResult } from '../tests/antiSaccade/AntiSaccadeTest';
 import type { PeripheralVisionTrialResult } from '../tests/peripheralVision/PeripheralVisionTest';
@@ -308,7 +309,7 @@ export default function NeurologicalRunResults({
 
       {loading && !loadError && (
         <div className="mt-4 flex items-center gap-3 text-sm text-slate-400">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-600 border-t-sky-500" />
+          <EyeSpinner size="sm" />
           <span>Loading test results from the database…</span>
         </div>
       )}

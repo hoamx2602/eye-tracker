@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>EyeSpinner Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #111827;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 60px;
+    min-height: 100vh;
+    font-family: sans-serif;
+    color: #93c5fd;
+    padding: 40px;
+  }
+  .row { display: flex; align-items: center; justify-content: center; gap: 60px; flex-wrap: wrap; }
+  .item { display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 12px; color: #4b5563; }
+</style>
+</head>
+<body>
+
+<div class="row">
+  <!-- XS 20px -->
+  <div class="item">
+    <svg width="20" height="20" viewBox="0 0 100 100" overflow="visible">
+      <defs>
+        <radialGradient id="iris-xs" cx="44%" cy="37%" r="66%">
+          <stop offset="0%" stop-color="#bfdbfe"/><stop offset="45%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#1e3a8a"/>
+        </radialGradient>
+        <radialGradient id="pupil-xs" cx="38%" cy="34%" r="58%">
+          <stop offset="0%" stop-color="#1e1b4b"/><stop offset="100%" stop-color="#03010a"/>
+        </radialGradient>
+        <filter id="glow-xs" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1.2" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <!-- OUTER ghost lines ~static -->
+      <g>
+        <line x1="50" y1="-2"  x2="50" y2="6"  stroke="#3b82f6" stroke-width=".5" opacity=".18" transform="rotate(20 50 50)"/>
+        <line x1="50" y1="-1"  x2="50" y2="6"  stroke="#3b82f6" stroke-width=".5" opacity=".15" transform="rotate(65 50 50)"/>
+        <line x1="50" y1="-3"  x2="50" y2="6"  stroke="#3b82f6" stroke-width=".5" opacity=".18" transform="rotate(112 50 50)"/>
+        <line x1="50" y1="-0"  x2="50" y2="6"  stroke="#3b82f6" stroke-width=".5" opacity=".14" transform="rotate(158 50 50)"/>
+        <line x1="50" y1="-2"  x2="50" y2="6"  stroke="#3b82f6" stroke-width=".5" opacity=".17" transform="rotate(195 50 50)"/>
+        <line x1="50" y1="-1"  x2="50" y2="6"  stroke="#3b82f6" stroke-width=".5" opacity=".15" transform="rotate(243 50 50)"/>
+        <line x1="50" y1="-3"  x2="50" y2="6"  stroke="#3b82f6" stroke-width=".5" opacity=".18" transform="rotate(288 50 50)"/>
+        <line x1="50" y1="-0"  x2="50" y2="6"  stroke="#3b82f6" stroke-width=".5" opacity=".14" transform="rotate(335 50 50)"/>
+        <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="11s" repeatCount="indefinite"/>
+      </g>
+      <!-- SECONDARY CCW -->
+      <g>
+        <line x1="50" y1="10" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.6" opacity=".42" transform="rotate(8 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="12" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.0" opacity=".30" transform="rotate(40 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="9"  x2="50" y2="18" stroke="#3b82f6" stroke-width="1.8" opacity=".48" transform="rotate(72 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="13" x2="50" y2="18" stroke="#3b82f6" stroke-width=".9"  opacity=".28" transform="rotate(105 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="10" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.4" opacity=".38" transform="rotate(138 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="12" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.0" opacity=".30" transform="rotate(168 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="8"  x2="50" y2="18" stroke="#3b82f6" stroke-width="1.9" opacity=".50" transform="rotate(197 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="13" x2="50" y2="18" stroke="#3b82f6" stroke-width=".8"  opacity=".26" transform="rotate(228 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="10" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.5" opacity=".40" transform="rotate(258 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="12" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.0" opacity=".30" transform="rotate(285 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="9"  x2="50" y2="18" stroke="#3b82f6" stroke-width="1.7" opacity=".44" transform="rotate(318 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="13" x2="50" y2="18" stroke="#3b82f6" stroke-width=".9"  opacity=".28" transform="rotate(352 50 50)" stroke-linecap="round"/>
+        <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="-360 50 50" dur="6.5s" repeatCount="indefinite"/>
+      </g>
+      <!-- MAIN CW (glow) -->
+      <g filter="url(#glow-xs)">
+        <line x1="50" y1="3"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.8" opacity=".95" transform="rotate(0 50 50)"   stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".7"  opacity=".38" transform="rotate(13 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="5"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.3" opacity=".65" transform="rotate(23 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".28" transform="rotate(34 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="4"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.3" opacity=".85" transform="rotate(46 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".42" transform="rotate(56 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="0"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.7" opacity=".92" transform="rotate(67 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="5"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".7"  opacity=".35" transform="rotate(75 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".58" transform="rotate(85 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".40" transform="rotate(96 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="3"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.5" opacity=".88" transform="rotate(107 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="11" stroke="#3b82f6" stroke-width="1.0" opacity=".48" transform="rotate(119 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="1"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.8" opacity=".93" transform="rotate(131 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".30" transform="rotate(142 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".60" transform="rotate(153 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".42" transform="rotate(166 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="4"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.2" opacity=".82" transform="rotate(177 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="11" stroke="#3b82f6" stroke-width=".9"  opacity=".45" transform="rotate(189 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="0"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.9" opacity=".96" transform="rotate(201 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".30" transform="rotate(214 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".56" transform="rotate(225 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".40" transform="rotate(239 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="2"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.4" opacity=".88" transform="rotate(251 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="11" stroke="#3b82f6" stroke-width="1.0" opacity=".50" transform="rotate(263 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="0"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.7" opacity=".92" transform="rotate(276 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".30" transform="rotate(289 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".57" transform="rotate(301 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".40" transform="rotate(314 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="3"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.1" opacity=".82" transform="rotate(327 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="8"  x2="50" y2="11" stroke="#3b82f6" stroke-width=".9"  opacity=".46" transform="rotate(344 50 50)" stroke-linecap="round"/>
+        <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="2.5s" repeatCount="indefinite"/>
+      </g>
+      <!-- Eye -->
+      <path d="M 23,50 C 33,29 67,29 77,50 C 67,71 33,71 23,50 Z" fill="none" stroke="#93c5fd" stroke-width="1.4" stroke-linecap="round" opacity=".75"/>
+      <circle cx="50" cy="50" r="11.5" fill="url(#iris-xs)"/>
+      <circle cx="50" cy="50" r="11.5" fill="none" stroke="#1e3a8a" stroke-width="1" opacity=".55"/>
+      <circle cx="50" cy="50" r="5.2" fill="url(#pupil-xs)"/>
+      <circle cx="54.5" cy="45.5" r="2.3" fill="white" opacity=".82"/>
+      <circle cx="46" cy="53" r="1" fill="white" opacity=".28"/>
+    </svg>
+    <span>xs · 20px</span>
+  </div>
+
+  <!-- MD 48px - duplicate with different id suffix -->
+  <div class="item">
+    <svg width="48" height="48" viewBox="0 0 100 100" overflow="visible">
+      <defs>
+        <radialGradient id="iris-md" cx="44%" cy="37%" r="66%">
+          <stop offset="0%" stop-color="#bfdbfe"/><stop offset="45%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#1e3a8a"/>
+        </radialGradient>
+        <radialGradient id="pupil-md" cx="38%" cy="34%" r="58%">
+          <stop offset="0%" stop-color="#1e1b4b"/><stop offset="100%" stop-color="#03010a"/>
+        </radialGradient>
+        <filter id="glow-md" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1.2" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <g>
+        <line x1="50" y1="-2" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".18" transform="rotate(20 50 50)"/>
+        <line x1="50" y1="-1" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".15" transform="rotate(65 50 50)"/>
+        <line x1="50" y1="-3" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".18" transform="rotate(112 50 50)"/>
+        <line x1="50" y1="0"  x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".14" transform="rotate(158 50 50)"/>
+        <line x1="50" y1="-2" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".17" transform="rotate(195 50 50)"/>
+        <line x1="50" y1="-1" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".15" transform="rotate(243 50 50)"/>
+        <line x1="50" y1="-3" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".18" transform="rotate(288 50 50)"/>
+        <line x1="50" y1="0"  x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".14" transform="rotate(335 50 50)"/>
+        <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="11s" repeatCount="indefinite"/>
+      </g>
+      <g>
+        <line x1="50" y1="10" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.6" opacity=".42" transform="rotate(8 50 50)"   stroke-linecap="round"/>
+        <line x1="50" y1="12" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.0" opacity=".30" transform="rotate(40 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="9"  x2="50" y2="18" stroke="#3b82f6" stroke-width="1.8" opacity=".48" transform="rotate(72 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="13" x2="50" y2="18" stroke="#3b82f6" stroke-width=".9"  opacity=".28" transform="rotate(105 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="10" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.4" opacity=".38" transform="rotate(138 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="12" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.0" opacity=".30" transform="rotate(168 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="8"  x2="50" y2="18" stroke="#3b82f6" stroke-width="1.9" opacity=".50" transform="rotate(197 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="13" x2="50" y2="18" stroke="#3b82f6" stroke-width=".8"  opacity=".26" transform="rotate(228 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="10" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.5" opacity=".40" transform="rotate(258 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="12" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.0" opacity=".30" transform="rotate(285 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="9"  x2="50" y2="18" stroke="#3b82f6" stroke-width="1.7" opacity=".44" transform="rotate(318 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="13" x2="50" y2="18" stroke="#3b82f6" stroke-width=".9"  opacity=".28" transform="rotate(352 50 50)" stroke-linecap="round"/>
+        <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="-360 50 50" dur="6.5s" repeatCount="indefinite"/>
+      </g>
+      <g filter="url(#glow-md)">
+        <line x1="50" y1="3"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.8" opacity=".95" transform="rotate(0 50 50)"   stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".7"  opacity=".38" transform="rotate(13 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="5"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.3" opacity=".65" transform="rotate(23 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".28" transform="rotate(34 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="4"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.3" opacity=".85" transform="rotate(46 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".42" transform="rotate(56 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="0"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.7" opacity=".92" transform="rotate(67 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="5"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".7"  opacity=".35" transform="rotate(75 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".58" transform="rotate(85 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".40" transform="rotate(96 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="3"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.5" opacity=".88" transform="rotate(107 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="11" stroke="#3b82f6" stroke-width="1.0" opacity=".48" transform="rotate(119 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="1"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.8" opacity=".93" transform="rotate(131 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".30" transform="rotate(142 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".60" transform="rotate(153 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".42" transform="rotate(166 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="4"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.2" opacity=".82" transform="rotate(177 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="11" stroke="#3b82f6" stroke-width=".9"  opacity=".45" transform="rotate(189 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="0"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.9" opacity=".96" transform="rotate(201 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".30" transform="rotate(214 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".56" transform="rotate(225 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".40" transform="rotate(239 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="2"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.4" opacity=".88" transform="rotate(251 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="11" stroke="#3b82f6" stroke-width="1.0" opacity=".50" transform="rotate(263 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="0"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.7" opacity=".92" transform="rotate(276 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".30" transform="rotate(289 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".57" transform="rotate(301 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".40" transform="rotate(314 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="3"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.1" opacity=".82" transform="rotate(327 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="8"  x2="50" y2="11" stroke="#3b82f6" stroke-width=".9"  opacity=".46" transform="rotate(344 50 50)" stroke-linecap="round"/>
+        <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="2.5s" repeatCount="indefinite"/>
+      </g>
+      <path d="M 23,50 C 33,29 67,29 77,50 C 67,71 33,71 23,50 Z" fill="none" stroke="#93c5fd" stroke-width="1.4" stroke-linecap="round" opacity=".75"/>
+      <circle cx="50" cy="50" r="11.5" fill="url(#iris-md)"/>
+      <circle cx="50" cy="50" r="11.5" fill="none" stroke="#1e3a8a" stroke-width="1" opacity=".55"/>
+      <circle cx="50" cy="50" r="5.2" fill="url(#pupil-md)"/>
+      <circle cx="54.5" cy="45.5" r="2.3" fill="white" opacity=".82"/>
+      <circle cx="46" cy="53" r="1" fill="white" opacity=".28"/>
+    </svg>
+    <span>md · 48px</span>
+  </div>
+
+  <!-- XL 96px - same SVG just wider -->
+  <div class="item">
+    <svg width="96" height="96" viewBox="0 0 100 100" overflow="visible">
+      <defs>
+        <radialGradient id="iris-xl" cx="44%" cy="37%" r="66%">
+          <stop offset="0%" stop-color="#bfdbfe"/><stop offset="45%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#1e3a8a"/>
+        </radialGradient>
+        <radialGradient id="pupil-xl" cx="38%" cy="34%" r="58%">
+          <stop offset="0%" stop-color="#1e1b4b"/><stop offset="100%" stop-color="#03010a"/>
+        </radialGradient>
+        <filter id="glow-xl" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1.2" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <g>
+        <line x1="50" y1="-2" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".18" transform="rotate(20 50 50)"/>
+        <line x1="50" y1="-1" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".15" transform="rotate(65 50 50)"/>
+        <line x1="50" y1="-3" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".18" transform="rotate(112 50 50)"/>
+        <line x1="50" y1="0"  x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".14" transform="rotate(158 50 50)"/>
+        <line x1="50" y1="-2" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".17" transform="rotate(195 50 50)"/>
+        <line x1="50" y1="-1" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".15" transform="rotate(243 50 50)"/>
+        <line x1="50" y1="-3" x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".18" transform="rotate(288 50 50)"/>
+        <line x1="50" y1="0"  x2="50" y2="6" stroke="#3b82f6" stroke-width=".5" opacity=".14" transform="rotate(335 50 50)"/>
+        <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="11s" repeatCount="indefinite"/>
+      </g>
+      <g>
+        <line x1="50" y1="10" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.6" opacity=".42" transform="rotate(8 50 50)"   stroke-linecap="round"/>
+        <line x1="50" y1="12" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.0" opacity=".30" transform="rotate(40 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="9"  x2="50" y2="18" stroke="#3b82f6" stroke-width="1.8" opacity=".48" transform="rotate(72 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="13" x2="50" y2="18" stroke="#3b82f6" stroke-width=".9"  opacity=".28" transform="rotate(105 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="10" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.4" opacity=".38" transform="rotate(138 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="12" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.0" opacity=".30" transform="rotate(168 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="8"  x2="50" y2="18" stroke="#3b82f6" stroke-width="1.9" opacity=".50" transform="rotate(197 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="13" x2="50" y2="18" stroke="#3b82f6" stroke-width=".8"  opacity=".26" transform="rotate(228 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="10" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.5" opacity=".40" transform="rotate(258 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="12" x2="50" y2="18" stroke="#3b82f6" stroke-width="1.0" opacity=".30" transform="rotate(285 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="9"  x2="50" y2="18" stroke="#3b82f6" stroke-width="1.7" opacity=".44" transform="rotate(318 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="13" x2="50" y2="18" stroke="#3b82f6" stroke-width=".9"  opacity=".28" transform="rotate(352 50 50)" stroke-linecap="round"/>
+        <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="-360 50 50" dur="6.5s" repeatCount="indefinite"/>
+      </g>
+      <g filter="url(#glow-xl)">
+        <line x1="50" y1="3"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.8" opacity=".95" transform="rotate(0 50 50)"   stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".7"  opacity=".38" transform="rotate(13 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="5"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.3" opacity=".65" transform="rotate(23 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".28" transform="rotate(34 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="4"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.3" opacity=".85" transform="rotate(46 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".42" transform="rotate(56 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="0"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.7" opacity=".92" transform="rotate(67 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="5"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".7"  opacity=".35" transform="rotate(75 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".58" transform="rotate(85 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".40" transform="rotate(96 50 50)"  stroke-linecap="round"/>
+        <line x1="50" y1="3"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.5" opacity=".88" transform="rotate(107 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="11" stroke="#3b82f6" stroke-width="1.0" opacity=".48" transform="rotate(119 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="1"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.8" opacity=".93" transform="rotate(131 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".30" transform="rotate(142 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".60" transform="rotate(153 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".42" transform="rotate(166 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="4"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.2" opacity=".82" transform="rotate(177 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="11" stroke="#3b82f6" stroke-width=".9"  opacity=".45" transform="rotate(189 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="0"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.9" opacity=".96" transform="rotate(201 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".30" transform="rotate(214 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".56" transform="rotate(225 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".40" transform="rotate(239 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="2"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.4" opacity=".88" transform="rotate(251 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="11" stroke="#3b82f6" stroke-width="1.0" opacity=".50" transform="rotate(263 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="0"  x2="50" y2="14" stroke="#3b82f6" stroke-width="2.7" opacity=".92" transform="rotate(276 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="9"  stroke="#3b82f6" stroke-width=".6"  opacity=".30" transform="rotate(289 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="7"  x2="50" y2="13" stroke="#3b82f6" stroke-width="1.2" opacity=".57" transform="rotate(301 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="6"  x2="50" y2="10" stroke="#3b82f6" stroke-width=".8"  opacity=".40" transform="rotate(314 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="3"  x2="50" y2="15" stroke="#3b82f6" stroke-width="2.1" opacity=".82" transform="rotate(327 50 50)" stroke-linecap="round"/>
+        <line x1="50" y1="8"  x2="50" y2="11" stroke="#3b82f6" stroke-width=".9"  opacity=".46" transform="rotate(344 50 50)" stroke-linecap="round"/>
+        <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="2.5s" repeatCount="indefinite"/>
+      </g>
+      <path d="M 23,50 C 33,29 67,29 77,50 C 67,71 33,71 23,50 Z" fill="none" stroke="#93c5fd" stroke-width="1.4" stroke-linecap="round" opacity=".75"/>
+      <circle cx="50" cy="50" r="11.5" fill="url(#iris-xl)"/>
+      <circle cx="50" cy="50" r="11.5" fill="none" stroke="#1e3a8a" stroke-width="1" opacity=".55"/>
+      <circle cx="50" cy="50" r="5.2" fill="url(#pupil-xl)"/>
+      <circle cx="54.5" cy="45.5" r="2.3" fill="white" opacity=".82"/>
+      <circle cx="46" cy="53" r="1" fill="white" opacity=".28"/>
+    </svg>
+    <span>xl · 96px</span>
+  </div>
+</div>
+
+<p style="color:#374151;font-size:13px">localhost:3000/eye-spinner-preview.html</p>
+</body>
+</html>
