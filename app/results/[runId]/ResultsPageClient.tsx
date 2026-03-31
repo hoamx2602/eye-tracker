@@ -232,17 +232,24 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
             Section A — Header
         —————————————————————————————————————————————— */}
         <section>
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 sm:p-8 print:break-inside-avoid">
-            <p className="text-xs text-gray-500 uppercase tracking-widest mb-2 font-semibold">Assessment complete</p>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
-              Your Assessment Results
-              {firstName ? <span className="text-blue-400">, {firstName}</span> : null}
-            </h1>
-            <p className="text-sm text-gray-400 mb-5">{assessmentDate}</p>
-            {meanErrorPx != null && (
-              <div className={`inline-flex items-center gap-2 text-sm font-medium ${calibrationQualityColour(meanErrorPx)}`}>
-                <span className="text-lg">●</span>
-                <span>{calibrationQualityLabel(meanErrorPx)}</span>
+          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 sm:p-8 print:break-inside-avoid flex items-start justify-between gap-6">
+            <div className="flex-1">
+              <p className="text-xs text-gray-500 uppercase tracking-widest mb-2 font-semibold">Assessment complete</p>
+              <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
+                Your Assessment Results
+                {firstName ? <span className="text-blue-400">, {firstName}</span> : null}
+              </h1>
+              <p className="text-sm text-gray-400 mb-5">{assessmentDate}</p>
+              {meanErrorPx != null && (
+                <div className={`inline-flex items-center gap-2 text-sm font-medium ${calibrationQualityColour(meanErrorPx)}`}>
+                  <span className="text-lg">●</span>
+                  <span>{calibrationQualityLabel(meanErrorPx)}</span>
+                </div>
+              )}
+            </div>
+            {etScore != null && (
+              <div className="shrink-0">
+                <AccuracyDial score={etScore} />
               </div>
             )}
           </div>
@@ -256,15 +263,6 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
             title="Eye Tracking Profile"
             subtitle="How accurately the eye tracker followed your gaze."
           />
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 flex flex-col items-center gap-4 mb-6 print:break-inside-avoid">
-            <h3 className="text-sm font-semibold text-gray-300 self-start">Gaze Accuracy</h3>
-            {etScore != null ? (
-              <AccuracyDial score={etScore} />
-            ) : (
-              <p className="text-gray-600 text-sm">Calibration data unavailable.</p>
-            )}
-          </div>
-          
           <TestModeCharts testTrajectories={session.testTrajectories as TestTrajectorySegment[] | null} />
         </section>
 
