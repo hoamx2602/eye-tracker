@@ -64,7 +64,7 @@ function getSymbol(id: number): string {
 
 export default function MemoryCardsTest() {
   const { config, completeTest } = useTestRunner();
-  useNeuroGaze();
+  const { gazeModelReady } = useNeuroGaze();
   const gridContainerRef = useRef<HTMLDivElement>(null);
 
   const cardCountNum = Number(config.cardCount);
@@ -181,23 +181,26 @@ export default function MemoryCardsTest() {
   // Dwell: which card is gaze over? If same card for dwellMs, select it.
   useEffect(() => {
     const interval = setInterval(() => {
-      const el = gridContainerRef.current;
       const g = neuroLiveGazeRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const cellW = rect.width / cols;
-      const cellH = rect.height / rows;
-      const col = Math.floor((g.x - rect.left) / cellW);
-      const row = Math.floor((g.y - rect.top) / cellH);
-      const index = row * cols + col;
-      if (col < 0 || col >= cols || row < 0 || row >= rows) {
+      // Skip dwell check if gaze is at 0,0 (calibration error or uninitialized) or if model isn't ready.
+      if (!gazeModelReady || (g.x === 0 && g.y === 0)) {
         dwellCardRef.current = null;
         return;
       }
+
+      const elAtPoint = document.elementFromPoint(g.x, g.y);
+      const cardIdxStr = elAtPoint?.getAttribute('data-card-index');
+      if (!cardIdxStr) {
+        dwellCardRef.current = null;
+        return;
+      }
+
+      const index = parseInt(cardIdxStr, 10);
       if (board[index] < 0 || matched.has(index)) {
         dwellCardRef.current = null;
         return;
       }
+
       const now = performance.now();
       if (dwellCardRef.current !== index) {
         dwellCardRef.current = index;
@@ -291,6 +294,7 @@ export default function MemoryCardsTest() {
           <button
             key={index}
             type="button"
+            data-card-index={index}
             disabled={value < 0 || matched.has(index) || secondSelected !== null}
             onClick={() => selectCard(index)}
             style={{ width: cardSizePx, height: cardSizePx, fontSize: symbolPx }}
