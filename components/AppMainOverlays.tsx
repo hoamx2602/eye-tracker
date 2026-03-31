@@ -385,16 +385,25 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
         <>
           {!hasCameraStream && (
             <div className="fixed inset-0 z-[250] flex flex-col items-center justify-center gap-4 bg-gray-950/95 p-6">
-              <p className="text-gray-300 text-center max-w-md">
-                Camera is not on. Complete the calibration step before using real-time tracking.
-              </p>
-              <button
-                type="button"
-                onClick={onGoHome}
-                className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-              >
-                Go to home to start
-              </button>
+              {createdSessionId ? (
+                <div className="flex flex-col items-center gap-4">
+                  <EyeSpinner size="lg" />
+                  <p className="text-blue-300 font-medium animate-pulse">Initializing camera & session...</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-gray-300 text-center max-w-md">
+                    Camera is not on. Complete the calibration step before using real-time tracking.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onGoHome}
+                    className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+                  >
+                    Go to home to start
+                  </button>
+                </>
+              )}
             </div>
           )}
 

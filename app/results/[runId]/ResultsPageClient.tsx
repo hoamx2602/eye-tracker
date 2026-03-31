@@ -226,7 +226,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
             </div>
             <span className="text-sm font-semibold text-white">Eye Assessment</span>
             <Link 
-              href="/tracking"
+              href={`/tracking?sessionId=${runData.session.id}`}
               className="ml-auto px-4 py-1.5 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 text-[10px] sm:text-xs font-semibold hover:bg-blue-600/20 hover:border-blue-500/40 transition-all flex items-center gap-2"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />

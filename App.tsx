@@ -298,9 +298,37 @@ function App() {
       try {
         await eyeTrackingService.initialize();
         setLoadingMsg('Models Ready.');
-        // Don't overwrite path-driven state: only set IDLE when we're on home
+
         const currentPath = pathnameRef.current;
         const parsed = parsePathname(currentPath);
+
+        // Session Re-hydration: if sessionId is in URL, fetch it to enable tracking immediately
+        const sid = searchParams?.get('sessionId');
+        if (sid) {
+          try {
+            const session = await sessionsApi.get(sid);
+            if (session && session.calibrationGazeSamples) {
+              const samples: TrainingSample[] = (session.calibrationGazeSamples as any[]).map(s => ({
+                screenX: s.screenX,
+                screenY: s.screenY,
+                features: s.features || [],
+                timestamp: s.timestamp || Date.now(),
+              }));
+              if (samples.length > 0) {
+                console.log(`[App] Re-hydrating session ${sid} with ${samples.length} samples`);
+                trainingSamplesRef.current = samples;
+                const inputs = samples.map(s => s.features);
+                const outputs = samples.map(s => [s.screenX, s.screenY]);
+                hybridRegressorRef.current.train(inputs, outputs);
+                setCreatedSessionId(sid);
+              }
+            }
+          } catch (e) {
+            console.error('[App] Failed to re-hydrate session:', e);
+          }
+        }
+
+        // Don't overwrite path-driven state: only set IDLE when we're on home
         if (parsed.screen === 'home') {
           setStatus('IDLE');
         } else {
@@ -468,14 +496,19 @@ function App() {
   // Do NOT start on neuro_done — tests are finished, camera should stay off.
   const hasTriedStartCameraNeuroRef = useRef(false);
   useEffect(() => {
-    if (status !== 'NEURO_FLOW' || hasCameraStream || neuroPhase === 'done') {
-      if (status !== 'NEURO_FLOW') hasTriedStartCameraNeuroRef.current = false;
+    // Start camera if we are in neuro flow (uncompleted) OR if we are in special tracking mode (re-hydrated or active)
+    const shouldStart = (status === 'NEURO_FLOW' && neuroPhase !== 'done') || (status === 'TRACKING' && createdSessionId);
+    
+    if (!shouldStart || hasCameraStream) {
+      if (status !== 'NEURO_FLOW' && status !== 'TRACKING') {
+        hasTriedStartCameraNeuroRef.current = false;
+      }
       return;
     }
     if (hasTriedStartCameraNeuroRef.current) return;
     hasTriedStartCameraNeuroRef.current = true;
     startCamera();
-  }, [status, hasCameraStream, neuroPhase]);
+  }, [status, hasCameraStream, neuroPhase, createdSessionId]);
 
   // Clean up camera stream on component unmount
   useEffect(() => {
@@ -586,6 +619,20 @@ function App() {
       stopCamera();
     }
   }, [status, neuroPhase, hasCameraStream, stopCamera]);
+
+  // Automated camera cleanup when navigating away from active tracking/neuro logic (e.g. going home)
+  useEffect(() => {
+    const isFlowActive = (status === 'NEURO_FLOW' && neuroPhase !== 'done') || 
+                         (status === 'TRACKING' && createdSessionId) ||
+                         (status === 'CALIBRATION') ||
+                         (status === 'HEAD_POSITIONING') ||
+                         (status === 'POST_CALIBRATION_CHOICE');
+                         
+    if (!isFlowActive && hasCameraStream) {
+      neuroDebugLog('[App] Navigation/State change -> stopping camera automatically');
+      stopCamera();
+    }
+  }, [status, neuroPhase, hasCameraStream, createdSessionId, stopCamera]);
 
   // --- VIDEO RECORDING FUNCTIONS ---
   const startVideoRecording = () => {
@@ -2418,7 +2465,7 @@ function App() {
               <video
                 ref={videoRef}
                 className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 scale-x-[-1]
-                  ${videoVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}
+                  ${videoVisible || status === 'TRACKING' ? 'opacity-100' : 'opacity-0 pointer-events-none'}
                 `}
                 playsInline
                 muted
