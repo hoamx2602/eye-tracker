@@ -88,6 +88,14 @@ export default function NeurologicalConfigForm() {
         const params: Record<string, Record<string, unknown>> = {};
         // Load global settings (stored under _global key)
         params['_global'] = { edgePaddingPx: 80, ...((rawParams['_global'] as Record<string, unknown>) ?? {}) };
+        // Load self-assessment config (stored under _selfAssessment key)
+        params['_selfAssessment'] = {
+          enabled: true,
+          questionCount: 2,
+          question1: 'How focused were you during this test?',
+          question2: 'How accurately do you think you performed?',
+          ...((rawParams['_selfAssessment'] as Record<string, unknown>) ?? {}),
+        };
         for (const id of ALL_TEST_IDS) {
           params[id] = ensureParams(id, rawParams);
         }
@@ -204,6 +212,76 @@ export default function NeurologicalConfigForm() {
             options={[40, 60, 80, 100, 120, 150, 200].map((n) => ({ value: n, label: `${n} px` }))}
           />
         </div>
+      </section>
+
+      {/* Self-assessment config */}
+      <section className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">
+        <h3 className="text-sm font-bold text-slate-300">Post-test self-assessment</h3>
+        <p className="text-slate-400 text-xs">
+          After each test completes, the user is shown a brief rating modal before moving on.
+          Configure the questions here. Setting &ldquo;Questions shown&rdquo; to 1 hides the second question.
+        </p>
+        {(() => {
+          const sa = (config.testParameters['_selfAssessment'] ?? {}) as Record<string, unknown>;
+          const enabled = sa.enabled !== false;
+          const questionCount = (sa.questionCount as number) === 1 ? 1 : 2;
+          const question1 = typeof sa.question1 === 'string' ? sa.question1 : 'How focused were you during this test?';
+          const question2 = typeof sa.question2 === 'string' ? sa.question2 : 'How accurately do you think you performed?';
+          return (
+            <div className="space-y-4">
+              <label className="flex items-center gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  onChange={(e) => setParam('_selfAssessment', 'enabled', e.target.checked)}
+                  className="rounded border-slate-500 bg-slate-800 h-4 w-4"
+                />
+                <span className="text-white text-sm font-medium">Enable post-test self-assessment</span>
+              </label>
+              {enabled && (
+                <div className="space-y-4 pl-2 border-l-2 border-blue-600/30">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Questions shown (1 or 2)</label>
+                    <div className="flex gap-3">
+                      {[1, 2].map((n) => (
+                        <label key={n} className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="radio"
+                            name="questionCount"
+                            checked={questionCount === n}
+                            onChange={() => setParam('_selfAssessment', 'questionCount', n)}
+                            className="accent-blue-500"
+                          />
+                          <span className="text-white text-sm">{n}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Question 1 (Focus) 😴→🎯</label>
+                    <input
+                      type="text"
+                      value={question1}
+                      onChange={(e) => setParam('_selfAssessment', 'question1', e.target.value)}
+                      className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  {questionCount === 2 && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-slate-300">Question 2 (Accuracy prediction) 🤔→✅</label>
+                      <input
+                        type="text"
+                        value={question2}
+                        onChange={(e) => setParam('_selfAssessment', 'question2', e.target.value)}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </section>
 
       <section className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">

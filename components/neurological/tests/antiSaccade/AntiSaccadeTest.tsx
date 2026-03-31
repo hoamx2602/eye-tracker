@@ -274,6 +274,7 @@ export default function AntiSaccadeTest() {
         // 'between' phase
         if (now - betweenStartRef.current >= intervalMs) {
           if (trialIndex + 1 >= trialCount) {
+            clearInterval(interval);
             const endTime = performance.now();
             const trials = trialsResultsRef.current;
             const withLatency = trials.filter((t) => t.latencyMs != null);

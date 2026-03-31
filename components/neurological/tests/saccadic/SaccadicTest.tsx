@@ -163,6 +163,7 @@ export default function SaccadicTest() {
         });
 
         if (cycleIndex + 1 >= totalCycles) {
+          clearInterval(interval);
           const endTime = performance.now();
           const cycles = cyclesResultsRef.current;
           const withLatency = cycles.filter((c) => c.latencyMs != null);

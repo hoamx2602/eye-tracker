@@ -56,6 +56,7 @@ import { useNeuroFlowHandlers } from '@/components/neurological/useNeuroFlowHand
 import AppMainOverlays from '@/components/AppMainOverlays';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, roundedRect } from '@/lib/appHelpers';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
+import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
 
 /** When true (NEXT_PUBLIC_CALIBRATION_TEST_MODE=1): after first calibration phase (grid) only, save session and show choice screen (Real-time vs Neurological). Choice is always required. */
 const CALIBRATION_TEST_MODE =
@@ -125,6 +126,15 @@ function App() {
   
   const hybridRegressorRef = useRef<HybridRegressor>(new HybridRegressor());
   const [calibPhase, setCalibPhase] = useState<CalibrationPhase>(CalibrationPhase.INITIAL_MAPPING);
+  
+  type AssessmentPendingType = { type: 'grid' } | { type: 'exercise'; kind: EyeMovementKind; index: number };
+  const [assessmentPending, setAssessmentPendingState] = useState<AssessmentPendingType | null>(null);
+  const assessmentPendingRef = useRef<AssessmentPendingType | null>(null);
+  const setAssessmentPending = useCallback((val: AssessmentPendingType | null) => {
+    assessmentPendingRef.current = val;
+    setAssessmentPendingState(val);
+  }, []);
+  const [exerciseRetryCount, setExerciseRetryCount] = useState(0);
 
   const statusRef = useRef<AppState>('IDLE');
   const configRef = useRef<AppConfig>(DEFAULT_CONFIG);
@@ -801,7 +811,9 @@ function App() {
               }
 
               // During CALIBRATION: if head invalid (wrong distance / off-center), return to Head Positioning after short debounce
-              if (statusRef.current === 'CALIBRATION' && !validation.valid) {
+              // Do NOT return to HEAD_POSITIONING if we are showing an assessment modal, 
+              // to avoid interrupting the user answering questions.
+              if (statusRef.current === 'CALIBRATION' && !validation.valid && !assessmentPendingRef.current) {
                   if (headInvalidSinceRef.current === null) headInvalidSinceRef.current = now;
                   else if (now - headInvalidSinceRef.current > 500) {
                       headInvalidSinceRef.current = null;
@@ -1401,20 +1413,32 @@ function App() {
   };
 
   const handleExerciseComplete = useCallback(() => {
-    if (runModeRef.current === 'test') {
-      testTrajectoryRef.current.push({
-        patternName: getPatternDisplayName(exerciseKindRef.current),
-        points: [...currentTestSegmentRef.current],
-      });
-      advanceExercise();
+    const saEnabled = (neuroConfigSnapshot?.testParameters?.['_selfAssessment'] as any)?.enabled !== false;
+    if (saEnabled) {
+        setAssessmentPending({ type: 'exercise', kind: exerciseKindRef.current, index: currentExerciseIndex });
     } else {
-      processExerciseData();
+        if (runModeRef.current === 'test') {
+            testTrajectoryRef.current.push({
+                patternName: getPatternDisplayName(exerciseKindRef.current),
+                points: [...currentTestSegmentRef.current],
+            });
+            advanceExercise();
+        } else {
+            processExerciseData();
+        }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentExerciseIndex]);
+  }, [currentExerciseIndex, neuroConfigSnapshot]);
 
   const finishCurrentPhase = () => {
     if (calibPhase === CalibrationPhase.INITIAL_MAPPING) {
+        // If self-assessment is enabled and we haven't shown it yet for this phase, trigger it now.
+        const saEnabled = (neuroConfigSnapshot?.testParameters?.['_selfAssessment'] as any)?.enabled !== false;
+        if (!assessmentPending && saEnabled) {
+            setAssessmentPending({ type: 'grid' });
+            return;
+        }
+
         const data = trainingSamplesRef.current;
         if (data.length < 5) {
             alert("Insufficient data points. Please restart calibration.");
@@ -2425,6 +2449,46 @@ function App() {
         loocvErrors={loocvErrors}
         loocvBaseline={loocvBaseline}
         onReEvaluate={reEvaluateWithCurrentFlags}
+        selfAssessmentConfig={(neuroConfigSnapshot?.testParameters?.['_selfAssessment'] || { enabled: true, questionCount: 2 }) as unknown as SelfAssessmentConfig}
+        assessmentPending={assessmentPending}
+        exerciseRetryCount={exerciseRetryCount}
+        onAssessmentContinue={() => {
+            const currentPending = assessmentPendingRef.current;
+            setAssessmentPending(null);
+            if (currentPending?.type === 'grid') {
+                finishCurrentPhase();
+            } else if (currentPending?.type === 'exercise') {
+                if (runModeRef.current === 'test') {
+                    testTrajectoryRef.current.push({
+                        patternName: getPatternDisplayName(exerciseKindRef.current),
+                        points: [...currentTestSegmentRef.current],
+                    });
+                    advanceExercise();
+                } else {
+                    processExerciseData();
+                }
+            }
+        }}
+        onAssessmentRedo={() => {
+            const currentPending = assessmentPendingRef.current;
+            setAssessmentPending(null);
+            if (currentPending?.type === 'grid') {
+                setCalibPoints(generateCalibrationPoints(configRef.current.calibrationPointsCount));
+                setCurrentCalibIndex(0);
+                trainingSamplesRef.current = [];
+                calibrationImagesRef.current = [];
+                setCalibrationProgress(0);
+                setRetryCount(0); // restarts grid
+            } else if (currentPending?.type === 'exercise') {
+                exerciseDataRef.current = [];
+                exerciseBlobsRef.current = [];
+                if (runModeRef.current === 'test') {
+                    currentTestSegmentRef.current = [];
+                    testSegmentStartTimeRef.current = performance.now();
+                }
+                setExerciseRetryCount(c => c + 1); // unmounts/remounts EyeMovementLayer
+            }
+        }}
       />
 
       <NeurologicalFlowSection

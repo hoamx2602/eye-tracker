@@ -11,6 +11,7 @@ import {
   NeuroPanelLayoutContext,
   type TestResultPayload,
 } from '@/components/neurological';
+import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
 import HeadOrientationTest from '@/components/neurological/tests/headOrientation/HeadOrientationTest';
 import { HEAD_ORIENTATION_GUIDE_STEPS } from '@/components/neurological/tests/headOrientation/constants';
 import VisualSearchTest from '@/components/neurological/tests/visualSearch/VisualSearchTest';
@@ -61,6 +62,36 @@ import {
   DEFAULT_MAX_DELAY_MS,
 } from '@/components/neurological/tests/peripheralVision/constants';
 import NeurologicalRunResults from '@/components/neurological/results/NeurologicalRunResults';
+
+const TEST_LABELS: Record<string, string> = {
+  head_orientation: 'Head Orientation',
+  visual_search: 'Visual Search',
+  memory_cards: 'Memory Cards',
+  anti_saccade: 'Anti-Saccade',
+  saccadic: 'Saccadic',
+  fixation_stability: 'Fixation Stability',
+  peripheral_vision: 'Peripheral Vision',
+};
+
+const DEFAULT_SELF_ASSESSMENT: SelfAssessmentConfig = {
+  enabled: true,
+  questionCount: 2,
+  question1: 'How focused were you during this test?',
+  question2: 'How accurately do you think you performed?',
+};
+
+function extractSelfAssessmentConfig(
+  testParameters: Record<string, Record<string, unknown>> | undefined
+): SelfAssessmentConfig {
+  const raw = testParameters?.['_selfAssessment'] as Record<string, unknown> | undefined;
+  if (!raw) return DEFAULT_SELF_ASSESSMENT;
+  return {
+    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : DEFAULT_SELF_ASSESSMENT.enabled,
+    questionCount: (raw.questionCount === 1 ? 1 : 2) as 1 | 2,
+    question1: typeof raw.question1 === 'string' ? raw.question1 : DEFAULT_SELF_ASSESSMENT.question1,
+    question2: typeof raw.question2 === 'string' ? raw.question2 : DEFAULT_SELF_ASSESSMENT.question2,
+  };
+}
 
 type NeurologicalFlowSectionProps = {
   status: string;
@@ -129,6 +160,9 @@ export default function NeurologicalFlowSection({
   const globalParams: Record<string, unknown> =
     (neuroConfigSnapshot?.testParameters?.['_global'] as Record<string, unknown>) ?? {};
 
+  // Self-assessment config: read from testParameters._selfAssessment; fall back to defaults.
+  const selfAssessmentConfig = extractSelfAssessmentConfig(neuroConfigSnapshot?.testParameters);
+
   return (
     <>
       {status === 'NEURO_FLOW' && neuroRunStatus === 'creating' && (
@@ -156,11 +190,13 @@ export default function NeurologicalFlowSection({
           <NeuroHeadPoseProvider headPose={neuroHeadPose}>
             <GuidePracticeTestFlow
               testId="head_orientation"
+              testLabel={TEST_LABELS.head_orientation}
               guideSteps={HEAD_ORIENTATION_GUIDE_STEPS}
               enablePractice={false}
               testContent={<HeadOrientationTest />}
               config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.head_orientation as Record<string, unknown>) ?? { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] }) }}
               onTestComplete={(payload) => onTestComplete('head_orientation', payload)}
+              selfAssessmentConfig={selfAssessmentConfig}
             />
           </NeuroHeadPoseProvider>
         </NeuroPanelLayoutContext.Provider>
@@ -169,6 +205,7 @@ export default function NeurologicalFlowSection({
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="visual_search"
+            testLabel={TEST_LABELS.visual_search}
             guideSteps={VISUAL_SEARCH_GUIDE_STEPS}
             enablePractice={true}
             practiceContent={<VisualSearchPractice />}
@@ -185,6 +222,7 @@ export default function NeurologicalFlowSection({
               }),
             }}
             onTestComplete={(payload) => onTestComplete('visual_search', payload)}
+            selfAssessmentConfig={selfAssessmentConfig}
           />
         </NeuroGazeProvider>
       )}
@@ -192,6 +230,7 @@ export default function NeurologicalFlowSection({
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="memory_cards"
+            testLabel={TEST_LABELS.memory_cards}
             guideSteps={MEMORY_CARDS_GUIDE_STEPS}
             enablePractice={true}
             practiceContent={<MemoryCardsPractice />}
@@ -199,6 +238,7 @@ export default function NeurologicalFlowSection({
             testContent={<MemoryCardsTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { cardCount: 16, dwellMs: DEFAULT_DWELL_MS, symbolSize: 'lg' }) }}
             onTestComplete={(payload) => onTestComplete('memory_cards', payload)}
+            selfAssessmentConfig={selfAssessmentConfig}
           />
         </NeuroGazeProvider>
       )}
@@ -206,6 +246,7 @@ export default function NeurologicalFlowSection({
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="anti_saccade"
+            testLabel={TEST_LABELS.anti_saccade}
             guideSteps={getAntiSaccadeGuideSteps(true)}
             enablePractice={true}
             practiceContent={(config) => <AntiSaccadePractice config={config} />}
@@ -225,6 +266,7 @@ export default function NeurologicalFlowSection({
               }),
             }}
             onTestComplete={(payload) => onTestComplete('anti_saccade', payload)}
+            selfAssessmentConfig={selfAssessmentConfig}
           />
         </NeuroGazeProvider>
       )}
@@ -232,6 +274,7 @@ export default function NeurologicalFlowSection({
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="saccadic"
+            testLabel={TEST_LABELS.saccadic}
             guideSteps={SACCADIC_GUIDE_STEPS}
             enablePractice={true}
             practiceContent={<SaccadicPractice />}
@@ -239,6 +282,7 @@ export default function NeurologicalFlowSection({
             testContent={<SaccadicTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.saccadic as Record<string, unknown>) ?? { targetDurationMs: DEFAULT_TARGET_DURATION_MS, totalCycles: DEFAULT_TOTAL_CYCLES }) }}
             onTestComplete={(payload) => onTestComplete('saccadic', payload)}
+            selfAssessmentConfig={selfAssessmentConfig}
           />
         </NeuroGazeProvider>
       )}
@@ -246,6 +290,7 @@ export default function NeurologicalFlowSection({
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="fixation_stability"
+            testLabel={TEST_LABELS.fixation_stability}
             guideSteps={FIXATION_STABILITY_GUIDE_STEPS}
             enablePractice={true}
             practiceContent={<FixationStabilityPractice />}
@@ -253,6 +298,7 @@ export default function NeurologicalFlowSection({
             testContent={<FixationStabilityTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.fixation_stability as Record<string, unknown>) ?? { durationSec: DEFAULT_DURATION_SEC, blinkIntervalMs: DEFAULT_BLINK_INTERVAL_MS }) }}
             onTestComplete={(payload) => onTestComplete('fixation_stability', payload)}
+            selfAssessmentConfig={selfAssessmentConfig}
           />
         </NeuroGazeProvider>
       )}
@@ -260,6 +306,7 @@ export default function NeurologicalFlowSection({
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="peripheral_vision"
+            testLabel={TEST_LABELS.peripheral_vision}
             guideSteps={PERIPHERAL_VISION_GUIDE_STEPS}
             enablePractice={true}
             practiceContent={<PeripheralVisionPractice />}
@@ -267,6 +314,7 @@ export default function NeurologicalFlowSection({
             testContent={<PeripheralVisionTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.peripheral_vision as Record<string, unknown>) ?? { trialCount: PERIPHERAL_DEFAULT_TRIAL_COUNT, stimulusDurationMs: DEFAULT_STIMULUS_DURATION_MS, minDelayMs: DEFAULT_MIN_DELAY_MS, maxDelayMs: DEFAULT_MAX_DELAY_MS }) }}
             onTestComplete={(payload) => onTestComplete('peripheral_vision', payload)}
+            selfAssessmentConfig={selfAssessmentConfig}
           />
         </NeuroGazeProvider>
       )}

@@ -1,7 +1,9 @@
 'use client';
 
-import React from 'react';
-import { AppState, CalibrationPhase, CalibrationMethod, EXERCISE_KINDS, TrackingMode, type AppConfig } from '../types';
+import React, { useState } from 'react';
+import { AppState, CalibrationPhase, CalibrationMethod, EXERCISE_KINDS, EXERCISE_KIND_LABELS, TrackingMode, type AppConfig, type EyeMovementKind } from '../types';
+import type { SelfAssessmentConfig } from './neurological/GuidePracticeTestFlow';
+import { InlineStarRow } from './neurological/GuidePracticeTestFlow';
 import type { HeadValidationResult } from '../services/eyeTrackingService';
 import CalibrationLayer from './CalibrationLayer';
 import EyeMovementLayer from './EyeMovementLayer';
@@ -86,6 +88,11 @@ type AppMainOverlaysProps = {
   loocvErrors?: { ridge: number; hybrid: number } | null;
   loocvBaseline?: { ridge: number; hybrid: number } | null;
   onReEvaluate?: () => void;
+  selfAssessmentConfig?: SelfAssessmentConfig | null;
+  assessmentPending?: { type: 'grid' } | { type: 'exercise'; kind: EyeMovementKind; index: number } | null;
+  exerciseRetryCount?: number;
+  onAssessmentContinue?: () => void;
+  onAssessmentRedo?: () => void;
 };
 
 export default function AppMainOverlays(props: AppMainOverlaysProps) {
@@ -149,7 +156,33 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
     loocvErrors,
     loocvBaseline,
     onReEvaluate,
+    selfAssessmentConfig,
+    assessmentPending,
+    exerciseRetryCount = 0,
+    onAssessmentContinue,
+    onAssessmentRedo,
   } = props;
+
+  const [focusRating, setFocusRating] = useState<number | null>(null);
+  const [accuracyRating, setAccuracyRating] = useState<number | null>(null);
+
+  const saEnabled = selfAssessmentConfig?.enabled !== false;
+  const saQ2Visible = saEnabled && (selfAssessmentConfig?.questionCount ?? 2) >= 2;
+  const canContinue = !saEnabled
+    || (focusRating !== null && (!saQ2Visible || accuracyRating !== null));
+
+  React.useEffect(() => {
+    if (assessmentPending) {
+      setFocusRating(null);
+      setAccuracyRating(null);
+    }
+  }, [assessmentPending]);
+
+  const assessmentLabel = assessmentPending?.type === 'grid' 
+    ? 'Calibration' 
+    : (assessmentPending?.type === 'exercise' 
+        ? (EXERCISE_KIND_LABELS[assessmentPending.kind] || assessmentPending.kind) 
+        : '');
 
   return (
     <div className="absolute inset-0 pointer-events-none font-sans">
@@ -341,7 +374,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
 
       {status === 'CALIBRATION' && calibPhase === CalibrationPhase.EXERCISES && (
         <EyeMovementLayer
-          key={`exercise-${currentExerciseIndex}`}
+          key={`exercise-${currentExerciseIndex}-${exerciseRetryCount}`}
           kind={EXERCISE_KINDS[currentExerciseIndex]}
           targetRef={exerciseTargetRef}
           onComplete={onExerciseComplete}
@@ -433,6 +466,76 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
           loocvBaseline={loocvBaseline}
           onReEvaluate={onReEvaluate}
         />
+      )}
+
+      {assessmentPending && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 pointer-events-auto">
+          <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-sm flex flex-col gap-0 overflow-hidden">
+            <div className="px-6 pt-5 pb-4 text-center border-b border-gray-700">
+              <p className="text-xs text-gray-400 uppercase tracking-widest font-semibold mb-1">Step Complete</p>
+              <p className="text-white font-bold text-base">
+                {assessmentLabel}
+              </p>
+            </div>
+
+            {saEnabled && selfAssessmentConfig && (
+              <div className="px-6 py-5 flex flex-col gap-4 border-b border-gray-700">
+                <p className="text-xs text-gray-400 text-center uppercase tracking-widest font-semibold">
+                  Quick check-in
+                </p>
+                <InlineStarRow
+                  question={selfAssessmentConfig.question1}
+                  emoji1="😴"
+                  emoji5="🎯"
+                  value={focusRating}
+                  onChange={setFocusRating}
+                />
+                {saQ2Visible && (
+                  <InlineStarRow
+                    question={selfAssessmentConfig.question2}
+                    emoji1="🤔"
+                    emoji5="✅"
+                    value={accuracyRating}
+                    onChange={setAccuracyRating}
+                  />
+                )}
+                {!canContinue && (
+                  <p className="text-xs text-gray-500 text-center">
+                    Answer {saQ2Visible ? 'both questions' : 'the question above'} to continue
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="px-6 py-5 flex gap-3">
+              <button
+                type="button"
+                onClick={onAssessmentRedo}
+                className="flex-1 px-4 py-3 font-semibold text-sm rounded-2xl border border-gray-600 bg-gray-700 hover:bg-gray-600 text-white transition active:translate-y-[1px]"
+              >
+                Redo
+              </button>
+              <button
+                type="button"
+                onClick={onAssessmentContinue}
+                disabled={!canContinue}
+                className={[
+                  'group flex-1 px-4 py-3 font-semibold text-sm rounded-2xl transition active:translate-y-[1px] w-full',
+                  canContinue
+                    ? 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white shadow-[0_8px_24px_rgba(0,140,255,0.18)]'
+                    : 'bg-gray-700 text-gray-500 cursor-not-allowed',
+                ].join(' ')}
+              >
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <span>Continue</span>
+                  {canContinue && (
+                    <span className="opacity-90 group-hover:translate-x-0.5 transition">→</span>
+                  )}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       </div>
     </div>
