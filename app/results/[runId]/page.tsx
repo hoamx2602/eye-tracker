@@ -31,6 +31,10 @@ export default async function ResultsPage({ params }: Props) {
             id: true,
             meanErrorPx: true,
             calibrationGazeSamples: true,
+            config: true,
+            testRun: {
+              select: { trajectories: true }
+            },
             demographics: true,
             createdAt: true,
           },
@@ -80,6 +84,13 @@ export default async function ResultsPage({ params }: Props) {
       demographics: (run.session?.demographics as Record<string, unknown> | null) ?? null,
       createdAt: run.session?.createdAt?.toISOString() ?? null,
       calibrationGazeSamples,
+      testTrajectories: (run.session?.testRun?.trajectories
+        ? run.session.testRun.trajectories
+        : (run.configSnapshot && typeof run.configSnapshot === 'object' && 'testTrajectories' in run.configSnapshot)
+          ? (run.configSnapshot as Record<string, unknown>).testTrajectories
+          : (run.session?.config && typeof run.session.config === 'object' && 'testTrajectories' in run.session.config)
+            ? (run.session.config as Record<string, unknown>).testTrajectories
+            : null) as unknown[] | null,
     },
   };
 

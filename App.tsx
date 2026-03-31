@@ -884,19 +884,19 @@ function App() {
                     const target = exerciseTargetRef.current;
                     if (target) {
                       const inputVector = eyeTrackingService.prepareFeatureVector(features, configRef.current);
-                      if (runModeRef.current === 'test') {
-                        // Test mode: record target vs predicted gaze for deviation charts (throttle ~50ms)
-                        if (now - lastTestRecordTimeRef.current >= 50) {
-                          lastTestRecordTimeRef.current = now;
-                          const t = (now - testSegmentStartTimeRef.current) / 1000;
-                          const targetX = (target.x / window.innerWidth) * 100;
-                          const targetY = (target.y / window.innerHeight) * 100;
-                          const pred = hybridRegressorRef.current.predict(inputVector, configRef.current.regressionMethod);
-                          const gazeX = (pred.x / window.innerWidth) * 100;
-                          const gazeY = (pred.y / window.innerHeight) * 100;
-                          currentTestSegmentRef.current.push({ t, targetX, targetY, gazeX, gazeY });
-                        }
-                      } else {
+                      // Always record target vs predicted gaze for deviation charts
+                      if (now - lastTestRecordTimeRef.current >= 50) {
+                        lastTestRecordTimeRef.current = now;
+                        const t = (now - testSegmentStartTimeRef.current) / 1000;
+                        const targetX = (target.x / window.innerWidth) * 100;
+                        const targetY = (target.y / window.innerHeight) * 100;
+                        const pred = hybridRegressorRef.current.predict(inputVector, configRef.current.regressionMethod);
+                        const gazeX = (pred.x / window.innerWidth) * 100;
+                        const gazeY = (pred.y / window.innerHeight) * 100;
+                        currentTestSegmentRef.current.push({ t, targetX, targetY, gazeX, gazeY });
+                      }
+                      
+                      if (runModeRef.current !== 'test') {
                         const len = exerciseDataRef.current.length;
                         exerciseDataRef.current.push({
                           screenX: target.x,
@@ -1372,10 +1372,8 @@ function App() {
       exerciseBlobsRef.current = [];
       exerciseKindRef.current = EXERCISE_KINDS[nextIndex];
       exerciseActiveRef.current = true;
-      if (runModeRef.current === 'test') {
-        testSegmentStartTimeRef.current = performance.now();
-        currentTestSegmentRef.current = [];
-      }
+      testSegmentStartTimeRef.current = performance.now();
+      currentTestSegmentRef.current = [];
     } else {
       if (runModeRef.current === 'test') {
         completeCalibrationAndStartTracking([], testTrajectoryRef.current);
@@ -1417,11 +1415,11 @@ function App() {
     if (saEnabled) {
         setAssessmentPending({ type: 'exercise', kind: exerciseKindRef.current, index: currentExerciseIndex });
     } else {
+        testTrajectoryRef.current.push({
+            patternName: getPatternDisplayName(exerciseKindRef.current),
+            points: [...currentTestSegmentRef.current],
+        });
         if (runModeRef.current === 'test') {
-            testTrajectoryRef.current.push({
-                patternName: getPatternDisplayName(exerciseKindRef.current),
-                points: [...currentTestSegmentRef.current],
-            });
             advanceExercise();
         } else {
             processExerciseData();
@@ -1488,7 +1486,7 @@ function App() {
         }
     }
     else if (calibPhase === CalibrationPhase.VALIDATION) {
-        completeCalibrationAndStartTracking(validationErrorsRef.current);
+        completeCalibrationAndStartTracking(validationErrorsRef.current, testTrajectoryRef.current);
     }
   };
 
@@ -1673,7 +1671,13 @@ function App() {
     setPostSymptomScores,
     pathSyncSourceRef,
     routerPush: (url: string) => {
-      if (typeof window !== 'undefined') window.history.pushState(null, '', url);
+      if (typeof window !== 'undefined') {
+        if (url.startsWith('/results/')) {
+          router.push(url);
+        } else {
+          window.history.pushState(null, '', url);
+        }
+      }
     },
     onStartRealTimeTracking: startRealTimeTracking,
   });
@@ -2458,11 +2462,11 @@ function App() {
             if (currentPending?.type === 'grid') {
                 finishCurrentPhase();
             } else if (currentPending?.type === 'exercise') {
+                testTrajectoryRef.current.push({
+                    patternName: getPatternDisplayName(exerciseKindRef.current),
+                    points: [...currentTestSegmentRef.current],
+                });
                 if (runModeRef.current === 'test') {
-                    testTrajectoryRef.current.push({
-                        patternName: getPatternDisplayName(exerciseKindRef.current),
-                        points: [...currentTestSegmentRef.current],
-                    });
                     advanceExercise();
                 } else {
                     processExerciseData();

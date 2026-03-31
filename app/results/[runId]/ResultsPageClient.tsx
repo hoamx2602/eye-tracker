@@ -14,6 +14,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts';
+import TestModeCharts, { TestTrajectorySegment } from '@/components/neurological/TestModeCharts';
 import {
   computeAllScores,
   calibrationQualityLabel,
@@ -54,6 +55,7 @@ interface RunData {
     demographics: Record<string, unknown> | null;
     createdAt: string | null;
     calibrationGazeSamples: unknown[];
+    testTrajectories?: unknown[] | null;
   };
 }
 
@@ -137,92 +139,6 @@ function AccuracyDial({ score }: { score: number }) {
   );
 }
 
-/** Calibration gaze samples mini visualisation */
-function CalibrationPatternViz({ samples }: { samples: unknown[] }) {
-  const [hovered, setHovered] = useState<CalibrationGazeSample | null>(null);
-
-  const points = useMemo(() => {
-    return samples.map((s) => {
-      const sample = s as CalibrationGazeSample;
-      return {
-        x: sample.screenX ?? sample.x ?? 0,
-        y: sample.screenY ?? sample.y ?? 0,
-        t: sample.timestamp ?? sample.t ?? 0,
-      };
-    });
-  }, [samples]);
-
-  if (points.length === 0) return <p className="text-gray-600 text-xs">No calibration data available.</p>;
-
-  // Normalise to 0–100
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  const minY = Math.min(...ys), maxY = Math.max(...ys);
-  const rangeX = maxX - minX || 1;
-  const rangeY = maxY - minY || 1;
-
-  const VW = 280, VH = 180;
-  const pad = 10;
-
-  const norm = points.map((p) => ({
-    px: pad + ((p.x - minX) / rangeX) * (VW - pad * 2),
-    py: pad + ((p.y - minY) / rangeY) * (VH - pad * 2),
-    t: p.t,
-  }));
-
-  return (
-    <div className="relative">
-      <svg
-        viewBox={`0 0 ${VW} ${VH}`}
-        className="w-full rounded-xl bg-gray-900/60 border border-gray-800"
-        style={{ maxHeight: 200 }}
-      >
-        {/* Path line */}
-        <polyline
-          points={norm.map((p) => `${p.px},${p.py}`).join(' ')}
-          fill="none"
-          stroke="#3b82f680"
-          strokeWidth="1"
-        />
-        {/* Sample dots */}
-        {norm.map((p, i) => (
-          <circle
-            key={i}
-            cx={p.px}
-            cy={p.py}
-            r={3}
-            fill="#60a5fa"
-            opacity={0.7}
-            onMouseEnter={() => setHovered(samples[i] as CalibrationGazeSample)}
-            onMouseLeave={() => setHovered(null)}
-            className="cursor-pointer hover:opacity-100"
-          />
-        ))}
-      </svg>
-      {hovered && (
-        <div className="absolute top-2 right-2 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 pointer-events-none">
-          x: {Math.round((hovered.screenX ?? hovered.x ?? 0))}px<br />
-          y: {Math.round((hovered.screenY ?? hovered.y ?? 0))}px
-          {(hovered.timestamp || hovered.t) ? <><br />t: {hovered.timestamp ?? hovered.t}ms</> : null}
-        </div>
-      )}
-      <p className="text-xs text-gray-600 mt-2">How your eyes tracked the calibration targets.</p>
-    </div>
-  );
-}
-
-/** Trait card */
-function TraitCard({ icon, label, description }: { icon: string; label: string; description: string }) {
-  return (
-    <div className="flex flex-col gap-2 rounded-xl bg-gray-900/60 border border-gray-800 p-4">
-      <span className="text-2xl">{icon}</span>
-      <p className="text-sm font-semibold text-white">{label}</p>
-      <p className="text-xs text-gray-400 leading-snug">{description}</p>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -248,14 +164,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
   // Eye tracking accuracy
   const etScore = meanErrorPx != null ? eyeTrackingAccuracyScore(meanErrorPx) : null;
 
-  // Trait derivations
-  const saccadicMetrics = (testResults.saccadic?.metrics ?? testResults.saccadic ?? {}) as Record<string, unknown>;
-  const fixMetrics = (testResults.fixation_stability?.metrics ?? testResults.fixation_stability ?? {}) as Record<string, unknown>;
 
-  const avgLatencyMs = typeof saccadicMetrics.avgLatencyMs === 'number' ? saccadicMetrics.avgLatencyMs
-    : typeof saccadicMetrics.meanLatencyMs === 'number' ? saccadicMetrics.meanLatencyMs : null;
-  const bcea95 = typeof fixMetrics.bcea95Px2 === 'number' ? fixMetrics.bcea95Px2
-    : typeof fixMetrics.bceaPx2 === 'number' ? fixMetrics.bceaPx2 : null;
 
   const selfAssessInsight = selfAssessmentInsight(testResults, scores);
   const selfAssessConfig = configSnap?.testParameters?.['_selfAssessment'] as Record<string, unknown> | undefined;
@@ -284,7 +193,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
     : null;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="h-screen overflow-y-auto bg-gray-950 text-white scrollbar-thin">
       {/* Nav bar */}
       <div className="sticky top-0 z-40 border-b border-gray-800/60 bg-gray-950/90 backdrop-blur-sm">
         <div className="mx-auto max-w-4xl flex items-center gap-3 px-4 py-3">
@@ -328,59 +237,18 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
         <section>
           <SectionHeader
             title="Eye Tracking Profile"
-            subtitle="How accurately the eye tracker followed your gaze during calibration."
+            subtitle="How accurately the eye tracker followed your gaze."
           />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {/* B1 — Accuracy dial */}
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 flex flex-col items-center gap-4">
-              <h3 className="text-sm font-semibold text-gray-300 self-start">Gaze Accuracy</h3>
-              {etScore != null ? (
-                <AccuracyDial score={etScore} />
-              ) : (
-                <p className="text-gray-600 text-sm">Calibration data unavailable.</p>
-              )}
-            </div>
-
-            {/* B2 — Calibration pattern */}
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 flex flex-col gap-3">
-              <h3 className="text-sm font-semibold text-gray-300">Calibration Gaze Path</h3>
-              <CalibrationPatternViz samples={session.calibrationGazeSamples} />
-            </div>
+          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 flex flex-col items-center gap-4 mb-6">
+            <h3 className="text-sm font-semibold text-gray-300 self-start">Gaze Accuracy</h3>
+            {etScore != null ? (
+              <AccuracyDial score={etScore} />
+            ) : (
+              <p className="text-gray-600 text-sm">Calibration data unavailable.</p>
+            )}
           </div>
-
-          {/* B3 — Trait cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
-            <TraitCard
-              icon="🎯"
-              label="Tracking Precision"
-              description={
-                meanErrorPx == null ? 'Calibration data unavailable.'
-                : meanErrorPx < 30 ? 'Your gaze tracking was very precise throughout calibration.'
-                : meanErrorPx < 60 ? 'Your gaze tracking was accurate across calibration targets.'
-                : 'Some drift occurred during calibration — results are still informative.'
-              }
-            />
-            <TraitCard
-              icon="⚡"
-              label="Response Speed"
-              description={
-                avgLatencyMs == null ? 'Run the Saccadic test to see response speed.'
-                : avgLatencyMs < 250 ? 'Your eyes responded very quickly when targets appeared.'
-                : avgLatencyMs < 450 ? 'Your eye response time was in the typical range.'
-                : 'Your eye responses were a bit slower — fatigue can be a factor.'
-              }
-            />
-            <TraitCard
-              icon="🌊"
-              label="Gaze Stability"
-              description={
-                bcea95 == null ? 'Run the Fixation Stability test to see gaze stability.'
-                : bcea95 < 2000 ? 'Your gaze held very steady when fixating on a point.'
-                : bcea95 < 6000 ? 'Your gaze stability was in the typical range.'
-                : 'Your fixation showed some variability — micro-movements are normal.'
-              }
-            />
-          </div>
+          
+          <TestModeCharts testTrajectories={session.testTrajectories as TestTrajectorySegment[] | null} />
         </section>
 
         {/* ——————————————————————————————————————————————

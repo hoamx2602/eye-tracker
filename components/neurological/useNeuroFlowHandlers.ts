@@ -162,7 +162,7 @@ export function useNeuroFlowHandlers({
           setNeuroPhase('done');
           setCurrentNeuroTestId(null);
           pathSyncSourceRef.current = 'internal';
-          routerPush(PATHS.NEURO_DONE);
+          routerPush(`/results/${neuroRunId}`);
         } else {
           setNeuroPhase('post');
           setCurrentNeuroTestId(null);
@@ -254,9 +254,8 @@ export function useNeuroFlowHandlers({
         }
       }
       setNeuroPhase('done');
-      setNeuroPhase('done');
       pathSyncSourceRef.current = 'internal';
-      routerPush(PATHS.NEURO_DONE);
+      routerPush(`/results/${neuroRunId}`);
     },
     [
       neuroRunId,
