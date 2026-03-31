@@ -418,16 +418,36 @@ function App() {
   }, [status, pathname]);
 
   // Load cached neuro config snapshot for this browser session.
+  // If we are on a neuro route but have no snapshot, try to fetch it from the API.
   useEffect(() => {
+    let raw: string | null = null;
     try {
-      const raw = localStorage.getItem(NEURO_CONFIG_LS_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as any;
-      if (parsed && typeof parsed === 'object' && parsed.testParameters && parsed.testEnabled) {
-        setNeuroConfigSnapshot(parsed);
+      raw = localStorage.getItem(NEURO_CONFIG_LS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as any;
+        if (parsed && typeof parsed === 'object' && parsed.testParameters && parsed.testEnabled) {
+          setNeuroConfigSnapshot(parsed);
+        }
       }
-    } catch (_) {
-      // ignore
+    } catch (_) {}
+
+    // If we're on a neuro route, fetch the latest from DB to ensure developer-convenience
+    // (so admin changes reflect on refresh of the test page).
+    const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
+    if (parsed.screen.startsWith('neuro')) {
+      (async () => {
+        try {
+          const latest = await getNeurologicalConfig();
+          setNeuroConfigSnapshot({
+            testOrder: latest.testOrder,
+            testParameters: (latest.testParameters as Record<string, Record<string, unknown>>) ?? {},
+            testEnabled: (latest.testEnabled as Record<string, boolean>) ?? {},
+          });
+          localStorage.setItem(NEURO_CONFIG_LS_KEY, JSON.stringify(latest));
+        } catch (e) {
+          console.error('[App] Failed to fetch fresh neuro config', e);
+        }
+      })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

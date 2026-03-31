@@ -47,3 +47,6 @@ export const GAZE_PATH_INTERVAL_MS = 100;
 export const DEFAULT_DWELL_MS = 800;
 /** Delay (ms) before flipping non-matching pair back. */
 export const FLIP_BACK_DELAY_MS = 1200;
+
+/** Default card gap in px. */
+export const DEFAULT_CARD_GAP_PX = 8;

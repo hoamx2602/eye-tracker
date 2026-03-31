@@ -29,6 +29,7 @@ import MemoryCardsPractice from '@/components/neurological/tests/memoryCards/Mem
 import {
   MEMORY_CARDS_GUIDE_STEPS,
   DEFAULT_DWELL_MS,
+  DEFAULT_CARD_GAP_PX,
 } from '@/components/neurological/tests/memoryCards/constants';
 import AntiSaccadeTest from '@/components/neurological/tests/antiSaccade/AntiSaccadeTest';
 import AntiSaccadePractice from '@/components/neurological/tests/antiSaccade/AntiSaccadePractice';
@@ -236,7 +237,15 @@ export default function NeurologicalFlowSection({
             practiceContent={<MemoryCardsPractice />}
             practiceTitle="Practice: Memory Cards (2x2)"
             testContent={<MemoryCardsTest />}
-            config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { cardCount: 16, dwellMs: DEFAULT_DWELL_MS, symbolSize: 'lg' }) }}
+            config={{ 
+              ...globalParams, 
+              ...((neuroConfigSnapshot?.testParameters?.memory_cards as Record<string, unknown>) ?? { 
+                cardCount: 16, 
+                dwellMs: DEFAULT_DWELL_MS, 
+                symbolSize: 'lg',
+                cardGapPx: DEFAULT_CARD_GAP_PX
+              }) 
+            }}
             onTestComplete={(payload) => onTestComplete('memory_cards', payload)}
             selfAssessmentConfig={selfAssessmentConfig}
           />

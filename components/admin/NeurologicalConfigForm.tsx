@@ -45,7 +45,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
       allowClickTargets: false,
       clickHoldDurationMs: 300,
     },
-    memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg' },
+    memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg', cardGapPx: 8 },
     anti_saccade: {
       trialCount: 12,
       movementSpeedPxPerSec: 120,
@@ -440,6 +440,12 @@ export default function NeurologicalConfigForm() {
                         value={Number(params.gazeSampleIntervalMs) || 100}
                         onChange={(v) => setParam(id, 'gazeSampleIntervalMs', v)}
                         options={[50, 100, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
+                      <SelectNumber
+                        label="Card gap (px)"
+                        value={Number(params.cardGapPx) || 8}
+                        onChange={(v) => setParam(id, 'cardGapPx', v)}
+                        options={[0, 4, 6, 8, 10, 12, 16, 20, 24].map((n) => ({ value: n, label: `${n} px` }))}
                       />
                     </>
                   )}

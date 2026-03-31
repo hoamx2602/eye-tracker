@@ -13,6 +13,7 @@ import {
   MEMORY_CARDS_SYMBOL_SIZES,
   type MemoryCardsCardCount,
   type MemoryCardsSymbolSize,
+  DEFAULT_CARD_GAP_PX,
 } from './constants';
 import { createBoard } from './utils';
 import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
@@ -77,6 +78,9 @@ export default function MemoryCardsTest() {
     : 'lg';
   const symbolPx = SYMBOL_SIZE_PX[presetSize] ?? 46;
   const symbolStyle = { fontSize: `${symbolPx}px` };
+  const cardGapPx = Math.max(0, Number(config.cardGapPx ?? DEFAULT_CARD_GAP_PX));
+  // Card = icon + 20px padding on each side, never smaller than icon + 12px
+  const cardSizePx = symbolPx + 40;
 
   // Log config for debugging.
   useEffect(() => {
@@ -276,15 +280,11 @@ export default function MemoryCardsTest() {
       </p>
       <div
         ref={gridContainerRef}
-        className="grid gap-1.5 place-items-center shrink-0"
+        className="grid"
         style={{
-          gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-          gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
-          aspectRatio: `${cols} / ${rows}`,
-          maxWidth: '92vw',
-          maxHeight: '85vh',
-          width: cols >= rows ? 'min(92vw, 85vh)' : `min(92vw, calc(85vh * ${cols} / ${rows}))`,
-          height: rows > cols ? 'min(85vh, calc(92vw * ${rows} / ${cols}))' : undefined,
+          gap: `${cardGapPx}px`,
+          gridTemplateColumns: `repeat(${cols}, ${cardSizePx}px)`,
+          gridTemplateRows: `repeat(${rows}, ${cardSizePx}px)`,
         }}
       >
         {board.map((value, index) => (
@@ -293,8 +293,9 @@ export default function MemoryCardsTest() {
             type="button"
             disabled={value < 0 || matched.has(index) || secondSelected !== null}
             onClick={() => selectCard(index)}
+            style={{ width: cardSizePx, height: cardSizePx, fontSize: symbolPx }}
             className={`
-              w-full h-full min-w-[28px] min-h-[28px] rounded-lg border-2 flex items-center justify-center font-bold
+              rounded-lg border-2 flex items-center justify-center font-bold
               transition-all duration-200
               ${value < 0 ? 'invisible' : ''}
               ${matched.has(index) ? 'bg-emerald-700 border-emerald-500 text-white' : ''}
@@ -304,7 +305,6 @@ export default function MemoryCardsTest() {
             `}
             aria-pressed={isRevealed(index)}
             aria-label={isRevealed(index) ? `Card ${getSymbol(value)}` : 'Face-down card'}
-            style={symbolStyle}
           >
             {isRevealed(index) ? getSymbol(value) : '?'}
           </button>
