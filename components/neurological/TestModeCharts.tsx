@@ -43,19 +43,28 @@ export default function TestModeCharts({ testTrajectories }: { testTrajectories:
   return (
     <div className="space-y-4">
       {testTrajectories.map((seg, i) => (
-        <details key={i} className="rounded-xl border border-gray-800 bg-gray-900/50 overflow-hidden" open={i === 0}>
+        <details key={i} className="rounded-xl border border-gray-800 bg-gray-900/50 overflow-hidden print:break-inside-avoid" open={true}>
           <summary className="cursor-pointer select-none px-4 py-3 flex items-center justify-between gap-3 hover:bg-gray-800/50">
             <span className="text-sm font-medium text-gray-200">{seg.patternName}</span>
             <span className="text-xs text-gray-500">{seg.points.length} points</span>
           </summary>
-          <div className="px-4 pb-4 pt-2 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="px-4 pb-4 pt-2 grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 gap-6">
             <div>
               <div className="text-xs text-gray-500 mb-2">X — Position (%)</div>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={seg.points} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="t" tick={{ fill: '#9ca3af', fontSize: 10 }} name="Time (s)" />
-                  <YAxis domain={[0, 100]} tick={{ fill: '#9ca3af', fontSize: 10 }} />
+                  <XAxis 
+                    dataKey="t" 
+                    tick={{ fill: '#9ca3af', fontSize: 10 }} 
+                    name="Time (s)" 
+                    tickFormatter={(val) => Number(val).toFixed(1)}
+                    minTickGap={30}
+                  />
+                  <YAxis 
+                    tick={{ fill: '#9ca3af', fontSize: 10 }} 
+                    tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
+                  />
                   <Tooltip content={<DarkTooltip />} />
                   <ReferenceLine y={50} stroke="#374151" />
                   <Line type="monotone" dataKey="targetX" stroke="#86efac" strokeWidth={2} dot={false} name="Target X" />
@@ -72,8 +81,17 @@ export default function TestModeCharts({ testTrajectories }: { testTrajectories:
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={seg.points} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="t" tick={{ fill: '#9ca3af', fontSize: 10 }} name="Time (s)" />
-                  <YAxis domain={[0, 100]} tick={{ fill: '#9ca3af', fontSize: 10 }} />
+                  <XAxis 
+                    dataKey="t" 
+                    tick={{ fill: '#9ca3af', fontSize: 10 }} 
+                    name="Time (s)" 
+                    tickFormatter={(val) => Number(val).toFixed(1)}
+                    minTickGap={30}
+                  />
+                  <YAxis 
+                    tick={{ fill: '#9ca3af', fontSize: 10 }} 
+                    tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
+                  />
                   <Tooltip content={<DarkTooltip />} />
                   <ReferenceLine y={50} stroke="#374151" />
                   <Line type="monotone" dataKey="targetY" stroke="#86efac" strokeWidth={2} dot={false} name="Target Y" />

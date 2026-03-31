@@ -1,0 +1,353 @@
+'use client';
+
+import React, { useMemo } from 'react';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine,
+  ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar
+} from 'recharts';
+import {
+  computeAllScores,
+  eyeTrackingAccuracyScore,
+  DOMAIN_NAMES,
+  symptomTotal,
+} from '@/lib/resultScoring';
+
+interface PrintData {
+  id: string;
+  status: string;
+  createdAt: string;
+  testOrderSnapshot: string[];
+  configSnapshot: Record<string, unknown>;
+  preSymptomScores: Record<string, number> | null;
+  postSymptomScores: Record<string, number> | null;
+  testResults: Record<string, Record<string, unknown>>;
+  trajectories: unknown[] | null;
+  session: {
+    id: string;
+    meanErrorPx: number | null;
+    demographics: Record<string, unknown> | null;
+    createdAt: string | null;
+  };
+}
+
+function ScoreBar({ score }: { score: number | null }) {
+  const pct = score ?? 0;
+  const color = pct >= 70 ? '#16a34a' : pct >= 40 ? '#d97706' : '#dc2626';
+  return (
+    <div className="w-full bg-gray-200 rounded-full h-2">
+      <div className="h-2 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+    </div>
+  );
+}
+
+function ScoreLabel({ score }: { score: number | null }) {
+  if (score === null) return <span className="text-gray-400 font-bold">N/A</span>;
+  const color = score >= 70 ? 'text-green-600' : score >= 40 ? 'text-amber-600' : 'text-red-500';
+  return <span className={`font-black text-lg ${color}`}>{score}</span>;
+}
+
+export default function ResultsPrintLayout({ data }: { data: PrintData }) {
+  const { session, testOrderSnapshot, testResults, configSnapshot, preSymptomScores, postSymptomScores, trajectories } = data;
+
+  const configSnap = configSnapshot as {
+    testParameters?: Record<string, Record<string, unknown>>;
+    testEnabled?: Record<string, boolean>;
+  };
+  const scoringConfig = (configSnap?.testParameters?.['_scoring'] as Record<string, Record<string, number>> | undefined) ?? undefined;
+  const enabledTests: Record<string, boolean> = configSnap?.testEnabled ?? {};
+
+  const scores = useMemo(
+    () => computeAllScores(testResults, testOrderSnapshot, enabledTests, scoringConfig),
+    [testResults, testOrderSnapshot, enabledTests, scoringConfig]
+  );
+
+  const etScore = session.meanErrorPx != null ? eyeTrackingAccuracyScore(session.meanErrorPx) : null;
+
+  const radarData = scores.map((s) => ({
+    domain: s.domainName,
+    score: s.score ?? 0,
+  }));
+
+  const assessmentDate = data.createdAt
+    ? new Date(data.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : '';
+
+  const demographics = session.demographics;
+  const firstName = demographics
+    ? (demographics.firstName as string | undefined) ?? (demographics.name as string | undefined) ?? 'Patient'
+    : 'Patient';
+  const lastName = demographics ? (demographics.lastName as string | undefined) : undefined;
+  const fullName = [firstName, lastName].filter(Boolean).join(' ');
+
+  const preTotal = symptomTotal(preSymptomScores);
+  const postTotal = symptomTotal(postSymptomScores);
+  const hasSymptoms = preSymptomScores !== null && postSymptomScores !== null;
+
+  const trajectoryList = Array.isArray(trajectories) ? trajectories as Array<{
+    patternName: string;
+    points: Array<{ t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }>;
+  }> : [];
+
+  return (
+    <div className="bg-white text-black font-sans" style={{ maxWidth: 900, margin: '0 auto', padding: '40px 48px' }}>
+
+      {/* ═══════════════════════════════════════════════════
+          PAGE 1: Header + Overview + Radar
+      ═══════════════════════════════════════════════════ */}
+      
+      {/* Header */}
+      <div style={{ borderBottom: '3px solid #1e3a8a', paddingBottom: 20, marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          <div>
+            <h1 style={{ fontSize: 28, fontWeight: 900, color: '#1e3a8a', margin: 0, letterSpacing: '-0.5px' }}>
+              Precision Eye Tracker
+            </h1>
+            <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0', fontWeight: 500 }}>
+              Neurological Assessment Report
+            </p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <p style={{ fontSize: 18, fontWeight: 800, color: '#0f172a', margin: 0 }}>{fullName}</p>
+            <p style={{ fontSize: 12, color: '#64748b', margin: '3px 0 0' }}>Assessment Date: {assessmentDate}</p>
+            <p style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', margin: '3px 0 0' }}>
+              Report ID: {data.id.slice(-12).toUpperCase()}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Overview strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 28 }}>
+        <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 12, padding: '16px 20px' }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#0369a1', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Eye Tracking Accuracy</p>
+          <p style={{ fontSize: 40, fontWeight: 900, color: '#0c4a6e', margin: '6px 0 0', lineHeight: 1 }}>
+            {etScore !== null ? etScore : '—'}
+          </p>
+          <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>out of 100</p>
+        </div>
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px' }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#15803d', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Tests Completed</p>
+          <p style={{ fontSize: 40, fontWeight: 900, color: '#14532d', margin: '6px 0 0', lineHeight: 1 }}>
+            {scores.filter(s => s.score !== null).length}<span style={{ fontSize: 18 }}>/{scores.length}</span>
+          </p>
+          <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>assessment domains</p>
+        </div>
+        {hasSymptoms && (
+          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '16px 20px' }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: '#b45309', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Symptom Change</p>
+            <p style={{ fontSize: 40, fontWeight: 900, color: '#78350f', margin: '6px 0 0', lineHeight: 1 }}>
+              {preTotal !== null && postTotal !== null
+                ? (preTotal - postTotal > 0 ? `−${preTotal - postTotal}` : (preTotal - postTotal < 0 ? `+${postTotal - preTotal}` : '0'))
+                : '—'}
+            </p>
+            <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>pre vs post session</p>
+          </div>
+        )}
+        {!hasSymptoms && (
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px 20px' }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Status</p>
+            <p style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: '8px 0 0' }}>Completed</p>
+          </div>
+        )}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════
+          PAGE 2: Detailed Domain Scores
+      ═══════════════════════════════════════════════════ */}
+      <div style={{ marginTop: 24 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', margin: '0 0 4px', borderBottom: '2px solid #e2e8f0', paddingBottom: 10 }}>
+          Detailed Domain Scores
+        </h2>
+        <p style={{ fontSize: 12, color: '#64748b', margin: '8px 0 24px' }}>
+          Performance metrics across individual assessment domains. Each score is out of 100.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {scores.map((s) => (
+            <div key={s.testId} style={{
+              border: '1px solid #e2e8f0',
+              borderRadius: 12,
+              padding: '20px 24px',
+              background: '#f8fafc',
+              pageBreakInside: 'avoid',
+              breakInside: 'avoid'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <div>
+                  <h3 style={{ fontSize: 15, fontWeight: 800, color: '#1e293b', margin: 0 }}>{s.domainName}</h3>
+                  {s.score !== null && (
+                    <p style={{ fontSize: 11, color: '#64748b', margin: '2px 0 0' }}>
+                      {s.score >= 70 ? 'Optimal processing' : s.score >= 40 ? 'Moderate performance - Room to grow' : 'Improvement recommended'}
+                    </p>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                  <ScoreLabel score={s.score} />
+                  <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>/ 100</span>
+                </div>
+              </div>
+              <ScoreBar score={s.score} />
+              {s.score === null && (
+                <p style={{ fontSize: 11, color: '#94a3b8', margin: '10px 0 0', fontStyle: 'italic' }}>Not assessed in this session</p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Symptom comparison if available */}
+        {hasSymptoms && (
+          <div style={{ marginTop: 28, border: '1px solid #e2e8f0', borderRadius: 10, padding: '16px 20px', background: '#fffbeb' }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: '#92400e', margin: '0 0 12px' }}>Symptom Assessment Comparison</h3>
+            <div style={{ display: 'flex', gap: 32 }}>
+              <div>
+                <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>Before session</p>
+                <p style={{ fontSize: 28, fontWeight: 900, color: '#78350f', margin: '4px 0 0' }}>{preTotal ?? '—'}</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', color: '#94a3b8', fontSize: 20 }}>→</div>
+              <div>
+                <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>After session</p>
+                <p style={{ fontSize: 28, fontWeight: 900, color: '#78350f', margin: '4px 0 0' }}>{postTotal ?? '—'}</p>
+              </div>
+              {preTotal !== null && postTotal !== null && (
+                <div style={{ marginLeft: 20, display: 'flex', alignItems: 'center' }}>
+                  <div style={{
+                    background: preTotal > postTotal ? '#dcfce7' : preTotal < postTotal ? '#fee2e2' : '#f1f5f9',
+                    border: `1px solid ${preTotal > postTotal ? '#86efac' : preTotal < postTotal ? '#fca5a5' : '#e2e8f0'}`,
+                    borderRadius: 8, padding: '6px 14px'
+                  }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: preTotal > postTotal ? '#15803d' : preTotal < postTotal ? '#dc2626' : '#475569', margin: 0 }}>
+                      {preTotal > postTotal ? `${preTotal - postTotal} point improvement` : preTotal < postTotal ? `${postTotal - preTotal} point increase` : 'No change'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════
+          PAGE 3+: Eye Gaze Trajectories
+      ═══════════════════════════════════════════════════ */}
+      {trajectoryList.length > 0 && (
+        <div style={{ pageBreakBefore: 'always', breakBefore: 'page', paddingTop: 40 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', margin: '0 0 4px', borderBottom: '2px solid #e2e8f0', paddingBottom: 10 }}>
+            Eye Gaze Trajectories
+          </h2>
+          <p style={{ fontSize: 12, color: '#64748b', margin: '8px 0 24px' }}>
+            Target path (green) vs. recorded eye gaze (purple) for each exercise pattern.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+            {trajectoryList.map((seg, i) => (
+              <div key={i} style={{
+                border: '1px solid #e2e8f0',
+                borderRadius: 12,
+                overflow: 'hidden',
+                pageBreakInside: 'avoid',
+                breakInside: 'avoid',
+              }}>
+                {/* Segment header */}
+                <div style={{ background: '#f1f5f9', padding: '12px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: 0 }}>{seg.patternName}</h3>
+                  <span style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>
+                    {seg.points.length.toLocaleString()} data points
+                  </span>
+                </div>
+
+                {/* Charts */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, padding: '24px 16px 24px 4px', background: 'white' }}>
+                  {/* X axis */}
+                  <div>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, margin: '0 0 12px' }}>
+                      Horizontal (X-axis)
+                    </p>
+                    <div style={{ height: 160 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={seg.points} margin={{ top: 10, right: 15, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" vertical={false} />
+                          <XAxis 
+                            dataKey="t" 
+                            tick={{ fill: '#94a3b8', fontSize: 8 }} 
+                            tickLine={false} 
+                            interval="preserveStartEnd" 
+                            minTickGap={30}
+                            tickFormatter={(val) => Number(val).toFixed(1)}
+                          />
+                          <YAxis 
+                            width={36}
+                            tick={{ fill: '#94a3b8', fontSize: 8 }} 
+                            tickLine={false} 
+                            axisLine={false}
+                            tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
+                          />
+                          <ReferenceLine y={50} stroke="#f1f5f9" strokeDasharray="4 4" />
+                          <Line type="monotone" dataKey="targetX" stroke="#10b981" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                          <Line type="monotone" dataKey="gazeX" stroke="#8b5cf6" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Y axis */}
+                  <div>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, margin: '0 0 12px' }}>
+                      Vertical (Y-axis)
+                    </p>
+                    <div style={{ height: 160 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={seg.points} margin={{ top: 10, right: 15, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" vertical={false} />
+                          <XAxis 
+                            dataKey="t" 
+                            tick={{ fill: '#94a3b8', fontSize: 8 }} 
+                            tickLine={false} 
+                            interval="preserveStartEnd" 
+                            minTickGap={30}
+                            tickFormatter={(val) => Number(val).toFixed(1)}
+                          />
+                          <YAxis 
+                            width={36}
+                            tick={{ fill: '#94a3b8', fontSize: 8 }} 
+                            tickLine={false} 
+                            axisLine={false}
+                            tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
+                          />
+                          <ReferenceLine y={50} stroke="#f1f5f9" strokeDasharray="4 4" />
+                          <Line type="monotone" dataKey="targetY" stroke="#10b981" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                          <Line type="monotone" dataKey="gazeY" stroke="#8b5cf6" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div style={{ background: '#f8fafc', padding: '8px 20px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ display: 'inline-block', width: 24, height: 3, background: '#10b981', borderRadius: 2 }} />
+                    <span style={{ fontSize: 11, color: '#475569', fontWeight: 500 }}>Target Path</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ display: 'inline-block', width: 24, height: 3, background: '#8b5cf6', borderRadius: 2 }} />
+                    <span style={{ fontSize: 11, color: '#475569', fontWeight: 500 }}>Eye Gaze</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{ marginTop: 40, paddingTop: 16, borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <p style={{ fontSize: 10, color: '#94a3b8', margin: 0 }}>
+          This report is for personal reference only and does not constitute a medical diagnosis.
+        </p>
+        <p style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', margin: 0 }}>
+          {data.id}
+        </p>
+      </div>
+    </div>
+  );
+}

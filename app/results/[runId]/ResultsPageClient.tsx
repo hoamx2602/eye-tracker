@@ -65,7 +65,7 @@ interface RunData {
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <div className="mb-6">
+    <div className="mb-6 print:break-after-avoid">
       <h2 className="text-xl font-bold text-white">{title}</h2>
       {subtitle && <p className="text-sm text-gray-400 mt-1">{subtitle}</p>}
     </div>
@@ -193,29 +193,46 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
     : null;
 
   return (
-    <div className="h-screen overflow-y-auto bg-gray-950 text-white scrollbar-thin">
-      {/* Nav bar */}
-      <div className="sticky top-0 z-40 border-b border-gray-800/60 bg-gray-950/90 backdrop-blur-sm">
-        <div className="mx-auto max-w-4xl flex items-center gap-3 px-4 py-3">
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
-            <svg viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.5" className="w-4 h-4">
-              <circle cx="10" cy="10" r="8" />
-              <circle cx="10" cy="10" r="3.5" />
-              <circle cx="10" cy="10" r="1" fill="white" stroke="none" />
-            </svg>
-          </div>
-          <span className="text-sm font-semibold text-white">Eye Assessment</span>
+    <>
+      <style>{`
+        @media print {
+          @page { margin: 0; }
+          body {
+            background-color: #030712 !important; /* bg-gray-950 */
+          }
+          /* Force exact identical rendering */
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
+        }
+      `}</style>
+      <div 
+        className="h-screen overflow-y-auto print:h-auto print:overflow-visible bg-gray-950 text-white scrollbar-thin"
+      >
+        {/* Nav bar */}
+        <div className="sticky top-0 z-40 border-b border-gray-800/60 bg-gray-950/90 backdrop-blur-sm print:hidden">
+          <div className="mx-auto max-w-4xl flex items-center gap-3 px-4 py-3">
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+              <svg viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.5" className="w-4 h-4">
+                <circle cx="10" cy="10" r="8" />
+                <circle cx="10" cy="10" r="3.5" />
+                <circle cx="10" cy="10" r="1" fill="white" stroke="none" />
+              </svg>
+            </div>
+            <span className="text-sm font-semibold text-white">Eye Assessment</span>
           <span className="ml-auto text-xs text-gray-500">{assessmentDate}</span>
         </div>
       </div>
 
-      <div className="mx-auto max-w-4xl px-4 py-10 space-y-12">
+      <div className="mx-auto max-w-4xl px-4 py-10 print:py-16 print:px-8 space-y-12">
 
         {/* ——————————————————————————————————————————————
             Section A — Header
         —————————————————————————————————————————————— */}
         <section>
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 sm:p-8">
+          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 sm:p-8 print:break-inside-avoid">
             <p className="text-xs text-gray-500 uppercase tracking-widest mb-2 font-semibold">Assessment complete</p>
             <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
               Your Assessment Results
@@ -239,7 +256,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
             title="Eye Tracking Profile"
             subtitle="How accurately the eye tracker followed your gaze."
           />
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 flex flex-col items-center gap-4 mb-6">
+          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 flex flex-col items-center gap-4 mb-6 print:break-inside-avoid">
             <h3 className="text-sm font-semibold text-gray-300 self-start">Gaze Accuracy</h3>
             {etScore != null ? (
               <AccuracyDial score={etScore} />
@@ -260,39 +277,8 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
             subtitle="Your performance across all neurological assessment domains."
           />
 
-          {/* Radar chart */}
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 mb-6">
-            <ResponsiveContainer width="100%" height={300}>
-              <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
-                <PolarGrid stroke="#374151" />
-                <PolarAngleAxis
-                  dataKey="domain"
-                  tick={{ fill: '#9ca3af', fontSize: 11 }}
-                />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '12px' }}
-                  labelStyle={{ color: '#f9fafb', fontWeight: 600 }}
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  formatter={(value: any, _name: any, props: any) => {
-                    const notAssessed = props?.payload?.notAssessed;
-                    return [notAssessed ? 'Not assessed' : `${value ?? 0} / 100`, ''];
-                  }}
-                />
-                <Radar
-                  name="Score"
-                  dataKey="score"
-                  stroke="#3b82f6"
-                  fill="#3b82f6"
-                  fillOpacity={0.25}
-                  dot={{ fill: '#60a5fa', strokeWidth: 0, r: 4 }}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-            <p className="text-xs text-gray-600 text-center mt-1">Domains in amber scored below 40 — labelled "Room to grow".</p>
-          </div>
-
           {/* Score cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="flex flex-col gap-5">
             {scores.map((s) => {
               const selfAssess = (testResults[s.testId]?.selfAssessment as {
                 focusRating?: number;
@@ -303,7 +289,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
                 <div
                   key={s.testId}
                   className={[
-                    'rounded-2xl border p-5 flex flex-col gap-3',
+                    'rounded-2xl border p-6 flex flex-col gap-4 print:break-inside-avoid',
                     s.score === null
                       ? 'border-gray-800/50 bg-gray-900/30 opacity-60'
                       : s.score < 40
@@ -311,29 +297,50 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
                       : 'border-gray-800 bg-gray-900/50',
                   ].join(' ')}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">{DOMAIN_ICONS[s.testId] ?? '●'}</span>
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gray-800/50 flex items-center justify-center text-2xl border border-gray-700/50">
+                      {DOMAIN_ICONS[s.testId] ?? '●'}
+                    </div>
                     <div className="flex-1">
-                      <p className="text-sm font-semibold text-white">{s.domainName}</p>
-                      {s.score === null ? (
-                        <p className="text-xs text-gray-500">Not assessed</p>
-                      ) : (
-                        <p className={`text-xs font-bold ${s.score >= 70 ? 'text-emerald-400' : s.score >= 40 ? 'text-blue-400' : 'text-amber-400'}`}>
-                          {s.score < 40 ? 'Room to grow' : s.score >= 70 ? 'Strong' : 'Good'} · {s.score} / 100
-                        </p>
-                      )}
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-base font-bold text-white">{s.domainName}</p>
+                          {s.score !== null && (
+                            <p className={`text-xs font-semibold mt-0.5 ${s.score >= 70 ? 'text-emerald-400' : s.score >= 40 ? 'text-blue-400' : 'text-amber-400'}`}>
+                              {s.score < 40 ? 'Moderate performance - Room to grow' : s.score >= 70 ? 'Optimal processing' : 'Good performance'}
+                            </p>
+                          )}
+                        </div>
+                        {s.score !== null && (
+                          <div className="text-right">
+                            <span className={`text-2xl font-black ${s.score >= 70 ? 'text-emerald-400' : s.score >= 40 ? 'text-blue-400' : 'text-amber-400'}`}>
+                              {s.score}
+                            </span>
+                            <span className="text-xs text-gray-500 font-bold ml-1">/ 100</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <ScoreBar score={s.score} disabled={s.score === null} />
+                  <div className="px-1">
+                    <ScoreBar score={s.score} disabled={s.score === null} />
+                  </div>
 
-                  <p className="text-xs text-gray-400 leading-snug">{s.observation}</p>
+                  <p className="text-sm text-gray-400 leading-relaxed px-1">
+                    {s.observation}
+                  </p>
 
                   {/* Self-assessment comparison */}
                   {selfAssess?.accuracyPrediction != null && s.score !== null && (
-                    <p className="text-xs text-gray-600 border-t border-gray-800 pt-2">
-                      You predicted <span className="text-gray-400">{selfAssess.accuracyPrediction}/5</span> · Actual score: <span className="text-gray-400">{s.score}</span>
-                    </p>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 border-t border-gray-800/50 pt-3 px-1">
+                      <svg className="w-3.5 h-3.5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>
+                        Self-assessment check: You predicted <span className="text-gray-300 font-medium">{selfAssess.accuracyPrediction}/5</span>
+                      </span>
+                    </div>
                   )}
                 </div>
               );
@@ -350,7 +357,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
               title="Self-Assessment Reflection"
               subtitle="How your predictions compared to your actual results."
             />
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6">
+            <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 print:break-inside-avoid">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -410,7 +417,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
               title="Symptom Change"
               subtitle="Your reported symptoms before and after completing the assessment."
             />
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6">
+            <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 print:break-inside-avoid">
               <p className="text-sm text-gray-300 mb-5">
                 Your overall symptom score changed from{' '}
                 <span className="font-bold text-white">{preTotal}</span>
@@ -448,19 +455,19 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
         {/* ——————————————————————————————————————————————
             Section F — Download
         —————————————————————————————————————————————— */}
-        <section>
+        <section className="print:hidden">
           <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 text-center">
             <p className="text-gray-400 text-sm mb-4">Save a copy of your results for your personal records.</p>
-            <button
-              type="button"
-              onClick={() => window.print()}
+            <a
+              href={`/api/results/${runData.id}/pdf`}
+              download
               className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold text-sm transition shadow-[0_8px_24px_rgba(0,140,255,0.22)]"
             >
               <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 12v3a1 1 0 001 1h10a1 1 0 001-1v-3M10 3v9m0 0l-3-3m3 3l3-3" />
               </svg>
               Download My Results (PDF)
-            </button>
+            </a>
             <p className="text-xs text-gray-600 mt-3">
               This report is for personal reference only and does not constitute a medical diagnosis.
               <br />Session: <span className="font-mono text-gray-700">{runData.id}</span>
@@ -470,5 +477,6 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
 
       </div>
     </div>
+    </>
   );
 }
