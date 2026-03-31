@@ -174,6 +174,8 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
   const postTotal = symptomTotal(postSymptomScores);
   const hasSymptoms = preSymptomScores !== null && postSymptomScores !== null;
 
+  const [pdfLoading, setPdfLoading] = useState(false);
+
   // Radar chart data
   const radarData = scores.map((s) => ({
     domain: s.domainName,
@@ -378,16 +380,43 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
         <section className="print:hidden">
           <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 text-center">
             <p className="text-gray-400 text-sm mb-4">Save a copy of your results for your personal records.</p>
-            <a
-              href={`/api/results/${runData.id}/pdf`}
-              download
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold text-sm transition shadow-[0_8px_24px_rgba(0,140,255,0.22)]"
+            <button
+              onClick={async () => {
+                if (pdfLoading) return;
+                setPdfLoading(true);
+                try {
+                  const res = await fetch(`/api/results/${runData.id}/pdf`);
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `assessment-report-${runData.id.slice(-8)}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } finally {
+                  setPdfLoading(false);
+                }
+              }}
+              disabled={pdfLoading}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 disabled:opacity-70 disabled:cursor-not-allowed text-white font-semibold text-sm transition shadow-[0_8px_24px_rgba(0,140,255,0.22)]"
             >
-              <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 12v3a1 1 0 001 1h10a1 1 0 001-1v-3M10 3v9m0 0l-3-3m3 3l3-3" />
-              </svg>
-              Download My Results (PDF)
-            </a>
+              {pdfLoading ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Generating PDF…
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 12v3a1 1 0 001 1h10a1 1 0 001-1v-3M10 3v9m0 0l-3-3m3 3l3-3" />
+                  </svg>
+                  Download My Results (PDF)
+                </>
+              )}
+            </button>
             <p className="text-xs text-gray-600 mt-3">
               This report is for personal reference only and does not constitute a medical diagnosis.
               <br />Session: <span className="font-mono text-gray-700">{runData.id}</span>

@@ -117,13 +117,20 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
       </div>
 
       {/* Overview strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 28 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 14, marginBottom: 28 }}>
         <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 12, padding: '16px 20px' }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: '#0369a1', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Eye Tracking Accuracy</p>
           <p style={{ fontSize: 40, fontWeight: 900, color: '#0c4a6e', margin: '6px 0 0', lineHeight: 1 }}>
             {etScore !== null ? etScore : '—'}
           </p>
           <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>out of 100</p>
+        </div>
+        <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 12, padding: '16px 20px' }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Mean Gaze Error</p>
+          <p style={{ fontSize: 40, fontWeight: 900, color: '#4c1d95', margin: '6px 0 0', lineHeight: 1 }}>
+            {session.meanErrorPx != null ? Math.round(session.meanErrorPx) : '—'}
+          </p>
+          <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>pixels deviation</p>
         </div>
         <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px' }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: '#15803d', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Tests Completed</p>
