@@ -7,8 +7,11 @@ export type DemographicsData = {
   age: number | '';
   gender: string;
   country: string;
+  device: string;
   eyeConditions: string[];
 };
+
+import countriesData from '@/lib/countries.json';
 
 const GENDER_OPTIONS = [
   { value: '', label: 'Prefer not to say' },
@@ -31,9 +34,12 @@ const EYE_CONDITION_OPTIONS = [
   { id: 'other', label: 'Other' },
 ];
 
-const COUNTRY_LIST = [
-  '', 'United States', 'United Kingdom', 'Canada', 'Australia', 'Germany', 'France', 'Japan', 'Vietnam',
-  'India', 'Brazil', 'Netherlands', 'Spain', 'Italy', 'South Korea', 'China', 'Singapore', 'Other',
+const DEVICE_OPTIONS = [
+  { value: '', label: 'Select device...' },
+  { value: 'laptop', label: 'Laptop' },
+  { value: 'desktop', label: 'Desktop (Webcam base)' },
+  { value: 'tablet', label: 'Tablet' },
+  { value: 'other', label: 'Other' },
 ];
 
 type DemographicsFormProps = {
@@ -46,6 +52,7 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
   const [age, setAge] = useState<number | ''>('');
   const [gender, setGender] = useState('');
   const [country, setCountry] = useState('');
+  const [device, setDevice] = useState('');
   const [eyeConditions, setEyeConditions] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +80,7 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
       age: ageNum,
       gender: gender.trim() || 'prefer_not_to_say',
       country: country.trim() || 'not_specified',
+      device: device.trim() || 'not_specified',
       eyeConditions: eyeConditions.length === 0 ? ['none'] : eyeConditions.filter((x) => x !== 'none'),
     });
   };
@@ -87,45 +95,75 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
         {error && (
           <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/30 rounded-lg px-3 py-2">{error}</p>
         )}
-        <div>
-          <label htmlFor="demographics-age" className="block text-sm font-medium text-gray-300 mb-1">Age *</label>
-          <input
-            id="demographics-age"
-            type="number"
-            min={1}
-            max={120}
-            value={age === '' ? '' : age}
-            onChange={(e) => setAge(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="e.g. 25"
-            required
-          />
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="demographics-age" className="block text-sm font-medium text-gray-300 mb-1">Age *</label>
+            <input
+              id="demographics-age"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={age === '' ? '' : age}
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^0-9]/g, '');
+                if (val === '') {
+                  setAge('');
+                  return;
+                }
+                const num = parseInt(val, 10);
+                if (num <= 120) {
+                  setAge(num);
+                }
+              }}
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g. 25"
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="demographics-gender" className="block text-sm font-medium text-gray-300 mb-1">Gender</label>
+            <select
+              id="demographics-gender"
+              value={gender}
+              onChange={(e) => setGender(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              {GENDER_OPTIONS.map((o) => (
+                <option key={o.value || 'empty'} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div>
-          <label htmlFor="demographics-gender" className="block text-sm font-medium text-gray-300 mb-1">Gender</label>
-          <select
-            id="demographics-gender"
-            value={gender}
-            onChange={(e) => setGender(e.target.value)}
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            {GENDER_OPTIONS.map((o) => (
-              <option key={o.value || 'empty'} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="demographics-country" className="block text-sm font-medium text-gray-300 mb-1">Country</label>
-          <select
-            id="demographics-country"
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            {COUNTRY_LIST.map((c) => (
-              <option key={c || 'empty'} value={c}>{c || 'Select...'}</option>
-            ))}
-          </select>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="demographics-country" className="block text-sm font-medium text-gray-300 mb-1">Country</label>
+            <select
+              id="demographics-country"
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">Select...</option>
+              {countriesData.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.flag} {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="demographics-device" className="block text-sm font-medium text-gray-300 mb-1">Testing Device</label>
+            <select
+              id="demographics-device"
+              value={device}
+              onChange={(e) => setDevice(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              {DEVICE_OPTIONS.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
         <div>
           <span className="block text-sm font-medium text-gray-300 mb-2">Eye conditions (check any that apply)</span>
