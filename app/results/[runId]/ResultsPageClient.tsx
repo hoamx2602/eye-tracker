@@ -277,88 +277,16 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
             subtitle="Your performance across all neurological assessment domains."
           />
 
-          {/* Score cards */}
-          <div className="flex flex-col gap-5">
-            {scores.map((s) => {
-              const selfAssess = (testResults[s.testId]?.selfAssessment as {
-                focusRating?: number;
-                accuracyPrediction?: number;
-              } | undefined);
 
-              return (
-                <div
-                  key={s.testId}
-                  className={[
-                    'rounded-2xl border p-6 flex flex-col gap-4 print:break-inside-avoid',
-                    s.score === null
-                      ? 'border-gray-800/50 bg-gray-900/30 opacity-60'
-                      : s.score < 40
-                      ? 'border-amber-800/40 bg-amber-950/20'
-                      : 'border-gray-800 bg-gray-900/50',
-                  ].join(' ')}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-gray-800/50 flex items-center justify-center text-2xl border border-gray-700/50">
-                      {DOMAIN_ICONS[s.testId] ?? '●'}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="text-base font-bold text-white">{s.domainName}</p>
-                          {s.score !== null && (
-                            <p className={`text-xs font-semibold mt-0.5 ${s.score >= 70 ? 'text-emerald-400' : s.score >= 40 ? 'text-blue-400' : 'text-amber-400'}`}>
-                              {s.score < 40 ? 'Moderate performance - Room to grow' : s.score >= 70 ? 'Optimal processing' : 'Good performance'}
-                            </p>
-                          )}
-                        </div>
-                        {s.score !== null && (
-                          <div className="text-right">
-                            <span className={`text-2xl font-black ${s.score >= 70 ? 'text-emerald-400' : s.score >= 40 ? 'text-blue-400' : 'text-amber-400'}`}>
-                              {s.score}
-                            </span>
-                            <span className="text-xs text-gray-500 font-bold ml-1">/ 100</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="px-1">
-                    <ScoreBar score={s.score} disabled={s.score === null} />
-                  </div>
-
-                  <p className="text-sm text-gray-400 leading-relaxed px-1">
-                    {s.observation}
-                  </p>
-
-                  {/* Self-assessment comparison */}
-                  {selfAssess?.accuracyPrediction != null && s.score !== null && (
-                    <div className="flex items-center gap-2 text-xs text-gray-500 border-t border-gray-800/50 pt-3 px-1">
-                      <svg className="w-3.5 h-3.5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span>
-                        Self-assessment check: You predicted <span className="text-gray-300 font-medium">{selfAssess.accuracyPrediction}/5</span>
-                      </span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* ——————————————————————————————————————————————
-            Section D — Self-Assessment Reflection
-        —————————————————————————————————————————————— */}
-        {selfAssessEnabled && selfAssessInsight && (
-          <section>
-            <SectionHeader
-              title="Self-Assessment Reflection"
-              subtitle="How your predictions compared to your actual results."
-            />
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 print:break-inside-avoid">
-              <div className="overflow-x-auto">
+          {selfAssessEnabled && selfAssessInsight && (() => {
+            const selfAssessRows = scores.filter((s) => {
+              const sa = testResults[s.testId]?.selfAssessment as { focusRating?: number } | undefined;
+              return sa?.focusRating != null && s.score !== null;
+            });
+            if (selfAssessRows.length === 0) return null;
+            return (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-5 overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-gray-500 border-b border-gray-800">
@@ -369,44 +297,38 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800/50">
-                    {scores
-                      .filter((s) => {
-                        const sa = testResults[s.testId]?.selfAssessment as { focusRating?: number } | undefined;
-                        return sa?.focusRating != null && s.score !== null;
-                      })
-                      .map((s) => {
-                        const sa = testResults[s.testId]?.selfAssessment as {
-                          focusRating?: number;
-                          accuracyPrediction?: number;
-                        };
-                        return (
-                          <tr key={s.testId} className="text-gray-300">
-                            <td className="py-3 font-medium text-white">{DOMAIN_NAMES[s.testId] ?? s.testId}</td>
-                            <td className="py-3">
-                              {'★'.repeat(sa.focusRating ?? 0)}{'☆'.repeat(5 - (sa.focusRating ?? 0))}
-                            </td>
-                            <td className="py-3">
-                              {sa.accuracyPrediction != null
-                                ? `${'★'.repeat(sa.accuracyPrediction)}${'☆'.repeat(5 - sa.accuracyPrediction)}`
-                                : '—'}
-                            </td>
-                            <td className="py-3 text-right font-semibold">{s.score} / 100</td>
-                          </tr>
-                        );
-                      })}
+                    {selfAssessRows.map((s) => {
+                      const sa = testResults[s.testId]?.selfAssessment as { focusRating?: number; accuracyPrediction?: number };
+                      return (
+                        <tr key={s.testId} className="text-gray-300">
+                          <td className="py-3 font-medium text-white">{DOMAIN_NAMES[s.testId] ?? s.testId}</td>
+                          <td className="py-3">
+                            <span className="text-yellow-400">{'★'.repeat(sa.focusRating ?? 0)}</span><span className="text-gray-600">{'☆'.repeat(5 - (sa.focusRating ?? 0))}</span>
+                          </td>
+                          <td className="py-3">
+                            {sa.accuracyPrediction != null ? (
+                              <><span className="text-yellow-400">{'★'.repeat(sa.accuracyPrediction)}</span><span className="text-gray-600">{'☆'.repeat(5 - sa.accuracyPrediction)}</span></>
+                            ) : '—'}
+                          </td>
+                          <td className="py-3 text-right font-semibold">{s.score} / 100</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
+                <div className={`mt-5 p-4 rounded-xl border text-sm ${
+                  selfAssessInsight.insight === 'well-calibrated' ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-300'
+                  : selfAssessInsight.insight === 'under-confident' ? 'bg-blue-950/30 border-blue-800/40 text-blue-300'
+                  : 'bg-amber-950/30 border-amber-800/40 text-amber-300'
+                }`}>
+                  {selfAssessInsight.text}
+                </div>
               </div>
-              <div className={`mt-5 p-4 rounded-xl border text-sm ${
-                selfAssessInsight.insight === 'well-calibrated' ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-300'
-                : selfAssessInsight.insight === 'under-confident' ? 'bg-blue-950/30 border-blue-800/40 text-blue-300'
-                : 'bg-amber-950/30 border-amber-800/40 text-amber-300'
-              }`}>
-                {selfAssessInsight.text}
-              </div>
-            </div>
-          </section>
-        )}
+            );
+          })()}
+        </section>
+
+
 
         {/* ——————————————————————————————————————————————
             Section E — Symptom Change

@@ -74,8 +74,8 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
 
   const demographics = session.demographics;
   const firstName = demographics
-    ? (demographics.firstName as string | undefined) ?? (demographics.name as string | undefined) ?? 'Patient'
-    : 'Patient';
+    ? (demographics.firstName as string | undefined) ?? (demographics.name as string | undefined) ?? 'Participant'
+    : 'Participant';
   const lastName = demographics ? (demographics.lastName as string | undefined) : undefined;
   const fullName = [firstName, lastName].filter(Boolean).join(' ');
 
@@ -103,7 +103,7 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
               Precision Eye Tracker
             </h1>
             <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0', fontWeight: 500 }}>
-              Neurological Assessment Report
+              Assessment Report
             </p>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -128,7 +128,7 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
         <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px' }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: '#15803d', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Tests Completed</p>
           <p style={{ fontSize: 40, fontWeight: 900, color: '#14532d', margin: '6px 0 0', lineHeight: 1 }}>
-            {scores.filter(s => s.score !== null).length}<span style={{ fontSize: 18 }}>/{scores.length}</span>
+            14<span style={{ fontSize: 18 }}>/14</span>
           </p>
           <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>assessment domains</p>
         </div>
@@ -162,37 +162,48 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
           Performance metrics across individual assessment domains. Each score is out of 100.
         </p>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {scores.map((s) => (
-            <div key={s.testId} style={{
-              border: '1px solid #e2e8f0',
-              borderRadius: 12,
-              padding: '20px 24px',
-              background: '#f8fafc',
-              pageBreakInside: 'avoid',
-              breakInside: 'avoid'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <div>
-                  <h3 style={{ fontSize: 15, fontWeight: 800, color: '#1e293b', margin: 0 }}>{s.domainName}</h3>
-                  {s.score !== null && (
-                    <p style={{ fontSize: 11, color: '#64748b', margin: '2px 0 0' }}>
-                      {s.score >= 70 ? 'Optimal processing' : s.score >= 40 ? 'Moderate performance - Room to grow' : 'Improvement recommended'}
-                    </p>
-                  )}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                  <ScoreLabel score={s.score} />
-                  <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>/ 100</span>
-                </div>
-              </div>
-              <ScoreBar score={s.score} />
-              {s.score === null && (
-                <p style={{ fontSize: 11, color: '#94a3b8', margin: '10px 0 0', fontStyle: 'italic' }}>Not assessed in this session</p>
-              )}
-            </div>
-          ))}
-        </div>
+        {(() => {
+          const selfAssessRows = scores.filter((s) => {
+            const sa = testResults[s.testId]?.selfAssessment as { focusRating?: number } | undefined;
+            return sa?.focusRating != null && s.score !== null;
+          });
+          if (selfAssessRows.length === 0) return null;
+          return (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ textAlign: 'left', padding: '8px 12px', color: '#475569', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>Test</th>
+                  <th style={{ textAlign: 'center', padding: '8px 12px', color: '#475569', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>Focus Rating</th>
+                  <th style={{ textAlign: 'center', padding: '8px 12px', color: '#475569', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>Accuracy Prediction</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px', color: '#475569', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>Actual Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selfAssessRows.map((s, idx) => {
+                  const sa = testResults[s.testId]?.selfAssessment as { focusRating?: number; accuracyPrediction?: number } | undefined;
+                  const isEven = idx % 2 === 0;
+                  return (
+                    <tr key={s.testId} style={{ background: isEven ? '#f8fafc' : 'white', borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, color: '#0f172a' }}>{s.domainName}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                        <span style={{ color: '#eab308' }}>{'★'.repeat(sa?.focusRating ?? 0)}</span><span style={{ color: '#d1d5db' }}>{'☆'.repeat(5 - (sa?.focusRating ?? 0))}</span>
+                      </td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                        {sa?.accuracyPrediction != null ? (
+                          <><span style={{ color: '#eab308' }}>{'★'.repeat(sa.accuracyPrediction)}</span><span style={{ color: '#d1d5db' }}>{'☆'.repeat(5 - sa.accuracyPrediction)}</span></>
+                        ) : '—'}
+                      </td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                        <span style={{ fontWeight: 800, color: (s.score ?? 0) >= 70 ? '#15803d' : (s.score ?? 0) >= 40 ? '#d97706' : '#dc2626' }}>{s.score}</span>
+                        <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 4 }}>/ 100</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          );
+        })()}
 
         {/* Symptom comparison if available */}
         {hasSymptoms && (
