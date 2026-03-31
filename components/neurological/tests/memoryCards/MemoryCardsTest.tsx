@@ -100,6 +100,8 @@ export default function MemoryCardsTest() {
   const dwellStartRef = useRef<number>(0);
   const lockedRef = useRef(false);
   const flipBackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firstSelectedRef = useRef<number | null>(null);
+  const secondSelectedRef = useRef<number | null>(null);
 
   const pairCount = Math.floor(cardCount / 2);
   const allMatched = matched.size === pairCount * 2;
@@ -108,27 +110,40 @@ export default function MemoryCardsTest() {
     (index: number) => {
       if (lockedRef.current) return;
       const value = board[index];
-      if (value < 0) return; // empty cell (9×9)
+      if (value < 0) return;
       if (matched.has(index)) return;
-      if (firstSelected === null) {
+      
+      // Use refs to prevent more than 2 cards being flipped in rapid succession
+      if (firstSelectedRef.current === index || secondSelectedRef.current === index) return;
+      if (secondSelectedRef.current !== null) return;
+
+      if (firstSelectedRef.current === null) {
+        firstSelectedRef.current = index;
         setFirstSelected(index);
         setRevealed((r) => new Set(r).add(index));
         return;
       }
-      if (firstSelected === index) return;
-      if (secondSelected !== null) return;
+
+      // Second card
+      secondSelectedRef.current = index;
       setSecondSelected(index);
       setRevealed((r) => new Set(r).add(index));
+      
       const ts = performance.now();
-      const match = board[firstSelected] === value;
+      const firstIdx = firstSelectedRef.current;
+      const match = board[firstIdx] === value;
+      
       movesRef.current.push({
-        card1Index: firstSelected,
+        card1Index: firstIdx,
         card2Index: index,
         match,
         timestamp: ts,
       });
+
       if (match) {
-        setMatched((m) => new Set(m).add(firstSelected).add(index));
+        setMatched((m) => new Set(m).add(firstIdx).add(index));
+        firstSelectedRef.current = null;
+        secondSelectedRef.current = null;
         setFirstSelected(null);
         setSecondSelected(null);
       } else {
@@ -137,10 +152,12 @@ export default function MemoryCardsTest() {
         flipBackTimeoutRef.current = setTimeout(() => {
           setRevealed((r) => {
             const next = new Set(r);
-            next.delete(firstSelected);
+            next.delete(firstIdx);
             next.delete(index);
             return next;
           });
+          firstSelectedRef.current = null;
+          secondSelectedRef.current = null;
           setFirstSelected(null);
           setSecondSelected(null);
           lockedRef.current = false;
@@ -148,7 +165,7 @@ export default function MemoryCardsTest() {
         }, FLIP_BACK_DELAY_MS);
       }
     },
-    [board, firstSelected, secondSelected, matched]
+    [board, matched]
   );
 
   useEffect(() => {
