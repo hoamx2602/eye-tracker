@@ -445,7 +445,7 @@ export default function NeurologicalConfigForm() {
                         label="Card gap (px)"
                         value={Number(params.cardGapPx) || 8}
                         onChange={(v) => setParam(id, 'cardGapPx', v)}
-                        options={[0, 4, 6, 8, 10, 12, 16, 20, 24].map((n) => ({ value: n, label: `${n} px` }))}
+                        options={[0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 56, 64].map((n) => ({ value: n, label: `${n} px` }))}
                       />
                     </>
                   )}
