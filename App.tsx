@@ -477,6 +477,22 @@ function App() {
     startCamera();
   }, [status, hasCameraStream, neuroPhase]);
 
+  // Clean up camera stream on component unmount
+  useEffect(() => {
+    return () => {
+      // Use the video element's srcObject directly to stop tracks on unmount
+      if (videoRef.current?.srcObject) {
+         console.log('[App] Unmounting -> stopping camera');
+         const stream = videoRef.current.srcObject as MediaStream;
+         stream.getTracks().forEach(t => t.stop());
+         videoRef.current.srcObject = null;
+      }
+      if (zoomLockIntervalRef.current) {
+        clearInterval(zoomLockIntervalRef.current);
+      }
+    };
+  }, []);
+
   const startCamera = async () => {
     if (!videoRef.current) return;
     if (zoomLockIntervalRef.current) {
@@ -562,6 +578,14 @@ function App() {
     // Allow the camera to restart if the user redoes tests later.
     hasTriedStartCameraNeuroRef.current = false;
   }, []);
+
+  // Stop camera when entering 'done' phase (after all tests and questionnaires)
+  useEffect(() => {
+    if (status === 'NEURO_FLOW' && neuroPhase === 'done' && hasCameraStream) {
+      neuroDebugLog('Neuro phase done -> stopping camera');
+      stopCamera();
+    }
+  }, [status, neuroPhase, hasCameraStream, stopCamera]);
 
   // --- VIDEO RECORDING FUNCTIONS ---
   const startVideoRecording = () => {
