@@ -40,36 +40,56 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const { id } = await params;
     const body = await request.json().catch(() => ({}));
 
-    const run = await prisma.neurologicalRun.findUnique({ where: { id } });
-    if (!run) {
-      return NextResponse.json({ error: 'Run not found' }, { status: 404 });
-    }
+    // Start a transaction to ensure atomicity
+    return await prisma.$transaction(async (tx) => {
+      const run = await tx.neurologicalRun.findUnique({ 
+        where: { id },
+        select: { status: true } 
+      });
 
-    const update: Prisma.NeurologicalRunUpdateInput = {};
+      if (!run) {
+        return NextResponse.json({ error: 'Run not found' }, { status: 404 });
+      }
 
-    if (body.configSnapshot !== undefined) update.configSnapshot = body.configSnapshot as Prisma.InputJsonValue;
-    if (body.preSymptomScores !== undefined) update.preSymptomScores = body.preSymptomScores as Prisma.InputJsonValue;
-    if (body.postSymptomScores !== undefined) update.postSymptomScores = body.postSymptomScores as Prisma.InputJsonValue;
-    if (body.testOrderSnapshot !== undefined) update.testOrderSnapshot = body.testOrderSnapshot as Prisma.InputJsonValue;
-    if (body.status !== undefined && typeof body.status === 'string') {
-      update.status = body.status;
-    }
+      // Safeguard: Prevent updates to completed or abandoned runs
+      // (Except for certain status transitions if needed, but here we enforce finality)
+      if (run.status === 'completed' || run.status === 'abandoned') {
+        return NextResponse.json({ error: `Cannot update a ${run.status} run` }, { status: 400 });
+      }
 
-    if (body.testResults !== undefined && body.testResults !== null && typeof body.testResults === 'object') {
-      const existing = run.testResults as Record<string, unknown> | null;
-      update.testResults = deepMergeTestResults(existing, body.testResults as Record<string, unknown>) as Prisma.InputJsonValue;
-    }
+      const updateData: any = {};
+      if (body.status !== undefined) updateData.status = body.status;
+      if (body.configSnapshot !== undefined) updateData.configSnapshot = body.configSnapshot;
+      if (body.preSymptomScores !== undefined) updateData.preSymptomScores = body.preSymptomScores;
+      if (body.postSymptomScores !== undefined) updateData.postSymptomScores = body.postSymptomScores;
+      if (body.testOrderSnapshot !== undefined) updateData.testOrderSnapshot = body.testOrderSnapshot;
 
-    const updated = await prisma.neurologicalRun.update({
-      where: { id },
-      data: update,
+      // Update standard fields
+      await tx.neurologicalRun.update({
+        where: { id },
+        data: updateData
+      });
+
+      // Atomic merge for testResults using PostgreSQL JSONB concatenation
+      if (body.testResults && typeof body.testResults === 'object') {
+        const incomingJson = JSON.stringify(body.testResults);
+        // Using raw query for atomic JSONB merge (|| operator)
+        // This prevents race conditions where concurrent PATCHes overwrite each other's keys
+        await tx.$executeRaw`
+          UPDATE "NeurologicalRun"
+          SET "testResults" = COALESCE("testResults", '{}'::jsonb) || ${incomingJson}::jsonb,
+              "updatedAt" = NOW()
+          WHERE "id" = ${id}
+        `;
+      }
+
+      const finalRun = await tx.neurologicalRun.findUnique({ where: { id } });
+      return NextResponse.json(finalRun);
     });
-
-    return NextResponse.json(updated);
   } catch (e) {
     console.error('[api/neurological-runs PATCH]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

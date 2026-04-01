@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { PATHS } from '@/lib/paths';
 import {
   NEURO_VERIFY_META_KEY,
@@ -83,101 +83,103 @@ export function useNeuroFlowHandlers({
   setLoadingMsg,
   onStartRealTimeTracking,
 }: UseNeuroFlowHandlersParams) {
+  const [isSaving, setIsSaving] = useState(false);
+
   const handleNeuroTestComplete = useCallback(
     async (testId: string, payload: TestResultPayload) => {
-      let nextResults: Record<string, TestResultPayload> = {};
-      setNeuroTestResults((prev) => {
-        nextResults = { ...prev, [testId]: payload };
-        return nextResults;
-      });
-      neuroDebugLog('test complete', testId, '→ merged keys', Object.keys(nextResults));
-      const pr = payload as Record<string, unknown>;
-      console.log('[Neuro][FlowHandler] payload for', testId, '→ keys:', Object.keys(pr), 'scanningPath:', (pr.scanningPath as unknown[])?.length ?? 'N/A', 'gazePath:', (pr.gazePath as unknown[])?.length ?? 'N/A', 'fixations:', (pr.fixations as unknown[])?.length ?? 'N/A');
+      if (isSaving) return;
+      setIsSaving(true);
       
-      const order = neuroTestOrder.length > 0 ? neuroTestOrder : DEFAULT_TEST_ORDER;
-      const enabled = neuroConfigSnapshot?.testEnabled ?? {};
-      let nextIdx = -1;
-      for (let i = currentNeuroTestIndex + 1; i < order.length; i++) {
-        if (enabled[order[i]] !== false) {
-          nextIdx = i;
-          break;
-        }
-      }
-
-      if (neuroRunId) {
-        try {
-          const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
-          const isFinishing = nextIdx < 0 && skipQ;
-          if (isFinishing) {
-            setLoadingMsg('Saving final results...');
-            setStatus('LOADING_MODEL');
-          }
-          await neurologicalRunsApi.patch(neuroRunId, {
-            testResults: { [testId]: payload },
-            ...(isFinishing ? { status: 'completed' } : {})
-          });
-        } catch (e) {
-          neuroPersistWarn(`PATCH test result failed (${testId})`, e);
-        }
-      }
-
       try {
-        localStorage.setItem(
-          NEURO_TEST_PROGRESS_LS_KEY,
-          JSON.stringify({
-            runId: neuroRunId,
-            phase: nextIdx >= 0 ? 'tests' : 'post',
-            currentTestId: nextIdx >= 0 ? order[nextIdx] : null,
-            currentTestIndex: nextIdx >= 0 ? nextIdx : order.length,
-            testResults: nextResults,
-            savedAt: new Date().toISOString(),
-          })
-        );
-      } catch (_) {}
+        let nextResults: Record<string, TestResultPayload> = {};
+        setNeuroTestResults((prev) => {
+          nextResults = { ...prev, [testId]: payload };
+          return nextResults;
+        });
+        neuroDebugLog('test complete', testId, '→ merged keys', Object.keys(nextResults));
+        
+        const order = neuroTestOrder.length > 0 ? neuroTestOrder : DEFAULT_TEST_ORDER;
+        const enabled = neuroConfigSnapshot?.testEnabled ?? {};
+        let nextIdx = -1;
+        for (let i = currentNeuroTestIndex + 1; i < order.length; i++) {
+          if (enabled[order[i]] !== false) {
+            nextIdx = i;
+            break;
+          }
+        }
 
-      if (typeof window !== 'undefined' && neuroVerifyAfterEachEnabled()) {
+        if (neuroRunId) {
+          try {
+            const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
+            const isFinishing = nextIdx < 0 && skipQ;
+            if (isFinishing) {
+              setLoadingMsg('Saving final results...');
+              setStatus('LOADING_MODEL');
+            }
+            await neurologicalRunsApi.patch(neuroRunId, {
+              testResults: { [testId]: payload },
+              ...(isFinishing ? { status: 'completed' } : {})
+            });
+          } catch (e) {
+            neuroPersistWarn(`PATCH test result failed (${testId})`, e);
+          }
+        }
+
         try {
-          sessionStorage.setItem(NEURO_VERIFY_SNAPSHOT_KEY, JSON.stringify(nextResults));
-          sessionStorage.setItem(
-            NEURO_VERIFY_META_KEY,
+          localStorage.setItem(
+            NEURO_TEST_PROGRESS_LS_KEY,
             JSON.stringify({
-              nextIdx,
-              order,
-              goToPost: nextIdx < 0,
+              runId: neuroRunId,
+              phase: nextIdx >= 0 ? 'tests' : 'post',
+              currentTestId: nextIdx >= 0 ? order[nextIdx] : null,
+              currentTestIndex: nextIdx >= 0 ? nextIdx : order.length,
+              testResults: nextResults,
+              savedAt: new Date().toISOString(),
             })
           );
-        } catch (e) {
-          neuroPersistWarn('verify mode: sessionStorage failed', e);
-        }
-        const vr = nextResults[testId] as { scanningPath?: unknown[]; fixations?: unknown[] } | undefined;
-        neuroDebugLog('verify mode → /neuro/done', testId, {
-          scanningPathLen: vr?.scanningPath?.length ?? 0,
-          fixationsLen: vr?.fixations?.length ?? 0,
-        });
-        pathSyncSourceRef.current = 'internal';
-        setNeuroPhase('done');
-        routerPush(`${PATHS.NEURO_DONE}?verify=1&focus=${encodeURIComponent(testId)}`);
-        return;
-      }
+        } catch (_) {}
 
-      if (nextIdx >= 0) {
-        setCurrentNeuroTestIndex(nextIdx);
-        setCurrentNeuroTestId(order[nextIdx]);
-        pathSyncSourceRef.current = 'internal';
-        routerPush(PATHS.NEURO_TEST(order[nextIdx]));
-      } else {
-        const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
-        if (skipQ) {
-          routerPush(`/results/${neuroRunId}`);
-        } else {
-          setNeuroPhase('post');
-          setCurrentNeuroTestId(null);
-          pathSyncSourceRef.current = 'internal';
-          routerPush(PATHS.NEURO_POST);
+        if (typeof window !== 'undefined' && neuroVerifyAfterEachEnabled()) {
+          try {
+            sessionStorage.setItem(NEURO_VERIFY_SNAPSHOT_KEY, JSON.stringify(nextResults));
+            sessionStorage.setItem(
+              NEURO_VERIFY_META_KEY,
+              JSON.stringify({
+                nextIdx,
+                order,
+                goToPost: nextIdx < 0,
+              })
+            );
+          } catch (e) {
+            neuroPersistWarn('verify mode: sessionStorage failed', e);
+          }
+          setNeuroPhase('done');
+          routerPush(`${PATHS.NEURO_DONE}?verify=1&focus=${encodeURIComponent(testId)}`);
+          return;
         }
+
+        if (nextIdx >= 0) {
+          setCurrentNeuroTestIndex(nextIdx);
+          setCurrentNeuroTestId(order[nextIdx]);
+          pathSyncSourceRef.current = 'internal';
+          routerPush(PATHS.NEURO_TEST(order[nextIdx]));
+        } else {
+          const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
+          if (skipQ) {
+            routerPush(`/results/${neuroRunId}`);
+          } else {
+            setNeuroPhase('post');
+            setCurrentNeuroTestId(null);
+            pathSyncSourceRef.current = 'internal';
+            routerPush(PATHS.NEURO_POST);
+          }
+        }
+      } finally {
+        setIsSaving(false);
       }
     },
     [
+      isSaving,
       neuroRunId,
       neuroTestOrder,
       neuroConfigSnapshot?.testEnabled,
@@ -189,46 +191,55 @@ export function useNeuroFlowHandlers({
       setNeuroPhase,
       pathSyncSourceRef,
       routerPush,
+      setLoadingMsg,
+      setStatus,
     ]
   );
 
   const handleNeuroPreSubmit = useCallback(
     async (scores: SymptomScores) => {
-      setPreSymptomScores(scores);
-      const questionnaire = buildQuestionnairePayload('pre', scores);
+      if (isSaving) return;
+      setIsSaving(true);
       try {
-        localStorage.setItem(NEURO_PRE_QUESTIONNAIRE_LS_KEY, JSON.stringify(questionnaire));
-      } catch (_) {}
-      if (neuroRunId) {
+        setPreSymptomScores(scores);
+        const questionnaire = buildQuestionnairePayload('pre', scores);
         try {
-          await neurologicalRunsApi.patch(neuroRunId, { preSymptomScores: questionnaire as unknown as Record<string, number> });
-        } catch (e) {
-          console.error('Patch pre scores failed', e);
+          localStorage.setItem(NEURO_PRE_QUESTIONNAIRE_LS_KEY, JSON.stringify(questionnaire));
+        } catch (_) {}
+        if (neuroRunId) {
+          try {
+            await neurologicalRunsApi.patch(neuroRunId, { preSymptomScores: questionnaire as unknown as Record<string, number> });
+          } catch (e) {
+            console.error('Patch pre scores failed', e);
+          }
         }
-      }
-      const order = neuroTestOrder.length > 0 ? neuroTestOrder : DEFAULT_TEST_ORDER;
-      const enabled = neuroConfigSnapshot?.testEnabled ?? {};
-      let idx = -1;
-      for (let i = 0; i < order.length; i++) {
-        if (enabled[order[i]] !== false) {
-          idx = i;
-          break;
+        const order = neuroTestOrder.length > 0 ? neuroTestOrder : DEFAULT_TEST_ORDER;
+        const enabled = neuroConfigSnapshot?.testEnabled ?? {};
+        let idx = -1;
+        for (let i = 0; i < order.length; i++) {
+          if (enabled[order[i]] !== false) {
+            idx = i;
+            break;
+          }
         }
-      }
-      if (idx < 0) {
-        setNeuroPhase('post');
-        setCurrentNeuroTestId(null);
-        pathSyncSourceRef.current = 'internal';
-        routerPush(PATHS.NEURO_POST);
-      } else {
-        setNeuroPhase('tests');
-        setCurrentNeuroTestIndex(idx);
-        setCurrentNeuroTestId(order[idx]);
-        pathSyncSourceRef.current = 'internal';
-        routerPush(PATHS.NEURO_TEST(order[idx]));
+        if (idx < 0) {
+          setNeuroPhase('post');
+          setCurrentNeuroTestId(null);
+          pathSyncSourceRef.current = 'internal';
+          routerPush(PATHS.NEURO_POST);
+        } else {
+          setNeuroPhase('tests');
+          setCurrentNeuroTestIndex(idx);
+          setCurrentNeuroTestId(order[idx]);
+          pathSyncSourceRef.current = 'internal';
+          routerPush(PATHS.NEURO_TEST(order[idx]));
+        }
+      } finally {
+        setIsSaving(false);
       }
     },
     [
+      isSaving,
       neuroRunId,
       neuroTestOrder,
       neuroConfigSnapshot?.testEnabled,
@@ -244,45 +255,54 @@ export function useNeuroFlowHandlers({
 
   const handleNeuroPostSubmit = useCallback(
     async (scores: SymptomScores) => {
-      setPostSymptomScores(scores);
-      const questionnaire = buildQuestionnairePayload('post', scores);
+      if (isSaving) return;
+      setIsSaving(true);
       try {
-        localStorage.setItem(NEURO_POST_QUESTIONNAIRE_LS_KEY, JSON.stringify(questionnaire));
-      } catch (_) {}
-      if (neuroRunId) {
+        setPostSymptomScores(scores);
+        const questionnaire = buildQuestionnairePayload('post', scores);
         try {
-          setLoadingMsg('Saving final results...');
-          setStatus('LOADING_MODEL');
-          await neurologicalRunsApi.patch(neuroRunId, {
-            postSymptomScores: questionnaire as unknown as Record<string, number>,
-            status: 'completed',
-          });
-        } catch (e) {
-          console.error('Patch post scores failed', e);
+          localStorage.setItem(NEURO_POST_QUESTIONNAIRE_LS_KEY, JSON.stringify(questionnaire));
+        } catch (_) {}
+        if (neuroRunId) {
+          try {
+            setLoadingMsg('Saving final results...');
+            setStatus('LOADING_MODEL');
+            await neurologicalRunsApi.patch(neuroRunId, {
+              postSymptomScores: questionnaire as unknown as Record<string, number>,
+              status: 'completed',
+            });
+          } catch (e) {
+            console.error('Patch post scores failed', e);
+          }
         }
+        routerPush(`/results/${neuroRunId}`);
+      } finally {
+        setIsSaving(false);
       }
-      routerPush(`/results/${neuroRunId}`);
     },
     [
+      isSaving,
       neuroRunId,
       setPostSymptomScores,
-      setNeuroPhase,
-      pathSyncSourceRef,
+      setLoadingMsg,
+      setStatus,
       routerPush,
       NEURO_POST_QUESTIONNAIRE_LS_KEY,
     ]
   );
 
   const handleNeuroExitRun = useCallback(async () => {
+    if (isSaving) return;
     if (neuroRunId) {
       try {
         await neurologicalRunsApi.patch(neuroRunId, { status: 'abandoned' });
       } catch (_) {}
     }
     onStartRealTimeTracking();
-  }, [neuroRunId, onStartRealTimeTracking]);
+  }, [isSaving, neuroRunId, onStartRealTimeTracking]);
 
   return {
+    isSaving,
     handleNeuroTestComplete,
     handleNeuroPreSubmit,
     handleNeuroPostSubmit,
