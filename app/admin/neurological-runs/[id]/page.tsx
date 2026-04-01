@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { createPortal } from 'react-dom';
+import { angularErrorDeg } from '@/lib/resultScoring';
 
 // Re-use the exact same visualization + metrics components from the user-facing results screen
 import NeurologicalResultParamsDrawer from '@/components/neurological/results/NeurologicalResultParamsDrawer';
@@ -640,6 +641,9 @@ export default function AdminNeuroRunDetailPage() {
               <dt className="text-xs text-slate-500 uppercase">Calibration mean error</dt>
               <dd className="text-sm text-slate-200 mt-0.5 tabular-nums">
                 {run.session.meanErrorPx.toFixed(1)} px
+                <span className="text-slate-400 text-xs ml-1">
+                  / {angularErrorDeg(run.session.meanErrorPx).toFixed(2)}°
+                </span>
                 <span className="text-slate-500 text-xs ml-1">(affects gaze accuracy)</span>
               </dd>
             </div>

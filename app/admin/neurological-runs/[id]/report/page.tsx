@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { angularErrorDeg } from '@/lib/resultScoring';
 
 // ── Types (mirrors admin detail page) ──────────────────────────────────────────
 
@@ -710,7 +711,11 @@ function NeurologicalRunReportInner() {
               {run.session?.meanErrorPx != null && (
                 <div className="meta-item">
                   <dt>Calibration Error</dt>
-                  <dd>{run.session.meanErrorPx.toFixed(1)} px
+                  <dd>
+                    {run.session.meanErrorPx.toFixed(1)} px
+                    <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 4 }}>
+                      / {angularErrorDeg(run.session.meanErrorPx).toFixed(2)}°
+                    </span>
                     <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 4 }}>
                       {run.session.meanErrorPx < 30 ? '(Good)' : run.session.meanErrorPx < 60 ? '(Acceptable)' : '(Poor)'}
                     </span>

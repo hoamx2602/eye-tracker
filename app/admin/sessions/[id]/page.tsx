@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import SessionAnalytics from '@/components/SessionAnalytics';
 import type { TestTrajectorySegment } from '@/components/SessionAnalytics';
+import { angularErrorDeg } from '@/lib/resultScoring';
 
 type CalibrationSample = {
   screenX?: number;
@@ -287,9 +288,21 @@ export default function AdminSessionDetailPage() {
             <dd className="text-sm text-slate-200 mt-0.5">{session.status ?? '—'}</dd>
           </div>
           <div>
-            <dt className="text-xs text-slate-500 uppercase">Mean error (px)</dt>
+            <dt className="text-xs text-slate-500 uppercase">Mean error</dt>
             <dd className="text-sm text-slate-200 mt-0.5 tabular-nums">
-              {session.meanErrorPx != null ? session.meanErrorPx.toFixed(2) : '—'}
+              {session.meanErrorPx != null ? (
+                <>
+                  {session.meanErrorPx.toFixed(2)} px
+                  <span className="text-slate-400 text-xs ml-1">
+                    / {angularErrorDeg(
+                      session.meanErrorPx,
+                      (session.config && typeof session.config === 'object'
+                        ? ((session.config as Record<string, unknown>).faceDistance as number | undefined)
+                        : undefined) ?? 60
+                    ).toFixed(2)}°
+                  </span>
+                </>
+              ) : '—'}
             </dd>
           </div>
           <div>
@@ -354,6 +367,11 @@ export default function AdminSessionDetailPage() {
             samples={samples}
             validationErrors={session.validationErrors}
             meanErrorPx={session.meanErrorPx}
+            faceDistanceCm={
+              session.config && typeof session.config === 'object'
+                ? ((session.config as Record<string, unknown>).faceDistance as number | undefined)
+                : undefined
+            }
             testTrajectories={session.testTrajectories ?? (session.config && typeof session.config === 'object' && Array.isArray((session.config as Record<string, unknown>).testTrajectories) ? (session.config as { testTrajectories: TestTrajectorySegment[] }).testTrajectories : undefined)}
           />
         </div>

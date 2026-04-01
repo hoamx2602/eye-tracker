@@ -98,6 +98,171 @@ function ScoreBar({ score, disabled }: { score: number | null; disabled?: boolea
   );
 }
 
+/**
+ * Diagram showing pixel error (line) + angular error (arc θ).
+ * Gaze point position is scaled proportionally to the actual pixelError.
+ * Hover reveals an exact-value tooltip.
+ */
+function GazeErrorDiagram({
+  pixelError,
+  angularError,
+  viewingDistanceCm,
+}: {
+  pixelError: number;
+  angularError: number;
+  viewingDistanceCm: number;
+}) {
+  const [lineHover, setLineHover] = React.useState(false);
+  const [arcHover, setArcHover] = React.useState(false);
+
+  const W = 220, H = 148;
+  const tx = 58, ty = 108;       // target — fixed
+  const ANGLE = -Math.PI / 5.5; // ~32.7° above horizontal
+
+  // Scale pixelError → visual distance (18–85 px in SVG coords)
+  const visualDist = 18 + (Math.min(pixelError, 110) / 110) * 67;
+  const gx = tx + visualDist * Math.cos(ANGLE);
+  const gy = ty + visualDist * Math.sin(ANGLE);
+
+  const arcR = Math.max(13, Math.min(visualDist * 0.42, 34));
+  const arcEndX = tx + arcR * Math.cos(ANGLE);
+  const arcEndY = ty + arcR * Math.sin(ANGLE);
+  const refEndX = Math.min(gx + 18, W - 4);
+
+  // ── Line callout geometry ──────────────────────────────────────────────────
+  const lineMidX = (tx + gx) / 2;
+  const lineMidY = (ty + gy) / 2;
+  const lineLen = Math.hypot(gx - tx, gy - ty);
+  const lineUx = lineLen > 0 ? (gx - tx) / lineLen : 0;
+  const lineUy = lineLen > 0 ? (gy - ty) / lineLen : -1;
+  // Perpendicular pointing upper-left (away from the gaze direction)
+  const linePerpX = lineUy;   // negative → leftward
+  const linePerpY = -lineUx;  // negative → upward
+  const lineLeaderEndX = lineMidX + linePerpX * 22;
+  const lineLeaderEndY = lineMidY + linePerpY * 22;
+  const lineShelfDir = lineLeaderEndX >= lineMidX ? 1 : -1;
+  const lineShelfEndX = lineLeaderEndX + lineShelfDir * 16;
+  const lineTextX = lineShelfEndX + lineShelfDir * 2;
+
+  // ── Arc callout geometry ──────────────────────────────────────────────────
+  const midAngle = ANGLE / 2;
+  const arcAnchorX = tx + arcR * Math.cos(midAngle);
+  const arcAnchorY = ty + arcR * Math.sin(midAngle);
+  const arcLeaderEndX = arcAnchorX + Math.cos(midAngle) * 22;
+  const arcLeaderEndY = arcAnchorY + Math.sin(midAngle) * 22;
+  const arcShelfDir = arcLeaderEndX >= tx ? 1 : -1;
+  const arcShelfEndX = arcLeaderEndX + arcShelfDir * 16;
+  const arcTextX = arcShelfEndX + arcShelfDir * 2;
+
+  const CALLOUT = '#22c55e';
+  const GRID = 22;
+
+  return (
+    <div className="relative cursor-default">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ overflow: 'visible' }}>
+        {/* Grid */}
+        {Array.from({ length: Math.ceil(W / GRID) }, (_, i) => (
+          <line key={`v${i}`} x1={(i + 1) * GRID} y1={0} x2={(i + 1) * GRID} y2={H} stroke="#1f2937" strokeWidth="1" />
+        ))}
+        {Array.from({ length: Math.ceil(H / GRID) }, (_, i) => (
+          <line key={`h${i}`} x1={0} y1={(i + 1) * GRID} x2={W} y2={(i + 1) * GRID} stroke="#1f2937" strokeWidth="1" />
+        ))}
+
+        {/* Horizontal reference */}
+        <line x1={tx} y1={ty} x2={refEndX} y2={ty} stroke="#374151" strokeWidth="1.5" strokeDasharray="4 3" />
+
+        {/* ── Pixel error line (hoverable) ── */}
+        <g onMouseEnter={() => setLineHover(true)} onMouseLeave={() => setLineHover(false)} style={{ cursor: 'pointer' }}>
+          <line
+            x1={tx} y1={ty} x2={gx} y2={gy}
+            stroke={lineHover ? '#94a3b8' : '#6b7280'}
+            strokeWidth={lineHover ? 2.5 : 1.5}
+            style={{ transition: 'stroke 0.12s, stroke-width 0.12s' }}
+          />
+          <line x1={tx} y1={ty} x2={gx} y2={gy} stroke="transparent" strokeWidth="14" />
+        </g>
+
+        {/* ── Angular arc (hoverable) ── */}
+        <g onMouseEnter={() => setArcHover(true)} onMouseLeave={() => setArcHover(false)} style={{ cursor: 'pointer' }}>
+          <path
+            d={`M ${tx} ${ty} L ${tx + arcR} ${ty} A ${arcR} ${arcR} 0 0 1 ${arcEndX.toFixed(1)} ${arcEndY.toFixed(1)} Z`}
+            fill={arcHover ? 'rgba(96,165,250,0.15)' : 'transparent'}
+            style={{ transition: 'fill 0.18s' }}
+          />
+          <path
+            d={`M ${(tx + arcR).toFixed(1)} ${ty} A ${arcR} ${arcR} 0 0 1 ${arcEndX.toFixed(1)} ${arcEndY.toFixed(1)}`}
+            fill="none" stroke="#60a5fa"
+            strokeWidth={arcHover ? 2.5 : 1.5}
+            style={{ transition: 'stroke-width 0.12s' }}
+          />
+          {/* Wide invisible hit area */}
+          <path
+            d={`M ${tx} ${ty} L ${tx + arcR} ${ty} A ${arcR} ${arcR} 0 0 1 ${arcEndX.toFixed(1)} ${arcEndY.toFixed(1)} Z`}
+            fill="transparent" stroke="transparent" strokeWidth="8"
+          />
+        </g>
+
+        {/* θ static label — hidden while callout is shown */}
+        {!arcHover && (
+          <text x={tx + arcR + 4} y={ty - 4} fill="#60a5fa" fontSize="11" fontStyle="italic">θ</text>
+        )}
+
+        {/* Target cross */}
+        <line x1={tx - 8} y1={ty} x2={tx + 8} y2={ty} stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
+        <line x1={tx} y1={ty - 8} x2={tx} y2={ty + 8} stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
+
+        {/* Gaze circle */}
+        <circle cx={gx} cy={gy} r="9" fill="#3b82f6" />
+
+        {/* Static labels */}
+        {gx + 14 < W - 46 && (
+          <>
+            <text x={gx + 14} y={gy - 3} fill="#93c5fd" fontSize="8.5">Measured</text>
+            <text x={gx + 14} y={gy + 8} fill="#93c5fd" fontSize="8.5">Gaze Point</text>
+          </>
+        )}
+        <text x={tx - 4} y={ty + 18} fill="#fca5a5" fontSize="8.5">Target</text>
+        <text x={tx - 4} y={ty + 28} fill="#fca5a5" fontSize="8.5">Point</text>
+
+        {/* ── Pixel error callout: dot → leader → shelf → value ── */}
+        {lineHover && (
+          <g>
+            <circle cx={lineMidX} cy={lineMidY} r="2.5" fill={CALLOUT} />
+            <line x1={lineMidX} y1={lineMidY} x2={lineLeaderEndX} y2={lineLeaderEndY} stroke={CALLOUT} strokeWidth="1" />
+            <line x1={lineLeaderEndX} y1={lineLeaderEndY} x2={lineShelfEndX} y2={lineLeaderEndY} stroke={CALLOUT} strokeWidth="1" />
+            <text
+              x={lineTextX} y={lineLeaderEndY}
+              fontSize="7.5" fill={CALLOUT} fontFamily="monospace"
+              textAnchor={lineShelfDir > 0 ? 'start' : 'end'}
+              dominantBaseline="middle"
+            >
+              {pixelError.toFixed(1)} px
+            </text>
+          </g>
+        )}
+
+        {/* ── Angular error callout: dot → leader → shelf → value ── */}
+        {arcHover && (
+          <g>
+            <circle cx={arcAnchorX} cy={arcAnchorY} r="2.5" fill={CALLOUT} />
+            <line x1={arcAnchorX} y1={arcAnchorY} x2={arcLeaderEndX} y2={arcLeaderEndY} stroke={CALLOUT} strokeWidth="1" />
+            <line x1={arcLeaderEndX} y1={arcLeaderEndY} x2={arcShelfEndX} y2={arcLeaderEndY} stroke={CALLOUT} strokeWidth="1" />
+            <text
+              x={arcTextX} y={arcLeaderEndY}
+              fontSize="7.5" fill={CALLOUT} fontFamily="monospace"
+              textAnchor={arcShelfDir > 0 ? 'start' : 'end'}
+              dominantBaseline="middle"
+            >
+              θ = {angularError.toFixed(2)}°{' '}
+              <tspan fill="#6b7280">@ {viewingDistanceCm}cm</tspan>
+            </text>
+          </g>
+        )}
+      </svg>
+    </div>
+  );
+}
+
 /** Accuracy dial / gauge (SVG arc) */
 function AccuracyDial({ score }: { score: number }) {
   const radius = 52;
@@ -255,23 +420,39 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
               </h1>
               <p className="text-sm text-gray-400 mb-5">{assessmentDate}</p>
               {meanErrorPx != null && (
-                <div className="flex flex-wrap items-center gap-4">
+                <div className="space-y-4">
                   <div className={`inline-flex items-center gap-2 text-sm font-medium ${calibrationQualityColour(meanErrorPx)}`}>
                     <span className="text-lg">●</span>
                     <span>{calibrationQualityLabel(meanErrorPx)}</span>
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-gray-400">
-                    <span className="font-mono bg-gray-800 px-2 py-1 rounded">
-                      <span className="text-gray-500">Error </span>
-                      <span className="text-white font-semibold">{meanErrorPx.toFixed(1)} px</span>
-                    </span>
-                    {angularErr != null && (
-                      <span className="font-mono bg-gray-800 px-2 py-1 rounded">
-                        <span className="text-gray-500">≈ </span>
-                        <span className="text-white font-semibold">{angularErr.toFixed(2)}°</span>
-                        <span className="text-gray-500"> visual angle</span>
-                      </span>
-                    )}
+                  <div className="flex items-start gap-3">
+                    {/* Diagram — dominant, fills available space */}
+                    <div className="flex-1 min-w-0 rounded-xl border border-gray-800 bg-gray-900/70 p-2 overflow-visible">
+                      <GazeErrorDiagram
+                        pixelError={meanErrorPx}
+                        angularError={angularErr ?? 0}
+                        viewingDistanceCm={viewingDistanceCm}
+                      />
+                    </div>
+                    {/* Value cards — compact, shrink-0 */}
+                    <div className="shrink-0 flex flex-col gap-2 w-[160px]">
+                      <div className="rounded-xl border border-gray-800 bg-gray-900/70 px-3 py-2.5">
+                        <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-0.5">Pixel Error</div>
+                        <div className="text-lg font-mono font-bold text-white tabular-nums leading-tight">
+                          {meanErrorPx.toFixed(1)}<span className="text-xs text-gray-400 ml-1">px</span>
+                        </div>
+                        <div className="text-[9px] text-gray-600 mt-0.5">Euclidean distance on screen</div>
+                      </div>
+                      {angularErr != null && (
+                        <div className="rounded-xl border border-blue-900/40 bg-blue-950/20 px-3 py-2.5">
+                          <div className="text-[9px] text-blue-400/70 uppercase tracking-wider mb-0.5">Angular Error (θ)</div>
+                          <div className="text-lg font-mono font-bold text-blue-300 tabular-nums leading-tight">
+                            {angularErr.toFixed(2)}<span className="text-xs text-blue-400/60 ml-1">°</span>
+                          </div>
+                          <div className="text-[9px] text-gray-600 mt-0.5">Visual angle @ {viewingDistanceCm} cm</div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
