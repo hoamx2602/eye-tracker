@@ -33,6 +33,8 @@ type UseNeuroFlowHandlersParams = {
   setPostSymptomScores: React.Dispatch<React.SetStateAction<SymptomScores | null>>;
   pathSyncSourceRef: React.MutableRefObject<'url' | 'internal'>;
   routerPush: (href: string) => void;
+  setStatus: (s: any) => void;
+  setLoadingMsg: (msg: string) => void;
   onStartRealTimeTracking: () => void;
 };
 
@@ -77,6 +79,8 @@ export function useNeuroFlowHandlers({
   setPostSymptomScores,
   pathSyncSourceRef,
   routerPush,
+  setStatus,
+  setLoadingMsg,
   onStartRealTimeTracking,
 }: UseNeuroFlowHandlersParams) {
   const handleNeuroTestComplete = useCallback(
@@ -103,9 +107,14 @@ export function useNeuroFlowHandlers({
       if (neuroRunId) {
         try {
           const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
+          const isFinishing = nextIdx < 0 && skipQ;
+          if (isFinishing) {
+            setLoadingMsg('Saving final results...');
+            setStatus('LOADING_MODEL');
+          }
           await neurologicalRunsApi.patch(neuroRunId, {
             testResults: { [testId]: payload },
-            ...(nextIdx < 0 && skipQ ? { status: 'completed' } : {})
+            ...(isFinishing ? { status: 'completed' } : {})
           });
         } catch (e) {
           neuroPersistWarn(`PATCH test result failed (${testId})`, e);
@@ -159,9 +168,6 @@ export function useNeuroFlowHandlers({
       } else {
         const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
         if (skipQ) {
-          setNeuroPhase('done');
-          setCurrentNeuroTestId(null);
-          pathSyncSourceRef.current = 'internal';
           routerPush(`/results/${neuroRunId}`);
         } else {
           setNeuroPhase('post');
@@ -245,6 +251,8 @@ export function useNeuroFlowHandlers({
       } catch (_) {}
       if (neuroRunId) {
         try {
+          setLoadingMsg('Saving final results...');
+          setStatus('LOADING_MODEL');
           await neurologicalRunsApi.patch(neuroRunId, {
             postSymptomScores: questionnaire as unknown as Record<string, number>,
             status: 'completed',
@@ -253,8 +261,6 @@ export function useNeuroFlowHandlers({
           console.error('Patch post scores failed', e);
         }
       }
-      setNeuroPhase('done');
-      pathSyncSourceRef.current = 'internal';
       routerPush(`/results/${neuroRunId}`);
     },
     [

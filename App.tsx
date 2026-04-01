@@ -142,6 +142,19 @@ function App() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const routerPush = useCallback(
+    (url: string) => {
+      console.log('[App] routerPush:', url);
+      if (typeof window !== 'undefined') {
+        if (url.startsWith('/results/')) {
+          router.push(url);
+        } else {
+          window.history.pushState(null, '', url);
+        }
+      }
+    },
+    [router]
+  );
 
   const currentScreen = useMemo(() => {
     return parsePathname(typeof pathname === 'string' ? pathname : '/').screen;
@@ -1784,15 +1797,9 @@ function App() {
     setPreSymptomScores,
     setPostSymptomScores,
     pathSyncSourceRef,
-    routerPush: (url: string) => {
-      if (typeof window !== 'undefined') {
-        if (url.startsWith('/results/')) {
-          router.push(url);
-        } else {
-          window.history.pushState(null, '', url);
-        }
-      }
-    },
+    routerPush,
+    setStatus,
+    setLoadingMsg,
     onStartRealTimeTracking: startRealTimeTracking,
   });
 
@@ -2132,6 +2139,8 @@ function App() {
         testResultCount: Object.keys(mergedResults).length,
       });
       try {
+        setLoadingMsg('Saving final results...');
+        setStatus('LOADING_MODEL');
         const updated = await neurologicalRunsApi.patch(runIdForSave, {
           preSymptomScores: (preQuestionnaire ?? preSymptomScores ?? {}) as unknown as Record<string, number>,
           postSymptomScores: postQuestionnaire as unknown as Record<string, number>,
@@ -2159,9 +2168,7 @@ function App() {
     }
     // Stop camera now that the run is saved — the OS indicator should turn off.
     stopCamera();
-    setNeuroPhase('done');
-    pathSyncSourceRef.current = 'internal';
-    if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_DONE);
+    routerPush(`/results/${neuroRunId}`);
     setShowPostSubmitConfirm(false);
     setPendingPostSymptomScores(null);
   }, [
@@ -2173,6 +2180,7 @@ function App() {
     resolveNeuroRunIdFromStorage,
     buildQuestionnairePayload,
     stopCamera,
+    routerPush,
     router,
   ]);
 
