@@ -183,7 +183,6 @@ export default function NeurologicalFlowSection({
         <SymptomAssessment
           variant="pre"
           onSubmit={onPreSubmit}
-          onBack={onExitRun}
         />
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'head_orientation' && (
@@ -345,7 +344,6 @@ export default function NeurologicalFlowSection({
         <SymptomAssessment
           variant="post"
           onSubmit={onPostSubmit}
-          onBack={onExitRun}
         />
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'post' && showPostSubmitConfirm && (

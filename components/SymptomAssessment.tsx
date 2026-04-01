@@ -17,8 +17,6 @@ export type SymptomAssessmentVariant = 'pre' | 'post';
 type SymptomAssessmentProps = {
   variant: SymptomAssessmentVariant;
   onSubmit: (scores: SymptomScores) => void;
-  /** Optional back button (e.g. for pre-test to return to choice) */
-  onBack?: () => void;
 };
 
 const TITLE_PRE = 'Pre-test symptom assessment';
@@ -27,7 +25,6 @@ const TITLE_POST = 'Post-test symptom assessment';
 export default function SymptomAssessment({
   variant,
   onSubmit,
-  onBack,
 }: SymptomAssessmentProps) {
   const [scores, setScores] = useState<Partial<SymptomScores>>({});
   const [error, setError] = useState<string | null>(null);
@@ -146,21 +143,11 @@ export default function SymptomAssessment({
           ))}
         </div>
 
-        {/* Footer */}
-        <div className="flex-shrink-0 p-6 border-t border-gray-800 flex gap-3 justify-end">
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="px-5 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium rounded-xl transition"
-            >
-              Back
-            </button>
-          )}
+        <div className="flex-shrink-0 p-6 border-t border-gray-800 flex justify-end">
           <button
             type="submit"
             disabled={!isComplete}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-xl transition"
+            className="px-8 py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition shadow-[0_0_20px_rgba(37,99,235,0.3)] shadow-glow"
           >
             Continue
           </button>
