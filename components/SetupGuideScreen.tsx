@@ -65,15 +65,15 @@ function CameraStep({
     <div className="flex flex-col items-center gap-6">
       {/* Camera icon / preview */}
       <div className="relative w-full max-w-xs aspect-video rounded-2xl overflow-hidden bg-gray-800 border border-gray-700 flex items-center justify-center">
-        {status === 'granted' ? (
-          <video
-            ref={videoRef}
-            className="w-full h-full object-cover scale-x-[-1]"
-            muted
-            playsInline
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-3 text-gray-500">
+        <video
+          ref={videoRef}
+          className={`w-full h-full object-cover scale-x-[-1] ${status === 'granted' ? 'block' : 'hidden'}`}
+          muted
+          playsInline
+        />
+
+        {status !== 'granted' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-500 bg-gray-800">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-12 h-12">
               <path strokeLinecap="round" strokeLinejoin="round"
                 d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
