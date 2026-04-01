@@ -1,6 +1,3 @@
-// Prisma schema — PostgreSQL (Neon/Supabase recommended for Vercel serverless)
-// Run: npx prisma migrate dev (local) or npx prisma migrate deploy (CI/production)
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,101 +8,59 @@ datasource db {
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Snapshot of app config at session start (JSON)
-  config Json?
-
-  // Demographics at calibration time (age, gender, country, eyeConditions)
-  demographics Json?
-
-  // After calibration: validation errors per point (pixels), mean error
-  validationErrors Float[] @default([])
-  meanErrorPx      Float?
-
-  status String? @default("completed")
-
-  // Calibration capture: video + images (URLs from blob storage)
-  videoUrl             String? @db.Text
-  calibrationImageUrls Json?   // string[]
-
-  // Eye tracking data during calibration: array of { screenX, screenY, features?, timestamp? }
+  id                     String           @id @default(cuid())
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  config                 Json?
+  validationErrors       Float[]          @default([])
+  meanErrorPx            Float?
+  status                 String?          @default("completed")
+  videoUrl               String?
+  calibrationImageUrls   Json?
   calibrationGazeSamples Json?
-
-  // Test mode: target vs gaze time-series (one run per session)
-  testRun TestRun?
-
-  // Neurological test run (one per session when user chooses Neurological test after calibration)
-  neurologicalRun NeurologicalRun?
+  demographics           Json?
+  neurologicalRun        NeurologicalRun?
+  testRun                TestRun?
 }
 
 model TestRun {
-  id          String   @id @default(cuid())
-  sessionId   String   @unique
-  session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  // Array of { patternName, points: { t, targetX, targetY, gazeX, gazeY }[] }
+  id           String   @id @default(cuid())
+  sessionId    String   @unique
   trajectories Json
-  createdAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  session      Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
-// --------------------------------------------
-// Neurological experiments: config (admin-editable) and run (per session)
-// --------------------------------------------
 model NeurologicalTestConfig {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Config name (e.g. "default", "v2")
-  name String @default("default") @unique
-
-  // Test order: ["head_orientation", "visual_search", "memory_cards", ...]
-  testOrder Json
-
-  // Parameters per test (key = testId). Admin UI edits; client reads to run.
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  name           String   @unique @default("default")
+  testOrder      Json
   testParameters Json
-
-  // Enable/disable per test (optional; if absent, all enabled)
-  testEnabled Json?
+  testEnabled    Json?
 }
 
 model NeurologicalRun {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  sessionId String   @unique
-  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-
-  // Config snapshot at run time (for analysis independent of later config changes)
-  configSnapshot Json?
-
-  // Pre-test: 12 questions, score 0-4. { "Q1": 0, "Q2": 1, ... }
-  preSymptomScores Json?
-
-  // Post-test: 12 questions, score 0-4
+  id                String   @id @default(cuid())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  sessionId         String   @unique
+  configSnapshot    Json?
+  preSymptomScores  Json?
   postSymptomScores Json?
-
-  // Test order that was run (testId[])
   testOrderSnapshot Json?
-
-  // Results per test: { "head_orientation": { ... }, "visual_search": { ... }, ... }
-  testResults Json?
-
-  // "in_progress" | "completed" | "abandoned"
-  status String @default("in_progress")
+  testResults       Json?
+  status            String   @default("in_progress")
+  session           Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
-// App & calibration config (admin-editable default; app fetches via GET /api/app-config)
 model AppConfig {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  name   String @default("default") @unique
-  config Json   // AppConfig JSON (calibration, smoothing, recording, etc.)
+  name      String   @unique @default("default")
+  config    Json
 }
 
 model Admin {

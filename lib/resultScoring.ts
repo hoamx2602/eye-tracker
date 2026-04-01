@@ -42,11 +42,16 @@ export function p10p90Score(value: number, p10: number, p90: number, invertHighe
 export const SEED_BASELINES = {
   visual_search:      { p10Ms: 20000, p90Ms: 90000 },
   saccadic:           { p10LatencyMs: 150, p90LatencyMs: 600 },
-  fixation_stability: { p10Bcea95: 800,  p90Bcea95: 8000 },
+  // BCEA in CSS pixels². At ~96 dpi / 60 cm: 1° ≈ 40 px → 1°² ≈ 1600 px².
+  // p10 ≈ 2×2° scatter (≈6400 px²), p90 ≈ 4×4° scatter (≈100 000 px²)
+  fixation_stability: { p10Bcea95: 6000, p90Bcea95: 100000 },
   peripheral_vision:  { p10RtMs: 200,    p90RtMs: 800 },
   anti_saccade:       { p10ErrorDeg: 5,  p90ErrorDeg: 60 },
   memory_cards:       { p10Efficiency: 0.5, p90Efficiency: 1.0 },
-  head_orientation:   { p10RangeDeg: 20, p90RangeDeg: 60 },
+  // head_orientation yaw/pitch are in geometric-headpose "scaled radians":
+  //   value = (nose_offset / face_width) × 2π
+  // Typical full side-turn ≈ 1.5–3.0; slight tilt ≈ 0.3–0.8
+  head_orientation:   { p10RangeDeg: 0.5, p90RangeDeg: 2.5 },
 };
 
 type ScoringConfig = Record<string, Record<string, number>>;
@@ -70,10 +75,26 @@ export function scoreHeadOrientation(
   scoringConfig?: ScoringConfig
 ): number {
   const metrics = (result.metrics ?? {}) as Record<string, unknown>;
-  // We expect maxRangeDeg: max range across all axes achieved
-  const rangeDeg = typeof metrics.maxRangeDeg === 'number' ? metrics.maxRangeDeg
+  // Prefer pre-computed metric
+  let rangeDeg = typeof metrics.maxRangeDeg === 'number' ? metrics.maxRangeDeg
     : typeof metrics.rangeYawDeg === 'number' ? metrics.rangeYawDeg
     : null;
+
+  // Fallback: compute from raw phases for runs that pre-date the metrics wrapper
+  if (rangeDeg === null) {
+    const phases = result.phases as Array<{ headSamples?: Array<{ yaw?: number; pitch?: number }> }> | undefined;
+    if (Array.isArray(phases) && phases.length > 0) {
+      let maxVal = 0;
+      for (const ph of phases) {
+        for (const s of ph.headSamples ?? []) {
+          if (typeof s.yaw === 'number') maxVal = Math.max(maxVal, Math.abs(s.yaw));
+          if (typeof s.pitch === 'number') maxVal = Math.max(maxVal, Math.abs(s.pitch));
+        }
+      }
+      if (maxVal > 0) rangeDeg = maxVal;
+    }
+  }
+
   if (rangeDeg === null) return 0;
 
   const p10 = getBaseline('head_orientation', 'p10RangeDeg', scoringConfig);
@@ -106,9 +127,16 @@ export function scoreMemoryCards(
   const metrics = (result.metrics ?? {}) as Record<string, unknown>;
 
   // Efficiency = correctPairs / totalMoves. Higher = better.
-  const correctPairs = typeof metrics.correctPairs === 'number' ? metrics.correctPairs : null;
-  const totalMoves = typeof metrics.totalMoves === 'number' ? metrics.totalMoves : null;
-  const totalPairs = typeof metrics.totalPairs === 'number' ? metrics.totalPairs : 8;
+  // Fall back to top-level fields for runs saved before metrics wrapper was added.
+  const correctPairs = typeof metrics.correctPairs === 'number' ? metrics.correctPairs
+    : typeof result.correctPairsCount === 'number' ? result.correctPairsCount
+    : null;
+  const totalMoves = typeof metrics.totalMoves === 'number' ? metrics.totalMoves
+    : typeof result.numberOfMoves === 'number' ? result.numberOfMoves
+    : null;
+  const totalPairs = typeof metrics.totalPairs === 'number' ? metrics.totalPairs
+    : typeof result.cardCount === 'number' ? (result.cardCount as number) / 2
+    : 8;
 
   let efficiency: number;
   if (correctPairs !== null && totalMoves !== null && totalMoves > 0) {
@@ -353,7 +381,8 @@ export function calibrationQualityColour(meanErrorPx: number | null | undefined)
 }
 
 export function eyeTrackingAccuracyScore(meanErrorPx: number): number {
-  return Math.round(Math.max(0, 100 - meanErrorPx / 1.2));
+  // Score 0–100: 0 px → 100, 300 px → 0 (linear, clamped)
+  return Math.round(Math.max(0, 100 - meanErrorPx / 3));
 }
 
 // ---------------------------------------------------------------------------
