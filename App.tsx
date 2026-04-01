@@ -47,7 +47,7 @@ import StopSaveModal from './components/StopSaveModal';
 import CapturedImageModal from './components/CapturedImageModal';
 import TrackingToolbar from './components/TrackingToolbar';
 import HeadPositioningScreen from './components/HeadPositioningScreen';
-import PostCalibrationChoiceScreen from './components/PostCalibrationChoiceScreen';
+
 import type { SymptomScores } from '@/lib/symptomAssessment';
 import { SYMPTOM_QUESTIONS } from '@/lib/symptomAssessment';
 import type { TestResultPayload } from '@/components/neurological';
@@ -343,7 +343,7 @@ function App() {
           } else if (parsed.screen === 'calibration') {
             setStatus('HEAD_POSITIONING');
           } else if (parsed.screen === 'choice') {
-            setStatus('POST_CALIBRATION_CHOICE');
+            setStatus('IDLE');
           } else if (parsed.screen === 'neuro_pre' || parsed.screen === 'neuro_post' || parsed.screen === 'neuro_done' || parsed.screen === 'neuro_test') {
             setStatus('NEURO_FLOW');
             statusRef.current = 'NEURO_FLOW';
@@ -386,7 +386,7 @@ function App() {
         // Don't override status when at / (could be IDLE, HEAD_POSITIONING, CALIBRATION, or CHOICE)
         break;
       case 'choice':
-        if (status !== 'POST_CALIBRATION_CHOICE') setStatus('POST_CALIBRATION_CHOICE');
+        setStatus('IDLE');
         break;
       case 'consent':
       case 'demographics':
@@ -631,8 +631,7 @@ function App() {
     const isFlowActive = (status === 'NEURO_FLOW' && neuroPhase !== 'done') || 
                          (status === 'TRACKING' && createdSessionId) ||
                          (status === 'CALIBRATION') ||
-                         (status === 'HEAD_POSITIONING') ||
-                         (status === 'POST_CALIBRATION_CHOICE');
+                         (status === 'HEAD_POSITIONING');
                          
     if (!isFlowActive && hasCameraStream) {
       neuroDebugLog('[App] Navigation/State change -> stopping camera automatically');
@@ -1733,12 +1732,9 @@ function App() {
         setLoadingMsg(statusMsg);
         setTimeout(() => {
           pathSyncSourceRef.current = 'internal';
-          flushSync(() => {
-            setCreatedSessionId(created.id);
-            setStatus('POST_CALIBRATION_CHOICE');
-            statusRef.current = 'POST_CALIBRATION_CHOICE';
-          });
-          // Always show choice screen; user must pick Real-time or Neurological (even when CALIBRATION_TEST_MODE=1)
+          setCreatedSessionId(created.id);
+          // Auto-start neurological flow instead of showing choice screen
+          handleChooseNeurological(created.id);
         }, 1200);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -1835,7 +1831,13 @@ function App() {
     }
   }, [router, neuroTestOrder, setNeuroPhase, setCurrentNeuroTestIndex, setCurrentNeuroTestId]);
 
-  const handleChooseNeurological = useCallback(async () => {
+  const handleChooseNeurological = useCallback(async (sid?: string) => {
+    const sessionId = sid || createdSessionId;
+    if (!sessionId) {
+      console.warn('[App] handleChooseNeurological: no sessionId available');
+      return;
+    }
+
     setStatus('NEURO_FLOW');
     statusRef.current = 'NEURO_FLOW';
     setNeuroRunStatus('creating');
@@ -1856,7 +1858,7 @@ function App() {
       try {
         localStorage.setItem(NEURO_CONFIG_LS_KEY, JSON.stringify(configSnapshot));
       } catch (_) {}
-      const run = await neurologicalRunsApi.create(createdSessionId!, configSnapshot);
+      const run = await neurologicalRunsApi.create(sessionId, configSnapshot);
       setNeuroRunId(run.id);
       try {
         sessionStorage.setItem(NEURO_LAST_RUN_ID_SS_KEY, run.id);

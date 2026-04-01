@@ -19,7 +19,7 @@ import StopSaveModal from './StopSaveModal';
 import CapturedImageModal from './CapturedImageModal';
 import TrackingToolbar from './TrackingToolbar';
 import HeadPositioningScreen from './HeadPositioningScreen';
-import PostCalibrationChoiceScreen from './PostCalibrationChoiceScreen';
+
 import SetupGuideScreen from './SetupGuideScreen';
 import EyeSpinner from './ui/EyeSpinner';
 
@@ -325,28 +325,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
         />
       )}
 
-      {status === 'POST_CALIBRATION_CHOICE' && createdSessionId && (
-        <PostCalibrationChoiceScreen
-          sessionId={createdSessionId}
-          onChooseRealTime={onChooseRealTime}
-          onChooseNeurological={onChooseNeurological}
-        />
-      )}
 
-      {status === 'POST_CALIBRATION_CHOICE' && !createdSessionId && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950 p-6">
-          <p className="text-gray-400 text-center max-w-md">
-            No session yet. Complete calibration first to choose Real-time tracking or Neurological tests.
-          </p>
-          <button
-            type="button"
-            onClick={onGoHome}
-            className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
-          >
-            Go to home
-          </button>
-        </div>
-      )}
 
       {((status === 'CALIBRATION' || status === 'TRACKING') && headValidation && !headValidation.valid) && (
         <HeadPositionGuide validation={headValidation} countdown={null} />
