@@ -403,8 +403,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (pathSyncSourceRef.current === 'internal') {
-      pathSyncSourceRef.current = 'url';
+    if (pathSyncSourceRef.current === 'internal' || status === 'LOADING_MODEL') {
+      if (pathSyncSourceRef.current === 'internal') {
+        pathSyncSourceRef.current = 'url';
+      }
       return;
     }
     const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
@@ -970,9 +972,13 @@ function App() {
               }
 
               // During CALIBRATION: if head invalid (wrong distance / off-center), return to Head Positioning after short debounce
-              // Do NOT return to HEAD_POSITIONING if we are showing an assessment modal, 
-              // to avoid interrupting the user answering questions.
-              if (statusRef.current === 'CALIBRATION' && !validation.valid && !assessmentPendingRef.current) {
+              // Do NOT return to HEAD_POSITIONING if we are showing an assessment modal or saving samples,
+              // to avoid interrupting the user.
+              if (
+                statusRef.current === 'CALIBRATION' &&
+                !validation.valid &&
+                !assessmentPendingRef.current
+              ) {
                   if (headInvalidSinceRef.current === null) headInvalidSinceRef.current = now;
                   else if (now - headInvalidSinceRef.current > 500) {
                       headInvalidSinceRef.current = null;
@@ -983,8 +989,8 @@ function App() {
                   headInvalidSinceRef.current = null;
               }
 
-              // Draw Face Mesh on debugCanvas (skip during HEAD_POSITIONING — handled by headPosCanvas)
-              if (statusRef.current !== 'HEAD_POSITIONING') {
+              // Draw Face Mesh on debugCanvas (skip during HEAD_POSITIONING or LOADING_MODEL)
+              if (statusRef.current !== 'HEAD_POSITIONING' && statusRef.current !== 'LOADING_MODEL') {
                   const shouldShowMesh = !validation.valid;
                   const shouldShowDebug = showCameraRef.current;
                   const isHeadOrientationStep =
@@ -1605,6 +1611,9 @@ function App() {
             return;
         }
 
+        setLoadingMsg('Finalizing gaze data and training model...');
+        setStatus('LOADING_MODEL');
+
         const data = trainingSamplesRef.current;
         if (data.length < 5) {
             alert("Insufficient data points. Please restart calibration.");
@@ -1650,6 +1659,7 @@ function App() {
         // Option 2 ('test' mode): Skip Eye Movement Exercises, go directly to Validation to compute Mean Accuracy.
         if (configRef.current.enableExercises && runModeRef.current !== 'test') {
             console.log(`[Calibration] Grid mapping done with ${data.length} samples, starting exercises...`);
+            setStatus('CALIBRATION');
             setCalibPhase(CalibrationPhase.EXERCISES);
             setCurrentExerciseIndex(0);
       exerciseDataRef.current = [];
@@ -1659,6 +1669,7 @@ function App() {
       currentTestSegmentRef.current = [];
       testSegmentStartTimeRef.current = performance.now();
         } else {
+            setStatus('CALIBRATION');
             setCalibPhase(CalibrationPhase.VALIDATION);
             setCalibPoints(VALIDATION_POINTS);
             setCurrentCalibIndex(0);
