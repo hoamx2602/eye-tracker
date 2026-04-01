@@ -279,6 +279,12 @@ export default function MemoryCardsTest() {
       viewportWidth: typeof window !== 'undefined' ? window.innerWidth : undefined,
       viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
       gridRect,
+      metrics: {
+        correctPairs: correctPairsCount,
+        totalMoves: numberOfMoves,
+        totalPairs: cardCount / 2,
+        completionTimeMs,
+      },
     });
   }, [allMatched, completeTest, cardCount, cols, rows]);
 

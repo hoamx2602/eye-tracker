@@ -130,11 +130,25 @@ export default function HeadOrientationTest() {
           clearInterval(intervalRef.current);
           intervalRef.current = null;
         }
+        // Compute max absolute yaw/pitch range across all phases
+        const allSamples = phasesRef.current.flatMap((p) => p.headSamples);
+        const maxYawDeg = allSamples.length
+          ? Math.max(...allSamples.map((s) => Math.abs(s.yaw)))
+          : 0;
+        const maxPitchDeg = allSamples.length
+          ? Math.max(...allSamples.map((s) => Math.abs(s.pitch)))
+          : 0;
+        const maxRangeDeg = Math.max(maxYawDeg, maxPitchDeg);
         completeTestRef.current({
           testId: 'head_orientation',
           startTime: startTimeRef.current,
           endTime: performance.now(),
           phases: phasesRef.current,
+          metrics: {
+            maxRangeDeg,
+            maxYawDeg,
+            maxPitchDeg,
+          },
         });
         try {
           localStorage.setItem(

@@ -129,17 +129,23 @@ export function scoreAntiSaccade(
   scoringConfig?: ScoringConfig
 ): number {
   const metrics = (result.metrics ?? {}) as Record<string, unknown>;
+  // Prefer angular error if available
   const avgAngularErrorDeg = typeof metrics.avgAngularErrorDeg === 'number'
     ? metrics.avgAngularErrorDeg
     : typeof metrics.meanAngularErrorDeg === 'number'
     ? metrics.meanAngularErrorDeg
     : null;
-  if (avgAngularErrorDeg === null) return 0;
-
-  const p10 = getBaseline('anti_saccade', 'p10ErrorDeg', scoringConfig);
-  const p90 = getBaseline('anti_saccade', 'p90ErrorDeg', scoringConfig);
-  // Lower error = better → invert
-  return p10p90Score(avgAngularErrorDeg, p10, p90, true);
+  if (avgAngularErrorDeg !== null) {
+    const p10 = getBaseline('anti_saccade', 'p10ErrorDeg', scoringConfig);
+    const p90 = getBaseline('anti_saccade', 'p90ErrorDeg', scoringConfig);
+    return p10p90Score(avgAngularErrorDeg, p10, p90, true);
+  }
+  // Fall back to directionAccuracy (0–100 percent correct) when angular error isn't stored
+  const dirAccuracy = typeof metrics.directionAccuracy === 'number' ? metrics.directionAccuracy : null;
+  if (dirAccuracy !== null) {
+    return Math.round(clamp(dirAccuracy, 0, 100));
+  }
+  return 0;
 }
 
 export function scoreSaccadic(
@@ -149,6 +155,7 @@ export function scoreSaccadic(
   const metrics = (result.metrics ?? {}) as Record<string, unknown>;
   const avgLatencyMs = typeof metrics.avgLatencyMs === 'number' ? metrics.avgLatencyMs
     : typeof metrics.meanLatencyMs === 'number' ? metrics.meanLatencyMs
+    : typeof metrics.avgLatency === 'number' ? metrics.avgLatency
     : null;
   if (avgLatencyMs === null) return 0;
 
@@ -184,6 +191,7 @@ export function scorePeripheralVision(
     : null;
   const avgRtMs = typeof metrics.avgRtMs === 'number' ? metrics.avgRtMs
     : typeof metrics.avgResponseTimeMs === 'number' ? metrics.avgResponseTimeMs
+    : typeof metrics.avgRT === 'number' ? metrics.avgRT
     : null;
 
   if (accuracy === null) return 0;
@@ -191,8 +199,10 @@ export function scorePeripheralVision(
   const p10Rt = getBaseline('peripheral_vision', 'p10RtMs', scoringConfig);
   const p90Rt = getBaseline('peripheral_vision', 'p90RtMs', scoringConfig);
 
+  // accuracy may be stored as 0-100 or 0-1; normalise to 0-1
+  const accuracyNorm = accuracy > 1 ? accuracy / 100 : accuracy;
   // 70% from accuracy (0-1), 30% from speed
-  const accuracyScore = accuracy * 70;
+  const accuracyScore = accuracyNorm * 70;
   let speedScore = 15; // default mid if no RT data
   if (avgRtMs !== null) {
     // Lower RT = faster = better → invert
