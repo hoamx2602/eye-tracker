@@ -11,23 +11,35 @@ type ConsentModalProps = {
 };
 
 const CONSENT_TEXT = `
-• Will require access to my camera to perform the eye tracking test.
-• Will protect user anonymity by destroying all facial data except retinal tracking data. Users are welcomed to wear a mask when performing the test to support privacy.
-• Will store and protect eye tracking data using the latest security software (level 3, ISO 27001 Security certified data centres in the UK, SSL encryption).
-• May use eye tracking data at a later date to maintain, protect and enhance the service and develop new products.
-• Is not a medical device and does not make claims to diagnose or treat any disease. It is intended to improve individual awareness of health and wellness.
-• Will not capture or store any personal data about individuals who access the website except where they voluntarily choose to give us personal details by using an electronic form to use our services.
+**Study Purpose & Scope**
+• I understand that this system is part of a research project aimed at developing neurological assessment tools using eye-tracking technology. 
+• I am aware that my participation is voluntary and intended to contribute to the advancement of clinical and scientific knowledge.
+• I agree to provide access to my camera for the duration of this session to enable gaze tracking and performance monitoring.
+**Data Collection & Processing**
+• I acknowledge that my eye-movement data (coordinates) and video/image recordings of my face will be collected and processed. 
+• I understand that these data are recorded for the purpose of refining calibration accuracy and verifying test performance.
+• I understand that all data are stored securely in UK-based, ISO 27001 certified data centers with SSL encryption, managed under the UK Data Protection Act 2018 (UK GDPR).
+**Privacy & Anonymity**
+• I understand that while facial imagery is collected, it is strictly used for tracking optimization and will not be used for biometric identity verification or facial recognition purposes.
+• I understand that my data will be pseudonymized (associated with a unique ID rather than my name) and that access is restricted to the research team.
+**Withdrawal & Rights**
+• I understand that I am free to withdraw from the study at any time, without giving any reason and without my legal rights being affected. To withdraw, I can simply close the browser window.
+• I agree that anonymized data collected up to the point of withdrawal may still be used by the research team for analysis.
+**Not a Medical Device**
+• I acknowledge that this tool is not a medical device and is not intended for the diagnosis or treatment of any medical condition. It is for health and wellness awareness and research purposes only.
+
+By clicking "I agree", I confirm that I have read and understood the information above and freely consent to participate in this research study under the terms described.
 `;
 
 export default function ConsentModal({ open, onAgree, onDecline, isPage = false }: ConsentModalProps) {
   const content = (
     <div className={`bg-gray-900 border border-gray-700 rounded-3xl shadow-2xl max-w-xl w-full flex flex-col ${isPage ? 'h-[640px]' : 'max-h-[90vh]'}`}>
       <div className="p-6 border-b border-gray-700">
-        <h2 className="text-xl font-bold text-white">I understand that Eye Tracker:</h2>
-        <p className="text-sm text-gray-400 mt-1">Please read before starting calibration</p>
+        <h2 className="text-xl font-bold text-white uppercase tracking-tight">Participant Consent & Information</h2>
+        <p className="text-sm text-gray-400 mt-1">Please review the research terms carefully</p>
       </div>
       <div className="p-6 overflow-y-auto flex-1 text-sm text-gray-300 whitespace-pre-line leading-relaxed [&>*]:mb-2 scrollbar-invisible">
-        {CONSENT_TEXT.split('\n').map((line, i) => {
+        {CONSENT_TEXT.trim().split('\n').map((line, i) => {
           if (line.startsWith('**') && line.endsWith('**'))
             return <p key={i} className="font-semibold text-white mt-3 first:mt-0">{line.replace(/\*\*/g, '')}</p>;
           if (line.startsWith('• '))

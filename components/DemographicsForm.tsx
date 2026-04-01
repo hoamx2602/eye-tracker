@@ -15,7 +15,7 @@ export type DemographicsData = {
 import countriesData from '@/lib/countries.json';
 
 const GENDER_OPTIONS = [
-  { value: '', label: 'Prefer not to say' },
+  { value: '', label: 'Select...' },
   { value: 'male', label: 'Male' },
   { value: 'female', label: 'Female' },
   { value: 'other', label: 'Other' },
@@ -69,9 +69,13 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
       setError('Please enter a valid age (1–120).');
       return;
     }
+    if (!gender) {
+      setError('Please select your gender.');
+      return;
+    }
     onSubmit({
       age: ageNum,
-      gender: gender.trim() || 'prefer_not_to_say',
+      gender: gender.trim(),
       country: country.trim() || 'not_specified',
       device: 'not_specified',
       eyeConditions: eyeConditions.length === 0 ? ['none'] : eyeConditions.filter((x) => x !== 'none'),
@@ -115,12 +119,13 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
             />
           </div>
           <div>
-            <label htmlFor="demographics-gender" className="block text-sm font-medium text-gray-300 mb-1">Gender</label>
+            <label htmlFor="demographics-gender" className="block text-sm font-medium text-gray-300 mb-1">Gender *</label>
             <select
               id="demographics-gender"
               value={gender}
               onChange={(e) => setGender(e.target.value)}
               className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
             >
               {GENDER_OPTIONS.map((o) => (
                 <option key={o.value || 'empty'} value={o.value}>{o.label}</option>
