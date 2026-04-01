@@ -164,6 +164,8 @@ function App() {
 
   const pathnameRef = useRef<string>(typeof pathname === 'string' ? pathname : '/');
   pathnameRef.current = typeof pathname === 'string' ? pathname : '/';
+  /** Persistent reference to the camera stream to ensure it can be closed even if videoRef is nulled. */
+  const streamRef = useRef<MediaStream | null>(null);
   /** When we push a path from internal transition we skip one pathname sync to avoid overwriting state. */
   const pathSyncSourceRef = useRef<'url' | 'internal'>('url');
 
@@ -389,7 +391,6 @@ function App() {
     init();
   }, []);
 
-  // Sync URL path → state so direct navigation / refresh shows the right screen
   useEffect(() => {
     if (pathSyncSourceRef.current === 'internal') {
       pathSyncSourceRef.current = 'url';
@@ -398,15 +399,14 @@ function App() {
     const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
     switch (parsed.screen) {
       case 'home':
-        // Don't override status when at / (could be IDLE, HEAD_POSITIONING, CALIBRATION, or CHOICE)
-        break;
       case 'choice':
-        setStatus('IDLE');
-        break;
       case 'consent':
       case 'demographics':
       case 'setup':
-        // UI is purely driven by `currentScreen` derived from URL pathname
+        if (status !== 'IDLE') {
+          setStatus('IDLE');
+          statusRef.current = 'IDLE';
+        }
         break;
       case 'calibration':
         if (status !== 'HEAD_POSITIONING' && status !== 'CALIBRATION') {
@@ -557,6 +557,18 @@ function App() {
 
   const startCamera = async () => {
     if (!videoRef.current) return;
+
+    // Absolute safeguard: Do not start the camera on non-eye-tracking pages.
+    const p = typeof window !== 'undefined' ? window.location.pathname : '/';
+    const parsed = parsePathname(p);
+    const noCameraScreens = ['home', 'choice', 'consent', 'demographics', 'setup', 'results'];
+    if (noCameraScreens.includes(parsed.screen)) {
+       if (process.env.NODE_ENV === 'development') {
+         console.warn('[App] Aborting startCamera - on non-camera screen:', parsed.screen);
+       }
+       return;
+    }
+
     if (zoomLockIntervalRef.current) {
       clearInterval(zoomLockIntervalRef.current);
       zoomLockIntervalRef.current = null;
@@ -602,6 +614,7 @@ function App() {
         }
       }
       videoRef.current.srcObject = stream;
+      streamRef.current = stream;
       setHasCameraStream(true);
       await new Promise((resolve) => {
         if (videoRef.current) videoRef.current.onloadedmetadata = resolve;
@@ -636,6 +649,10 @@ function App() {
       (videoRef.current.srcObject as MediaStream).getTracks().forEach((t) => t.stop());
       videoRef.current.srcObject = null;
     }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
     setHasCameraStream(false);
     // Allow the camera to restart if the user redoes tests later.
     hasTriedStartCameraNeuroRef.current = false;
@@ -661,6 +678,18 @@ function App() {
       stopCamera();
     }
   }, [status, neuroPhase, hasCameraStream, createdSessionId, stopCamera]);
+
+  // SAFETY: Force stop camera on screens that don't need it
+  useEffect(() => {
+    const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
+    const noCameraScreens = ['home', 'choice', 'consent', 'demographics', 'setup', 'results'];
+    if (noCameraScreens.includes(parsed.screen)) {
+      if (hasCameraStream) {
+        if (process.env.NODE_ENV === 'development') console.log('[App] Safety Stop Camera for screen:', parsed.screen);
+        stopCamera();
+      }
+    }
+  }, [pathname, hasCameraStream, stopCamera]);
 
   // --- VIDEO RECORDING FUNCTIONS ---
   const startVideoRecording = () => {
@@ -1770,6 +1799,7 @@ function App() {
   };
  
   const reset = useCallback(() => {
+    stopCamera();
     stopVideoRecording();
     setStatus('IDLE');
     setCreatedSessionId(null);
@@ -2468,6 +2498,7 @@ function App() {
   };
 
   const handleStopSaveConfirm = async (options: { csv: boolean; video: boolean; images: boolean }) => {
+    stopCamera(); 
     const csvSnapshot = options.csv ? [...trackingHistoryRef.current] : [];
     const imagesSnapshot = options.images ? [...capturedImages] : [];
     let videoBlob: Blob | null = null;
