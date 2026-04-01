@@ -28,13 +28,13 @@ const DEFAULT_ORDER = [
 ] as const;
 
 const TEST_LABELS: Record<string, string> = {
-  head_orientation: 'Head orientation',
-  visual_search: 'Visual search',
-  memory_cards: 'Memory cards',
-  anti_saccade: 'Anti-saccade',
-  saccadic: 'Saccadic',
-  fixation_stability: 'Fixation stability',
-  peripheral_vision: 'Peripheral vision',
+  head_orientation: 'Head Orientation',
+  visual_search: 'Visual Search',
+  memory_cards: 'Memory Cards',
+  anti_saccade: 'Anti-Saccade',
+  saccadic: 'Saccadic Eye Movement',
+  fixation_stability: 'Fixation Stability',
+  peripheral_vision: 'Peripheral Vision',
 };
 
 function NeurologicalResultsChartToolbar() {

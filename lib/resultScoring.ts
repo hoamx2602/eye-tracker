@@ -287,13 +287,13 @@ export type TestScoreResult = {
 
 /** User-facing domain names per test ID */
 export const DOMAIN_NAMES: Record<string, string> = {
-  head_orientation:   'Head Mobility',
-  visual_search:      'Visual Scanning',
-  memory_cards:       'Visual Memory',
-  anti_saccade:       'Impulse Control',
-  saccadic:           'Eye Movement Speed',
-  fixation_stability: 'Focus Stability',
-  peripheral_vision:  'Peripheral Awareness',
+  head_orientation:   'Head Orientation',
+  visual_search:      'Visual Search',
+  memory_cards:       'Memory Cards',
+  anti_saccade:       'Anti-Saccade',
+  saccadic:           'Saccadic Eye Movement',
+  fixation_stability: 'Fixation Stability',
+  peripheral_vision:  'Peripheral Vision',
 };
 
 /** Domain icons */
