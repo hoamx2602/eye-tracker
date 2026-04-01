@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Precision Eye Tracker',
-  description: 'Web-based eye tracking with MediaPipe and calibration',
+  title: 'Bradford Eye Tracking System',
+  description: 'Advanced neurological eye tracking assessment platform.',
 };
 
 export default function RootLayout({
