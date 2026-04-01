@@ -297,6 +297,86 @@ export default function AppConfigForm() {
                 <option value={RegressionMethod.RIDGE}>Ridge regression</option>
               </select>
             </section>
+
+            <section className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-amber-300">Glasses optimization</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">When participant reports wearing glasses, activate artifact filtering and weighted calibration.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleChange('glassesOptimization', !localConfig.glassesOptimization)}
+                  className={`relative w-12 h-6 rounded-full transition flex-shrink-0 ml-4 ${localConfig.glassesOptimization ? 'bg-amber-500' : 'bg-slate-600'}`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${localConfig.glassesOptimization ? 'left-7' : 'left-1'}`} />
+                </button>
+              </div>
+              {localConfig.glassesOptimization && (
+                <div className="space-y-3 pt-2 border-t border-slate-700">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-400">EAR artifact threshold</span>
+                      <span className="font-mono">{localConfig.glassesEarThreshold.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range" min={0.05} max={0.30} step={0.01}
+                      value={localConfig.glassesEarThreshold}
+                      onChange={(e) => handleChange('glassesEarThreshold', parseFloat(e.target.value))}
+                      className="w-full accent-amber-500 h-1 bg-slate-600 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-400">Max jump rejection (px/frame)</span>
+                      <span className="font-mono">{localConfig.glassesMaxJumpPx}px</span>
+                    </div>
+                    <input
+                      type="range" min={50} max={400} step={10}
+                      value={localConfig.glassesMaxJumpPx}
+                      onChange={(e) => handleChange('glassesMaxJumpPx', parseInt(e.target.value, 10))}
+                      className="w-full accent-amber-500 h-1 bg-slate-600 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-400">Hold-last-valid frames</span>
+                      <span className="font-mono">{localConfig.glassesMaxHoldFrames} frames</span>
+                    </div>
+                    <input
+                      type="range" min={1} max={15} step={1}
+                      value={localConfig.glassesMaxHoldFrames}
+                      onChange={(e) => handleChange('glassesMaxHoldFrames', parseInt(e.target.value, 10))}
+                      className="w-full accent-amber-500 h-1 bg-slate-600 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-400">Kalman R multiplier (quality=0)</span>
+                      <span className="font-mono">×{localConfig.glassesKalmanRMultiplier}</span>
+                    </div>
+                    <input
+                      type="range" min={1} max={20} step={1}
+                      value={localConfig.glassesKalmanRMultiplier}
+                      onChange={(e) => handleChange('glassesKalmanRMultiplier', parseInt(e.target.value, 10))}
+                      className="w-full accent-amber-500 h-1 bg-slate-600 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-400">Output clamp (px/frame)</span>
+                      <span className="font-mono">{localConfig.glassesMaxOutputJumpPx}px</span>
+                    </div>
+                    <input
+                      type="range" min={50} max={300} step={10}
+                      value={localConfig.glassesMaxOutputJumpPx}
+                      onChange={(e) => handleChange('glassesMaxOutputJumpPx', parseInt(e.target.value, 10))}
+                      className="w-full accent-amber-500 h-1 bg-slate-600 rounded-lg"
+                    />
+                  </div>
+                </div>
+              )}
+            </section>
           </>
         )}
 

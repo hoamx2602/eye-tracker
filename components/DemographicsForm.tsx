@@ -9,6 +9,7 @@ export type DemographicsData = {
   country: string;
   device: string;
   eyeConditions: string[];
+  wearsGlasses: boolean;
 };
 
 import countriesData from '@/lib/countries.json';
@@ -34,14 +35,6 @@ const EYE_CONDITION_OPTIONS = [
   { id: 'other', label: 'Other' },
 ];
 
-const DEVICE_OPTIONS = [
-  { value: '', label: 'Select device...' },
-  { value: 'laptop', label: 'Laptop' },
-  { value: 'desktop', label: 'Desktop (Webcam base)' },
-  { value: 'tablet', label: 'Tablet' },
-  { value: 'other', label: 'Other' },
-];
-
 type DemographicsFormProps = {
   onSubmit: (data: DemographicsData) => void;
   onBack?: () => void;
@@ -52,8 +45,8 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
   const [age, setAge] = useState<number | ''>('');
   const [gender, setGender] = useState('');
   const [country, setCountry] = useState('');
-  const [device, setDevice] = useState('');
   const [eyeConditions, setEyeConditions] = useState<string[]>([]);
+  const [wearsGlasses, setWearsGlasses] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const toggleEyeCondition = (id: string) => {
@@ -80,8 +73,9 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
       age: ageNum,
       gender: gender.trim() || 'prefer_not_to_say',
       country: country.trim() || 'not_specified',
-      device: device.trim() || 'not_specified',
+      device: 'not_specified',
       eyeConditions: eyeConditions.length === 0 ? ['none'] : eyeConditions.filter((x) => x !== 'none'),
+      wearsGlasses,
     });
   };
 
@@ -95,7 +89,7 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
         {error && (
           <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/30 rounded-lg px-3 py-2">{error}</p>
         )}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
             <label htmlFor="demographics-age" className="block text-sm font-medium text-gray-300 mb-1">Age *</label>
             <input
@@ -133,8 +127,6 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
               ))}
             </select>
           </div>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
           <div>
             <label htmlFor="demographics-country" className="block text-sm font-medium text-gray-300 mb-1">Country</label>
             <select
@@ -151,20 +143,35 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
               ))}
             </select>
           </div>
-          <div>
-            <label htmlFor="demographics-device" className="block text-sm font-medium text-gray-300 mb-1">Testing Device</label>
-            <select
-              id="demographics-device"
-              value={device}
-              onChange={(e) => setDevice(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              {DEVICE_OPTIONS.map((c) => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </select>
+        </div>
+
+        {/* Glasses question — drives the glasses-optimization feature flag */}
+        <div>
+          <span className="block text-sm font-medium text-gray-300 mb-2">Do you wear glasses?</span>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Yes — I wear glasses', value: true },
+              { label: 'No / Contact lenses', value: false },
+            ].map((opt) => (
+              <button
+                key={String(opt.value)}
+                type="button"
+                onClick={() => setWearsGlasses(opt.value)}
+                className={`relative py-3 px-4 rounded-xl border-2 text-sm font-medium text-left transition ${
+                  wearsGlasses === opt.value
+                    ? 'bg-blue-600/20 border-blue-500 text-white'
+                    : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-500'
+                }`}
+              >
+                <span className={`inline-block w-3.5 h-3.5 rounded-full border-2 mr-2 align-middle ${
+                  wearsGlasses === opt.value ? 'bg-blue-500 border-blue-400' : 'border-gray-500'
+                }`} />
+                {opt.label}
+              </button>
+            ))}
           </div>
         </div>
+
         <div>
           <span className="block text-sm font-medium text-gray-300 mb-2">Eye conditions (check any that apply)</span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

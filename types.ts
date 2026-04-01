@@ -215,6 +215,20 @@ export interface AppConfig {
   // --- CHART DISPLAY ---
   chartSmoothingMethod: ChartSmoothingMethod;
   chartSmoothingWindow: number; // Frames (2–30)
+
+  // --- GLASSES OPTIMIZATION ---
+  /** Master toggle. When true + participant reports wearing glasses, all sub-features activate. */
+  glassesOptimization: boolean;
+  /** EAR below this → frame treated as artifact (glare/blink). Default 0.15. */
+  glassesEarThreshold: number;
+  /** Max gaze delta px/frame before hard rejection. Default 200. */
+  glassesMaxJumpPx: number;
+  /** Max consecutive hold-last-valid frames before tracking-lost. Default 5. */
+  glassesMaxHoldFrames: number;
+  /** Kalman R multiplier at quality=0 (1 = no boost, 9 = 9× R). Default 9. */
+  glassesKalmanRMultiplier: number;
+  /** Post-smoother output clamp px/frame. Default 150. */
+  glassesMaxOutputJumpPx: number;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -262,4 +276,12 @@ export const DEFAULT_CONFIG: AppConfig = {
   // Chart Display Defaults
   chartSmoothingMethod: ChartSmoothingMethod.MOVING_AVERAGE,
   chartSmoothingWindow: 7,
+
+  // Glasses Optimization Defaults
+  glassesOptimization: true,
+  glassesEarThreshold: 0.15,
+  glassesMaxJumpPx: 200,
+  glassesMaxHoldFrames: 5,
+  glassesKalmanRMultiplier: 9,
+  glassesMaxOutputJumpPx: 150,
 };

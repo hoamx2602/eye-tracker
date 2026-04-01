@@ -1491,7 +1491,16 @@ function App() {
     const X = data.map(d => d.features);
     const Y = data.map(d => [d.screenX, d.screenY]);
 
-    const success = hybridRegressorRef.current.train(X, Y);
+    const cfg = configRef.current;
+    const glassesActive = !!(demographicsRef.current?.wearsGlasses && cfg.glassesOptimization);
+    const sampleWeights = glassesActive
+      ? data.map(d => {
+          const ear = d.rawEyeFeatures ? (d.rawEyeFeatures.leftEAR + d.rawEyeFeatures.rightEAR) / 2 : 0.25;
+          return ear < cfg.glassesEarThreshold ? 0.1 : Math.min(1, (ear - cfg.glassesEarThreshold) / 0.15);
+        })
+      : undefined;
+
+    const success = hybridRegressorRef.current.train(X, Y, sampleWeights);
     if (!success) {
       alert("Calibration failed (Math error). Please try again.");
       reset();
@@ -1543,7 +1552,17 @@ function App() {
 
         const X = data.map(d => d.features);
         const Y = data.map(d => [d.screenX, d.screenY]);
-        const success = hybridRegressorRef.current.train(X, Y);
+
+        const cfgFin = configRef.current;
+        const glassesActiveFin = !!(demographicsRef.current?.wearsGlasses && cfgFin.glassesOptimization);
+        const sampleWeightsFin = glassesActiveFin
+          ? data.map(d => {
+              const ear = d.rawEyeFeatures ? (d.rawEyeFeatures.leftEAR + d.rawEyeFeatures.rightEAR) / 2 : 0.25;
+              return ear < cfgFin.glassesEarThreshold ? 0.1 : Math.min(1, (ear - cfgFin.glassesEarThreshold) / 0.15);
+            })
+          : undefined;
+
+        const success = hybridRegressorRef.current.train(X, Y, sampleWeightsFin);
         if (!success) {
             alert("Calibration failed (Math error). Please try again.");
             reset();
@@ -2188,12 +2207,21 @@ function App() {
 
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
     const inputVector = eyeTrackingService.prepareFeatureVector(features, configRef.current);
-    
+
     // Pass the configured method to the regressor
     const prediction = hybridRegressorRef.current.predict(inputVector, configRef.current.regressionMethod);
-    
-    // Smoother has config injected already
-    const smoothed = smootherRef.current.process(prediction.x, prediction.y, timestamp);
+
+    // Compute frame quality for glasses mode: average EAR as proxy for glare/blink artifacts
+    const cfg = configRef.current;
+    let frameQuality: number | undefined;
+    if (demographicsRef.current?.wearsGlasses && cfg.glassesOptimization) {
+      const ear = (features.leftEAR + features.rightEAR) / 2;
+      // EAR < threshold → artifact (glare/blink); scale 0–1 above threshold
+      const earQuality = ear < cfg.glassesEarThreshold ? 0 : Math.min(1, (ear - cfg.glassesEarThreshold) / 0.15);
+      frameQuality = earQuality;
+    }
+
+    const smoothed = smootherRef.current.process(prediction.x, prediction.y, timestamp, frameQuality);
     if (Math.random() < 0.05) { // throttle log
       console.log(`[NeuroGaze] inputVector len=${inputVector.length}, method=${configRef.current.regressionMethod}, pred=`, prediction, ` smoothed=`, smoothed, ` hasModel=`, hybridRegressorRef.current.hasTrainedModel());
     }
@@ -2226,8 +2254,17 @@ function App() {
     const newX = samples.map(s => eyeTrackingService.prepareFeatureVector(s.rawEyeFeatures!, configRef.current));
     const Y    = samples.map(s => [s.screenX, s.screenY]);
 
+    const cfgRe = configRef.current;
+    const glassesActiveRe = !!(demographicsRef.current?.wearsGlasses && cfgRe.glassesOptimization);
+    const weightsRe = glassesActiveRe
+      ? samples.map(s => {
+          const ear = s.rawEyeFeatures ? (s.rawEyeFeatures.leftEAR + s.rawEyeFeatures.rightEAR) / 2 : 0.25;
+          return ear < cfgRe.glassesEarThreshold ? 0.1 : Math.min(1, (ear - cfgRe.glassesEarThreshold) / 0.15);
+        })
+      : undefined;
+
     const tempRegressor = new HybridRegressor();
-    const success = tempRegressor.train(newX, Y);
+    const success = tempRegressor.train(newX, Y, weightsRe);
     if (!success) {
       console.warn('[reEvaluate] Training failed (singular matrix). Try a different flag combination.');
       return;
@@ -2273,6 +2310,21 @@ function App() {
 
   const handleDemographicsSubmit = (data: DemographicsData) => {
     demographicsRef.current = data;
+
+    // Activate glasses optimization if participant wears glasses and the feature is enabled
+    const cfg = configRef.current;
+    if (data.wearsGlasses && cfg.glassesOptimization) {
+      smootherRef.current.updateConfig(cfg.smoothingMethod, {
+        ...cfg,
+        glassesMode: true,
+        glassesMaxJumpPx: cfg.glassesMaxJumpPx,
+        glassesKalmanRMultiplier: cfg.glassesKalmanRMultiplier,
+        glassesMaxOutputJumpPx: cfg.glassesMaxOutputJumpPx,
+        glassesMaxHoldFrames: cfg.glassesMaxHoldFrames,
+      });
+      console.log('[Glasses] Optimization enabled for this session');
+    }
+
     // Enter fullscreen immediately on this user gesture so setup guide
     // runs inside fullscreen. By the time we reach /calibration, camera
     // permission is already granted → no dialog → fullscreen stays intact.

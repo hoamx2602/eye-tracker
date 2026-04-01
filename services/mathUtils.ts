@@ -70,11 +70,11 @@ export class Matrix {
 
   static solveLeastSquares(inputs: number[][], outputs: number[][]): number[][] | null {
     try {
-      const X = inputs; 
-      const Y = outputs; 
+      const X = inputs;
+      const Y = outputs;
       const XT = Matrix.transpose(X);
       const XTX = Matrix.multiply(XT, X);
-      
+
       const lambda = 0.001; // Ridge Regularization
       for(let i=0; i<XTX.length; i++) XTX[i][i] += lambda;
 
@@ -86,6 +86,25 @@ export class Matrix {
     } catch (e) {
       return null;
     }
+  }
+
+  /** Weighted Ridge: W = (XᵀDX + λI)⁻¹ XᵀDY where D = diag(weights). */
+  static weightedSolveLeastSquares(inputs: number[][], outputs: number[][], weights: number[], lambda = 0.001): number[][] | null {
+    try {
+      const n = inputs.length, d = inputs[0].length, o = outputs[0].length;
+      const XtWX: number[][] = Array.from({ length: d }, () => new Array<number>(d).fill(0));
+      const XtWY: number[][] = Array.from({ length: d }, () => new Array<number>(o).fill(0));
+      for (let i = 0; i < n; i++) {
+        const w = weights[i] ?? 1;
+        for (let j = 0; j < d; j++) {
+          for (let k = 0; k < d; k++) XtWX[j][k] += w * inputs[i][j] * inputs[i][k];
+          for (let k = 0; k < o; k++) XtWY[j][k] += w * inputs[i][j] * outputs[i][k];
+        }
+      }
+      for (let i = 0; i < d; i++) XtWX[i][i] += lambda;
+      const inv = Matrix.invert(XtWX);
+      return inv ? Matrix.multiply(inv, XtWY) : null;
+    } catch { return null; }
   }
 }
 
@@ -249,9 +268,11 @@ export class HybridRegressor {
     return this.weights != null && this.trainingData.length > 0;
   }
 
-  train(inputs: number[][], outputs: number[][]): boolean {
+  train(inputs: number[][], outputs: number[][], sampleWeights?: number[]): boolean {
     // 1. Train Ridge (Always required as fallback)
-    this.weights = Matrix.solveLeastSquares(inputs, outputs);
+    this.weights = sampleWeights
+      ? Matrix.weightedSolveLeastSquares(inputs, outputs, sampleWeights)
+      : Matrix.solveLeastSquares(inputs, outputs);
     if (!this.weights) return false;
 
     // Residuals for kNN
@@ -507,15 +528,17 @@ export class MovingAverageFilter {
 }
 
 export class KalmanFilter {
-    private R: number; 
-    private Q: number; 
-    private x: number; 
-    private p: number; 
-    private k: number; 
+    private Rbase: number;
+    private Rcurrent: number;
+    private Q: number;
+    private x: number;
+    private p: number;
+    private k: number;
     private initialized: boolean = false;
 
     constructor(R: number = 1, Q: number = 1) {
-        this.R = R;
+        this.Rbase = R;
+        this.Rcurrent = R;
         this.Q = Q;
         this.x = 0;
         this.p = 0;
@@ -524,8 +547,15 @@ export class KalmanFilter {
 
     updateParams(Q: number, R: number) {
         this.Q = Q;
-        this.R = R;
+        this.Rbase = R;
+        this.Rcurrent = R;
     }
+
+    /** Scale measurement noise by factor (>1 = trust model more, reject noisy input). */
+    setRScale(scale: number): void { this.Rcurrent = this.Rbase * scale; }
+
+    /** Decay Rcurrent back toward Rbase each frame. */
+    decayR(rate = 0.8): void { this.Rcurrent = this.Rbase + (this.Rcurrent - this.Rbase) * rate; }
 
     filter(value: number): number {
         if (!this.initialized) {
@@ -535,7 +565,7 @@ export class KalmanFilter {
             return value;
         }
         this.p = this.p + this.Q;
-        this.k = this.p / (this.p + this.R);
+        this.k = this.p / (this.p + this.Rcurrent);
         this.x = this.x + this.k * (value - this.x);
         this.p = (1 - this.k) * this.p;
         return this.x;
@@ -545,6 +575,7 @@ export class KalmanFilter {
         this.initialized = false;
         this.x = 0;
         this.p = 0;
+        this.Rcurrent = this.Rbase;
     }
 }
 
@@ -557,13 +588,20 @@ export class GazeSmoother {
     private lastY: number = 0;
 
     // --- Fixation detection ---
-    // Track last N raw (unfiltered) positions to detect when gaze is stable.
-    // Uses ~8 frames ≈ 267ms at 30fps; variance < 400px² (~20px std-dev) = fixation.
     private rawBuffer: { x: number; y: number }[] = [];
     private static readonly FIXATION_BUF  = 8;
-    private static readonly FIXATION_VAR  = 400; // px² threshold
-    // When in fixation, multiply OneEuro minCutoff by this factor for stronger smoothing.
+    private static readonly FIXATION_VAR  = 400; // px²
     private static readonly FIXATION_BOOST = 2.0;
+
+    // --- Glasses optimization state ---
+    private glassesMode = false;
+    private glassesMaxJumpPx = 200;
+    private glassesKalmanRMultiplier = 9;
+    private glassesMaxOutputJumpPx = 150;
+    private glassesMaxHoldFrames = 5;
+    private holdCount = 0;
+    private lastValidX = 0;
+    private lastValidY = 0;
 
     // Filters
     oneEuroX: OneEuroFilter;
@@ -598,6 +636,23 @@ export class GazeSmoother {
 
         this.kalmanX.updateParams(params.kalmanQ, params.kalmanR);
         this.kalmanY.updateParams(params.kalmanQ, params.kalmanR);
+
+        if (params.glassesMode !== undefined) this.glassesMode = params.glassesMode;
+        if (params.glassesMaxJumpPx !== undefined) this.glassesMaxJumpPx = params.glassesMaxJumpPx;
+        if (params.glassesKalmanRMultiplier !== undefined) this.glassesKalmanRMultiplier = params.glassesKalmanRMultiplier;
+        if (params.glassesMaxOutputJumpPx !== undefined) this.glassesMaxOutputJumpPx = params.glassesMaxOutputJumpPx;
+        if (params.glassesMaxHoldFrames !== undefined) this.glassesMaxHoldFrames = params.glassesMaxHoldFrames;
+    }
+
+    private _clampOutput(result: { x: number; y: number }): { x: number; y: number } {
+        const dx = result.x - this.lastValidX;
+        const dy = result.y - this.lastValidY;
+        const d = Math.hypot(dx, dy);
+        if (d > this.glassesMaxOutputJumpPx) {
+            const s = this.glassesMaxOutputJumpPx / d;
+            return { x: this.lastValidX + dx * s, y: this.lastValidY + dy * s };
+        }
+        return result;
     }
 
     /** Returns true when the last FIXATION_BUF raw positions cluster tightly. */
@@ -611,7 +666,30 @@ export class GazeSmoother {
         return variance < GazeSmoother.FIXATION_VAR;
     }
 
-    process(x: number, y: number, timestamp: number) {
+    process(x: number, y: number, timestamp: number, frameQuality?: number) {
+        // --- Glasses: pre-filter velocity spike and artifact frames ---
+        if (this.glassesMode && frameQuality !== undefined) {
+            const jumpPx = Math.hypot(x - this.lastValidX, y - this.lastValidY);
+            const isArtifact = frameQuality < 0.3 || jumpPx > this.glassesMaxJumpPx;
+            if (isArtifact) {
+                this.holdCount++;
+                if (this.holdCount <= this.glassesMaxHoldFrames) {
+                    this.kalmanX.decayR();
+                    this.kalmanY.decayR();
+                    return { x: this.lastValidX, y: this.lastValidY };
+                }
+            } else {
+                this.holdCount = 0;
+            }
+            // Scale Kalman R by quality: quality=1 → ×1, quality=0 → ×multiplier
+            const rScale = 1 + (1 - Math.max(0, frameQuality)) * (this.glassesKalmanRMultiplier - 1);
+            this.kalmanX.setRScale(rScale);
+            this.kalmanY.setRScale(rScale);
+        } else {
+            this.kalmanX.decayR();
+            this.kalmanY.decayR();
+        }
+
         // --- 1. Update raw buffer for fixation detection (before any filtering) ---
         this.rawBuffer.push({ x, y });
         if (this.rawBuffer.length > GazeSmoother.FIXATION_BUF) this.rawBuffer.shift();
@@ -621,24 +699,18 @@ export class GazeSmoother {
         const isSaccade = dist > this.saccadeThreshold;
 
         if (isSaccade) {
-            // Reset all filters so cursor snaps immediately to the new target position.
-            // OneEuro reset causes next call to initialise at the new value and return it raw,
-            // eliminating the "chasing tail" artifact after fast eye movements.
             this.oneEuroX.reset();
             this.oneEuroY.reset();
             this.kalmanX.reset();
             this.kalmanY.reset();
             this.maX.reset();
             this.maY.reset();
-            // Clear fixation history — saccade invalidates the stability window.
             this.rawBuffer = [{ x, y }];
         }
 
         // --- 3. Fixation boost: strengthen OneEuro smoothing when gaze is stable ---
         const inFixation = !isSaccade && this.detectFixation();
         if (inFixation && this.method === SmoothingMethod.ONE_EURO) {
-            // Temporarily raise minCutoff so the filter damps micro-tremor more aggressively.
-            // Restoring after the call keeps the user-configured value intact for normal frames.
             const savedX = this.oneEuroX.minCutoff;
             const savedY = this.oneEuroY.minCutoff;
             this.oneEuroX.minCutoff = savedX * GazeSmoother.FIXATION_BOOST;
@@ -654,6 +726,11 @@ export class GazeSmoother {
 
             this.lastX = result.x;
             this.lastY = result.y;
+            if (this.glassesMode) {
+                const clamped = this._clampOutput(result);
+                this.lastValidX = clamped.x; this.lastValidY = clamped.y;
+                return clamped;
+            }
             return result;
         }
 
@@ -686,6 +763,10 @@ export class GazeSmoother {
 
         this.lastX = result.x;
         this.lastY = result.y;
+        if (this.glassesMode) {
+            result = this._clampOutput(result);
+            this.lastValidX = result.x; this.lastValidY = result.y;
+        }
         return result;
     }
 
@@ -698,6 +779,9 @@ export class GazeSmoother {
         this.kalmanY.reset();
         this.lastX = 0;
         this.lastY = 0;
+        this.lastValidX = 0;
+        this.lastValidY = 0;
+        this.holdCount = 0;
         this.rawBuffer = [];
     }
 }

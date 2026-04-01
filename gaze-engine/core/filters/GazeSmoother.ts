@@ -34,19 +34,26 @@ class KalmanFilter {
   private x = 0;
   private p = 0;
   private initialized = false;
-  constructor(private Q = 0.01, private R = 0.1) {}
+  private Rbase: number;
+  private Rcurrent: number;
+  constructor(private Q = 0.01, R = 0.1) { this.Rbase = R; this.Rcurrent = R; }
 
   filter(v: number): number {
     if (!this.initialized) { this.x = v; this.p = 1; this.initialized = true; return v; }
     this.p += this.Q;
-    const k = this.p / (this.p + this.R);
+    const k = this.p / (this.p + this.Rcurrent);
     this.x += k * (v - this.x);
     this.p = (1 - k) * this.p;
     return this.x;
   }
 
-  updateParams(Q: number, R: number): void { this.Q = Q; this.R = R; }
-  reset(): void { this.initialized = false; this.x = 0; this.p = 0; }
+  /** Temporarily scale measurement noise (>1 → trust model more, reject noisy measurement). */
+  setRScale(scale: number): void { this.Rcurrent = this.Rbase * scale; }
+  /** Decay Rcurrent back toward Rbase each frame. */
+  decayR(rate = 0.8): void { this.Rcurrent = this.Rbase + (this.Rcurrent - this.Rbase) * rate; }
+
+  updateParams(Q: number, R: number): void { this.Q = Q; this.Rbase = R; this.Rcurrent = R; }
+  reset(): void { this.initialized = false; this.x = 0; this.p = 0; this.Rcurrent = this.Rbase; }
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -62,6 +69,12 @@ export interface SmootherConfig {
   kalmanR?: number;
   /** Pixel jump threshold that triggers saccade detection. Default 50. */
   saccadeThreshold?: number;
+  // Glasses optimization
+  glassesMode?: boolean;
+  glassesMaxJumpPx?: number;
+  glassesKalmanRMultiplier?: number;
+  glassesMaxOutputJumpPx?: number;
+  glassesMaxHoldFrames?: number;
 }
 
 export class GazeSmoother {
@@ -76,6 +89,16 @@ export class GazeSmoother {
 
   private lastX = 0;
   private lastY = 0;
+
+  // Glasses optimization state
+  private glassesMode = false;
+  private glassesMaxJumpPx = 200;
+  private glassesKalmanRMultiplier = 9;
+  private glassesMaxOutputJumpPx = 150;
+  private glassesMaxHoldFrames = 5;
+  private holdCount = 0;
+  private lastValidX = 0;
+  private lastValidY = 0;
 
   // Filters
   private readonly oeX: OneEuroFilter;
@@ -104,6 +127,11 @@ export class GazeSmoother {
       this.kalX.updateParams(cfg.kalmanQ ?? 0.01, cfg.kalmanR ?? 0.1);
       this.kalY.updateParams(cfg.kalmanQ ?? 0.01, cfg.kalmanR ?? 0.1);
     }
+    if (cfg.glassesMode !== undefined) this.glassesMode = cfg.glassesMode;
+    if (cfg.glassesMaxJumpPx !== undefined) this.glassesMaxJumpPx = cfg.glassesMaxJumpPx;
+    if (cfg.glassesKalmanRMultiplier !== undefined) this.glassesKalmanRMultiplier = cfg.glassesKalmanRMultiplier;
+    if (cfg.glassesMaxOutputJumpPx !== undefined) this.glassesMaxOutputJumpPx = cfg.glassesMaxOutputJumpPx;
+    if (cfg.glassesMaxHoldFrames !== undefined) this.glassesMaxHoldFrames = cfg.glassesMaxHoldFrames;
   }
 
   /** Detect stable gaze from last N raw positions. */
@@ -115,7 +143,36 @@ export class GazeSmoother {
     return variance < GazeSmoother.FIX_VAR;
   }
 
-  process(x: number, y: number, timestamp: number): { x: number; y: number } {
+  /**
+   * @param frameQuality 0–1 quality score from the frame quality gate (ticket 03-01).
+   *   undefined = no quality info (glasses mode inactive or non-glasses path).
+   *   When glassesMode=true and quality is low, Kalman R is boosted and
+   *   hold-last-valid is applied for artifact frames.
+   */
+  process(x: number, y: number, timestamp: number, frameQuality?: number): { x: number; y: number } {
+    // ── Glasses: pre-filter velocity spike ───────────────────────────────────
+    if (this.glassesMode && frameQuality !== undefined) {
+      const jumpPx = Math.hypot(x - this.lastValidX, y - this.lastValidY);
+      const isArtifact = frameQuality < 0.3 || jumpPx > this.glassesMaxJumpPx;
+      if (isArtifact) {
+        this.holdCount++;
+        if (this.holdCount <= this.glassesMaxHoldFrames) {
+          // Decay Kalman noise back toward baseline during hold
+          this.kalX.decayR(); this.kalY.decayR();
+          return { x: this.lastValidX, y: this.lastValidY };
+        }
+        // Too many consecutive artifacts — fall through with degraded quality
+      } else {
+        this.holdCount = 0;
+      }
+      // Scale Kalman R by quality: quality=1 → ×1, quality=0 → ×glassesKalmanRMultiplier
+      const rScale = 1 + (1 - Math.max(0, frameQuality)) * (this.glassesKalmanRMultiplier - 1);
+      this.kalX.setRScale(rScale);
+      this.kalY.setRScale(rScale);
+    } else {
+      this.kalX.decayR(); this.kalY.decayR();
+    }
+
     // 1. Accumulate raw buffer for fixation detection
     this.rawBuf.push({ x, y });
     if (this.rawBuf.length > GazeSmoother.FIX_BUF) this.rawBuf.shift();
@@ -138,7 +195,8 @@ export class GazeSmoother {
       const result = { x: this.oeX.filter(x, timestamp), y: this.oeY.filter(y, timestamp) };
       this.oeX.minCutoff = bx; this.oeY.minCutoff = by;
       this.lastX = result.x; this.lastY = result.y;
-      return result;
+      if (!this.glassesMode) return result;
+      return this._clampOutput(result);
     }
 
     // 4. Normal filtering
@@ -156,6 +214,20 @@ export class GazeSmoother {
     }
 
     this.lastX = result.x; this.lastY = result.y;
+    if (this.glassesMode) result = this._clampOutput(result);
+    this.lastValidX = result.x; this.lastValidY = result.y;
+    return result;
+  }
+
+  /** Clamp output jump to glassesMaxOutputJumpPx to prevent post-filter spikes. */
+  private _clampOutput(result: { x: number; y: number }): { x: number; y: number } {
+    const dx = result.x - this.lastValidX;
+    const dy = result.y - this.lastValidY;
+    const d = Math.hypot(dx, dy);
+    if (d > this.glassesMaxOutputJumpPx) {
+      const s = this.glassesMaxOutputJumpPx / d;
+      return { x: this.lastValidX + dx * s, y: this.lastValidY + dy * s };
+    }
     return result;
   }
 
@@ -164,6 +236,8 @@ export class GazeSmoother {
     this.maX.reset(); this.maY.reset();
     this.kalX.reset(); this.kalY.reset();
     this.lastX = 0; this.lastY = 0;
+    this.lastValidX = 0; this.lastValidY = 0;
+    this.holdCount = 0;
     this.rawBuf = [];
   }
 }

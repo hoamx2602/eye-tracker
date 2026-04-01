@@ -58,6 +58,28 @@ class Matrix {
       return Matrix.multiply(inv, Matrix.multiply(XT, Y));
     } catch { return null; }
   }
+
+  /**
+   * Weighted Ridge: W = (XᵀDX + λI)⁻¹ XᵀDY where D = diag(weights).
+   * High-quality samples (weight≈1) contribute fully; artifact frames (weight≈0) are ignored.
+   */
+  static weightedRidgeSolve(X: number[][], Y: number[][], weights: number[], lambda = 0.001): number[][] | null {
+    try {
+      const n = X.length, d = X[0].length, o = Y[0].length;
+      const XtWX: number[][] = Array.from({ length: d }, () => new Array<number>(d).fill(0));
+      const XtWY: number[][] = Array.from({ length: d }, () => new Array<number>(o).fill(0));
+      for (let i = 0; i < n; i++) {
+        const w = weights[i] ?? 1;
+        for (let j = 0; j < d; j++) {
+          for (let k = 0; k < d; k++) XtWX[j][k] += w * X[i][j] * X[i][k];
+          for (let k = 0; k < o; k++) XtWY[j][k] += w * X[i][j] * Y[i][k];
+        }
+      }
+      for (let i = 0; i < d; i++) XtWX[i][i] += lambda;
+      const inv = Matrix.invert(XtWX);
+      return inv ? Matrix.multiply(inv, XtWY) : null;
+    } catch { return null; }
+  }
 }
 
 // ─── TPS Regressor ───────────────────────────────────────────────────────────
@@ -155,8 +177,16 @@ export class HybridRegressor {
 
   hasModel(): boolean { return this.weights !== null && this.data.length > 0; }
 
-  train(inputs: number[][], outputs: number[][]): boolean {
-    this.weights = Matrix.ridgeSolve(inputs, outputs);
+  /**
+   * @param sampleWeights Optional per-sample quality weights (0–1).
+   *   When provided (glasses mode), uses weighted Ridge so glare-artifact frames
+   *   during calibration have proportionally less influence on the model.
+   *   Undefined → standard uniform Ridge (backward compatible).
+   */
+  train(inputs: number[][], outputs: number[][], sampleWeights?: number[]): boolean {
+    this.weights = sampleWeights
+      ? Matrix.weightedRidgeSolve(inputs, outputs, sampleWeights)
+      : Matrix.ridgeSolve(inputs, outputs);
     if (!this.weights) return false;
 
     this.data = inputs.map((inp, i) => {
