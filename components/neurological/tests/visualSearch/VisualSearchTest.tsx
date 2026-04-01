@@ -230,16 +230,13 @@ export default function VisualSearchTest() {
 
         // Auto-complete if all confirmed on click/hold
         if (allowClickTargets) {
-          setConfirmedNumbers(prev => {
-            if (prev.has(number)) return prev;
-            const next = new Set(prev);
-            next.add(number);
-            // If this was the last one, finish immediately
-            if (next.size >= positions.length) {
-              finishTest();
-            }
-            return next;
-          });
+          const nextSet = new Set(confirmedNumbers);
+          nextSet.add(number);
+          setConfirmedNumbers(nextSet);
+          
+          if (nextSet.size >= positions.length) {
+            finishTest();
+          }
         }
       }, DWELL_CONFIRM_MS);
     },
