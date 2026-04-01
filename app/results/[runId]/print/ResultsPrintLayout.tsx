@@ -13,20 +13,26 @@ import {
   symptomTotal,
 } from '@/lib/resultScoring';
 
+import { 
+  smoothSegment, 
+  type ChartSmoothingConfig 
+} from '@/lib/smoothing';
+
 interface PrintData {
   id: string;
   status: string;
   createdAt: string;
   testOrderSnapshot: string[];
-  configSnapshot: Record<string, unknown>;
+  configSnapshot: Record<string, any>;
   preSymptomScores: Record<string, number> | null;
   postSymptomScores: Record<string, number> | null;
-  testResults: Record<string, Record<string, unknown>>;
-  trajectories: unknown[] | null;
+  testResults: Record<string, any>;
+  trajectories: any[] | null;
+  chartSmoothing?: ChartSmoothingConfig | null;
   session: {
     id: string;
     meanErrorPx: number | null;
-    demographics: Record<string, unknown> | null;
+    demographics: Record<string, any> | null;
     createdAt: string | null;
   };
 }
@@ -48,7 +54,7 @@ function ScoreLabel({ score }: { score: number | null }) {
 }
 
 export default function ResultsPrintLayout({ data }: { data: PrintData }) {
-  const { session, testOrderSnapshot, testResults, configSnapshot, preSymptomScores, postSymptomScores, trajectories } = data;
+  const { session, testOrderSnapshot, testResults, configSnapshot, preSymptomScores, postSymptomScores, trajectories, chartSmoothing } = data;
 
   const configSnap = configSnapshot as {
     testParameters?: Record<string, Record<string, unknown>>;
@@ -84,10 +90,14 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
   const postTotal = symptomTotal(postSymptomScores);
   const hasSymptoms = preSymptomScores !== null && postSymptomScores !== null;
 
-  const trajectoryList = Array.isArray(trajectories) ? trajectories as Array<{
-    patternName: string;
-    points: Array<{ t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }>;
-  }> : [];
+  const trajectoryList = useMemo(() => {
+    const raw = Array.isArray(trajectories) ? trajectories as Array<{
+      patternName: string;
+      points: Array<{ t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }>;
+    }> : [];
+    if (!chartSmoothing) return raw;
+    return raw.map(seg => smoothSegment(seg, chartSmoothing));
+  }, [trajectories, chartSmoothing]);
 
   return (
     <div className="bg-white text-black font-sans" style={{ maxWidth: 900, margin: '0 auto', padding: '40px 48px' }}>
@@ -251,117 +261,132 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
       </div>
 
       {/* ═══════════════════════════════════════════════════
-          PAGE 3+: Eye Gaze Trajectories
+          PAGE 3+: Eye Gaze Trajectories (Chunked into 3 per page)
       ═══════════════════════════════════════════════════ */}
-      {trajectoryList.length > 0 && (
-        <div style={{ pageBreakBefore: 'always', breakBefore: 'page', paddingTop: 40 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', margin: '0 0 4px', borderBottom: '2px solid #e2e8f0', paddingBottom: 10 }}>
-            Eye Gaze Trajectories
-          </h2>
-          <p style={{ fontSize: 12, color: '#64748b', margin: '8px 0 24px' }}>
-            Target path (green) vs. recorded eye gaze (purple) for each exercise pattern.
-          </p>
+      {(() => {
+        const chunks: any[][] = [];
+        for (let i = 0; i < trajectoryList.length; i += 3) {
+          chunks.push(trajectoryList.slice(i, i + 3));
+        }
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-            {trajectoryList.map((seg, i) => (
-              <div key={i} style={{
-                border: '1px solid #e2e8f0',
-                borderRadius: 12,
-                overflow: 'hidden',
-                pageBreakInside: 'avoid',
-                breakInside: 'avoid',
-              }}>
-                {/* Segment header */}
-                <div style={{ background: '#f1f5f9', padding: '12px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: 0 }}>{seg.patternName}</h3>
-                  <span style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>
-                    {seg.points.length.toLocaleString()} data points
-                  </span>
-                </div>
+        return chunks.map((chunk, groupIdx) => (
+          <div key={groupIdx} style={{ 
+            pageBreakBefore: 'always', 
+            breakBefore: 'page', 
+            paddingTop: 40 
+          }}>
+            {groupIdx === 0 && (
+              <>
+                <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', margin: '0 0 4px', borderBottom: '2px solid #e2e8f0', paddingBottom: 10 }}>
+                  Eye Gaze Trajectories
+                </h2>
+                <p style={{ fontSize: 12, color: '#64748b', margin: '8px 0 24px' }}>
+                  Target path (green) vs. recorded eye gaze (purple) for each exercise pattern.
+                </p>
+              </>
+            )}
 
-                {/* Charts */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, padding: '24px 16px 24px 4px', background: 'white' }}>
-                  {/* X axis */}
-                  <div>
-                    <p style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, margin: '0 0 12px' }}>
-                      Horizontal (X-axis)
-                    </p>
-                    <div style={{ height: 160 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={seg.points} margin={{ top: 10, right: 15, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" vertical={false} />
-                          <XAxis 
-                            dataKey="t" 
-                            tick={{ fill: '#94a3b8', fontSize: 8 }} 
-                            tickLine={false} 
-                            interval="preserveStartEnd" 
-                            minTickGap={30}
-                            tickFormatter={(val) => Number(val).toFixed(1)}
-                          />
-                          <YAxis 
-                            width={36}
-                            tick={{ fill: '#94a3b8', fontSize: 8 }} 
-                            tickLine={false} 
-                            axisLine={false}
-                            tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
-                          />
-                          <ReferenceLine y={50} stroke="#f1f5f9" strokeDasharray="4 4" />
-                          <Line type="monotone" dataKey="targetX" stroke="#10b981" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                          <Line type="monotone" dataKey="gazeX" stroke="#8b5cf6" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {chunk.map((seg, i) => (
+                <div key={i} style={{
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  pageBreakInside: 'avoid',
+                  breakInside: 'avoid',
+                }}>
+                  {/* Segment header */}
+                  <div style={{ background: '#f1f5f9', padding: '10px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', margin: 0 }}>{seg.patternName}</h3>
+                    <span style={{ fontSize: 10, color: '#64748b', fontWeight: 500 }}>
+                      {seg.points.length.toLocaleString()} points
+                    </span>
+                  </div>
+
+                  {/* Charts */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, padding: '16px 16px 16px 4px', background: 'white' }}>
+                    {/* X axis */}
+                    <div>
+                      <p style={{ fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 8px' }}>
+                        Horizontal (X-axis)
+                      </p>
+                      <div style={{ height: 140 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={seg.points} margin={{ top: 10, right: 15, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" vertical={false} />
+                            <XAxis 
+                              dataKey="t" 
+                              tick={{ fill: '#94a3b8', fontSize: 7 }} 
+                              tickLine={false} 
+                              interval="preserveStartEnd" 
+                              minTickGap={25}
+                              tickFormatter={(val) => Number(val).toFixed(1)}
+                            />
+                            <YAxis 
+                              width={30}
+                              tick={{ fill: '#94a3b8', fontSize: 7 }} 
+                              tickLine={false} 
+                              axisLine={false}
+                              tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
+                            />
+                            <ReferenceLine y={50} stroke="#f1f5f9" strokeDasharray="4 4" />
+                            <Line type="monotone" dataKey="targetX" stroke="#10b981" strokeWidth={1.2} dot={false} isAnimationActive={false} />
+                            <Line type="monotone" dataKey="gazeX" stroke="#8b5cf6" strokeWidth={1.2} dot={false} isAnimationActive={false} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Y axis */}
+                    <div>
+                      <p style={{ fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 8px' }}>
+                        Vertical (Y-axis)
+                      </p>
+                      <div style={{ height: 140 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={seg.points} margin={{ top: 10, right: 15, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" vertical={false} />
+                            <XAxis 
+                              dataKey="t" 
+                              tick={{ fill: '#94a3b8', fontSize: 7 }} 
+                              tickLine={false} 
+                              interval="preserveStartEnd" 
+                              minTickGap={25}
+                              tickFormatter={(val) => Number(val).toFixed(1)}
+                            />
+                            <YAxis 
+                              width={30}
+                              tick={{ fill: '#94a3b8', fontSize: 7 }} 
+                              tickLine={false} 
+                              axisLine={false}
+                              tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
+                            />
+                            <ReferenceLine y={50} stroke="#f1f5f9" strokeDasharray="4 4" />
+                            <Line type="monotone" dataKey="targetY" stroke="#10b981" strokeWidth={1.2} dot={false} isAnimationActive={false} />
+                            <Line type="monotone" dataKey="gazeY" stroke="#8b5cf6" strokeWidth={1.2} dot={false} isAnimationActive={false} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Y axis */}
-                  <div>
-                    <p style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, margin: '0 0 12px' }}>
-                      Vertical (Y-axis)
-                    </p>
-                    <div style={{ height: 160 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={seg.points} margin={{ top: 10, right: 15, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" vertical={false} />
-                          <XAxis 
-                            dataKey="t" 
-                            tick={{ fill: '#94a3b8', fontSize: 8 }} 
-                            tickLine={false} 
-                            interval="preserveStartEnd" 
-                            minTickGap={30}
-                            tickFormatter={(val) => Number(val).toFixed(1)}
-                          />
-                          <YAxis 
-                            width={36}
-                            tick={{ fill: '#94a3b8', fontSize: 8 }} 
-                            tickLine={false} 
-                            axisLine={false}
-                            tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
-                          />
-                          <ReferenceLine y={50} stroke="#f1f5f9" strokeDasharray="4 4" />
-                          <Line type="monotone" dataKey="targetY" stroke="#10b981" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                          <Line type="monotone" dataKey="gazeY" stroke="#8b5cf6" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
+                  {/* Legend */}
+                  <div style={{ background: '#f8fafc', padding: '6px 16px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ display: 'inline-block', width: 16, height: 2, background: '#10b981', borderRadius: 1 }} />
+                      <span style={{ fontSize: 9, color: '#475569', fontWeight: 500 }}>Target</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ display: 'inline-block', width: 16, height: 2, background: '#8b5cf6', borderRadius: 1 }} />
+                      <span style={{ fontSize: 9, color: '#475569', fontWeight: 500 }}>Gaze</span>
                     </div>
                   </div>
                 </div>
-
-                {/* Legend */}
-                <div style={{ background: '#f8fafc', padding: '8px 20px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: 20 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ display: 'inline-block', width: 24, height: 3, background: '#10b981', borderRadius: 2 }} />
-                    <span style={{ fontSize: 11, color: '#475569', fontWeight: 500 }}>Target Path</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ display: 'inline-block', width: 24, height: 3, background: '#8b5cf6', borderRadius: 2 }} />
-                    <span style={{ fontSize: 11, color: '#475569', fontWeight: 500 }}>Eye Gaze</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        ));
+      })()}
 
       {/* Footer */}
       <div style={{ marginTop: 40, paddingTop: 16, borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

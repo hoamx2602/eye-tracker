@@ -48,6 +48,11 @@ export default async function PrintPage({ params }: { params: Promise<{ runId: s
     configSnapshot: (run.configSnapshot as Record<string, unknown> | null) ?? {},
     preSymptomScores: (run.preSymptomScores as Record<string, number> | null) ?? null,
     postSymptomScores: (run.postSymptomScores as Record<string, number> | null) ?? null,
+    chartSmoothing: (run.configSnapshot && typeof run.configSnapshot === 'object' && 'chartSmoothing' in run.configSnapshot
+      ? (run.configSnapshot as any).chartSmoothing
+      : (run.session.config && typeof run.session.config === 'object' && 'chartSmoothing' in run.session.config
+        ? (run.session.config as any).chartSmoothing
+        : { method: 'MOVING_AVERAGE', window: 6 })),
     testResults,
     trajectories,
     session: {
