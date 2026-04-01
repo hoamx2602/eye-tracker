@@ -131,6 +131,70 @@ export default function VisualSearchTest() {
     [clickHoldDurationMs]
   );
 
+  // ── Completion logic ──────────────────────────────────────────────────────
+  const finishTest = useCallback(() => {
+    const endTime = performance.now();
+    const g = neuroLiveGazeRef.current;
+    const tRel = (endTime - startTimeRef.current) / 1000;
+    const pathSnapshot = [...gazePathRef.current, { t: tRel, x: g.x, y: g.y }];
+    const rect = stimulusAreaRef.current?.getBoundingClientRect();
+    const stimulusBounds = rect
+      ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+      : undefined;
+    const fixationPerNumber = fixationsRef.current.reduce<Record<number, number>>((acc, fx) => {
+      acc[fx.number] = (acc[fx.number] ?? 0) + 1;
+      return acc;
+    }, {});
+    const gazeSequence = [...sequenceRef.current];
+    const scanningPath = pathSnapshot;
+    const completionTimeMs = endTime - startTimeRef.current;
+    const payload = {
+      testId: 'visual_search',
+      startTime: startTimeRef.current,
+      endTime,
+      numberPositions: positions,
+      fixations: [...fixationsRef.current],
+      sequence: gazeSequence,
+      completionTimeMs,
+      gazePath: scanningPath,
+      gazeFixationPerNumber: fixationPerNumber,
+      gazeSequence,
+      scanningPath,
+      viewportWidth: typeof window !== 'undefined' ? window.innerWidth : undefined,
+      viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
+      stimulusBounds,
+      allowClickTargets,
+      clickHoldDurationMs: allowClickTargets ? clickHoldDurationMs : undefined,
+    };
+    try {
+      localStorage.setItem(
+        VISUAL_SEARCH_RESULT_LS_KEY,
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          completionTimeMs,
+          gazeFixationPerNumber: fixationPerNumber,
+          gazeSequence,
+          scanningPath,
+        })
+      );
+    } catch (_) {}
+    neuroDebugLog('[VisualSearch] complete', {
+      scanningPathLen: scanningPath.length,
+      fixations: fixationsRef.current.length,
+      hasStimulusBounds: Boolean(stimulusBounds),
+    });
+    completeTest(payload);
+  }, [completeTest, positions, allowClickTargets, clickHoldDurationMs]);
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || e.repeat) return;
+      e.preventDefault();
+      finishTest();
+    },
+    [finishTest]
+  );
+
   // ── Pointer handlers (always active) ──────────────────────────────────────
   const onPointerDownTarget = useCallback(
     (number: number, e: React.PointerEvent<HTMLButtonElement>) => {
@@ -149,13 +213,6 @@ export default function VisualSearchTest() {
       holdTimerRef.current = setTimeout(() => {
         holdTimerRef.current = null;
         setHoldingNumber(null);
-        // Mark as confirmed (turn green)
-        setConfirmedNumbers(prev => {
-          if (prev.has(number)) return prev;
-          const next = new Set(prev);
-          next.add(number);
-          return next;
-        });
         // Record the fixation at hold completion
         const g = neuroLiveGazeRef.current;
         const t = performance.now();
@@ -170,9 +227,23 @@ export default function VisualSearchTest() {
         if (!sequenceRef.current.includes(number)) {
           sequenceRef.current.push(number);
         }
+
+        // Auto-complete if all confirmed on click/hold
+        if (allowClickTargets) {
+          setConfirmedNumbers(prev => {
+            if (prev.has(number)) return prev;
+            const next = new Set(prev);
+            next.add(number);
+            // If this was the last one, finish immediately
+            if (next.size >= positions.length) {
+              finishTest();
+            }
+            return next;
+          });
+        }
       }, DWELL_CONFIRM_MS);
     },
-    [allowClickTargets, cancelHold]
+    [allowClickTargets, cancelHold, finishTest, positions.length]
   );
 
   const onPointerUpTarget = useCallback(
@@ -200,66 +271,6 @@ export default function VisualSearchTest() {
       cancelHold();
     },
     [cancelHold]
-  );
-
-  // ── Space → complete test ──────────────────────────────────────────────────
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat) return;
-      e.preventDefault();
-      const endTime = performance.now();
-      const g = neuroLiveGazeRef.current;
-      const tRel = (endTime - startTimeRef.current) / 1000;
-      const pathSnapshot = [...gazePathRef.current, { t: tRel, x: g.x, y: g.y }];
-      const rect = stimulusAreaRef.current?.getBoundingClientRect();
-      const stimulusBounds = rect
-        ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-        : undefined;
-      const fixationPerNumber = fixationsRef.current.reduce<Record<number, number>>((acc, fx) => {
-        acc[fx.number] = (acc[fx.number] ?? 0) + 1;
-        return acc;
-      }, {});
-      const gazeSequence = [...sequenceRef.current];
-      const scanningPath = pathSnapshot;
-      const completionTimeMs = endTime - startTimeRef.current;
-      const payload = {
-        testId: 'visual_search',
-        startTime: startTimeRef.current,
-        endTime,
-        numberPositions: positions,
-        fixations: [...fixationsRef.current],
-        sequence: gazeSequence,
-        completionTimeMs,
-        gazePath: scanningPath,
-        gazeFixationPerNumber: fixationPerNumber,
-        gazeSequence,
-        scanningPath,
-        viewportWidth: typeof window !== 'undefined' ? window.innerWidth : undefined,
-        viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
-        stimulusBounds,
-        allowClickTargets,
-        clickHoldDurationMs: allowClickTargets ? clickHoldDurationMs : undefined,
-      };
-      try {
-        localStorage.setItem(
-          VISUAL_SEARCH_RESULT_LS_KEY,
-          JSON.stringify({
-            savedAt: new Date().toISOString(),
-            completionTimeMs,
-            gazeFixationPerNumber: fixationPerNumber,
-            gazeSequence,
-            scanningPath,
-          })
-        );
-      } catch (_) {}
-      neuroDebugLog('[VisualSearch] complete', {
-        scanningPathLen: scanningPath.length,
-        fixations: fixationsRef.current.length,
-        hasStimulusBounds: Boolean(stimulusBounds),
-      });
-      completeTest(payload);
-    },
-    [completeTest, positions, allowClickTargets, clickHoldDurationMs]
   );
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -345,9 +356,13 @@ export default function VisualSearchTest() {
       `}</style>
 
       <p className="text-center text-gray-400 text-sm mt-4 mb-2">
-        Look at each number in order (1 → 2 → … → {numberCount}).{' '}
-        Hold each number for 1.5 s until it turns green, then move on.{' '}
-        Press <kbd className="px-1.5 py-0.5 rounded bg-gray-700 font-mono">SPACE</kbd> when done.
+        {allowClickTargets
+          ? `Click and hold each number in order (1 → 2 → … → ${numberCount}) until it turns green.`
+          : `Look at each number in order (1 → 2 → … → ${numberCount}). Hold each number for 1.5 s until it turns green, then move on.`
+        }
+        {!allowClickTargets && (
+          <> Press <kbd className="px-1.5 py-0.5 rounded bg-gray-700 font-mono">SPACE</kbd> when done.</>
+        )}
       </p>
 
       {!gazeModelReady && (
@@ -416,9 +431,11 @@ export default function VisualSearchTest() {
         })}
       </div>
 
-      <p className="text-center text-amber-400/90 text-xs pb-6">
-        Press SPACE when you have confirmed all numbers.
-      </p>
+      {!allowClickTargets && (
+        <p className="text-center text-amber-400/90 text-xs pb-6">
+          Press SPACE when you have confirmed all numbers.
+        </p>
+      )}
     </div>
   );
 }
