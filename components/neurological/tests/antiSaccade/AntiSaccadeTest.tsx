@@ -324,6 +324,12 @@ export default function AntiSaccadeTest() {
       role="region"
       aria-label="Anti-saccade: look opposite direction from the primary square"
     >
+      {/* Centre lines */}
+      <div className="pointer-events-none fixed inset-0" aria-hidden>
+        <div className="absolute inset-y-0 left-1/2 -translate-x-px w-px border-l-2 border-dashed border-white/15" />
+        <div className="absolute inset-x-0 top-1/2 -translate-y-px h-px border-t-2 border-dashed border-white/15" />
+      </div>
+
       <p className="text-center text-gray-400 text-sm pt-4 pb-2">
         Look in the opposite direction from the <strong className="text-gray-300">primary</strong> square
         {showDimRect ? (
