@@ -21,6 +21,7 @@ import {
   calibrationQualityLabel,
   calibrationQualityColour,
   eyeTrackingAccuracyScore,
+  angularErrorDeg,
   selfAssessmentInsight,
   symptomTotal,
   DOMAIN_ICONS,
@@ -50,6 +51,8 @@ interface RunData {
   preSymptomScores: Record<string, number> | null;
   postSymptomScores: Record<string, number> | null;
   testResults: Record<string, Record<string, unknown>>;
+  faceDistance?: number;
+  chartSmoothing?: { method: string; window: number };
   session: {
     id: string;
     meanErrorPx: number | null;
@@ -147,6 +150,8 @@ function AccuracyDial({ score }: { score: number }) {
 export default function ResultsPageClient({ runData }: { runData: RunData }) {
   const { session, testOrderSnapshot, testResults, configSnapshot, preSymptomScores, postSymptomScores } = runData;
   const meanErrorPx = session.meanErrorPx;
+  const viewingDistanceCm = runData.faceDistance ?? 60;
+  const angularErr = meanErrorPx != null ? angularErrorDeg(meanErrorPx, viewingDistanceCm) : null;
 
   // Extract scoring config from configSnapshot
   const configSnap = configSnapshot as {
@@ -250,9 +255,24 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
               </h1>
               <p className="text-sm text-gray-400 mb-5">{assessmentDate}</p>
               {meanErrorPx != null && (
-                <div className={`inline-flex items-center gap-2 text-sm font-medium ${calibrationQualityColour(meanErrorPx)}`}>
-                  <span className="text-lg">●</span>
-                  <span>{calibrationQualityLabel(meanErrorPx)}</span>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className={`inline-flex items-center gap-2 text-sm font-medium ${calibrationQualityColour(meanErrorPx)}`}>
+                    <span className="text-lg">●</span>
+                    <span>{calibrationQualityLabel(meanErrorPx)}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-gray-400">
+                    <span className="font-mono bg-gray-800 px-2 py-1 rounded">
+                      <span className="text-gray-500">Error </span>
+                      <span className="text-white font-semibold">{meanErrorPx.toFixed(1)} px</span>
+                    </span>
+                    {angularErr != null && (
+                      <span className="font-mono bg-gray-800 px-2 py-1 rounded">
+                        <span className="text-gray-500">≈ </span>
+                        <span className="text-white font-semibold">{angularErr.toFixed(2)}°</span>
+                        <span className="text-gray-500"> visual angle</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -272,7 +292,10 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
             title="Eye Tracking Profile"
             subtitle="How accurately the eye tracker followed your gaze."
           />
-          <TestModeCharts testTrajectories={session.testTrajectories as TestTrajectorySegment[] | null} />
+          <TestModeCharts
+            testTrajectories={session.testTrajectories as TestTrajectorySegment[] | null}
+            smoothing={runData.chartSmoothing}
+          />
         </section>
 
         {/* ——————————————————————————————————————————————

@@ -9,6 +9,10 @@
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import ResultsPageClient from './ResultsPageClient';
+import { DEFAULT_CONFIG, ChartSmoothingMethod } from '@/types';
+
+// Always render fresh — config (smoothing, faceDistance) must reflect latest admin settings
+export const dynamic = 'force-dynamic';
 
 interface Props {
   params: Promise<{ runId: string }>;
@@ -45,6 +49,13 @@ export default async function ResultsPage({ params }: Props) {
     redirect('/');
   }
 
+  // Fetch current AppConfig for chart display preferences (smoothing) and faceDistance
+  let appConfigRecord;
+  try {
+    appConfigRecord = await prisma.appConfig.findUnique({ where: { name: 'default' } });
+  } catch { /* ignore */ }
+  const appCfg = { ...DEFAULT_CONFIG, ...(appConfigRecord?.config as Record<string, unknown> | null ?? {}) } as typeof DEFAULT_CONFIG;
+
   if (!run || run.status !== 'completed') {
     return (
       <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center gap-4 p-8 text-center">
@@ -69,6 +80,15 @@ export default async function ResultsPage({ params }: Props) {
     (run.session?.calibrationGazeSamples as unknown[] | null) ?? []
   ).slice(0, 500);
 
+  // Extract faceDistance used during calibration: prefer session config, fall back to appCfg
+  const sessionCfg = (run.session?.config && typeof run.session.config === 'object')
+    ? run.session.config as Record<string, unknown>
+    : {};
+  const faceDistance: number =
+    typeof sessionCfg.faceDistance === 'number'
+      ? sessionCfg.faceDistance
+      : appCfg.faceDistance;
+
   const runData = {
     id: run.id,
     status: run.status,
@@ -78,6 +98,11 @@ export default async function ResultsPage({ params }: Props) {
     preSymptomScores: (run.preSymptomScores as Record<string, number> | null) ?? null,
     postSymptomScores: (run.postSymptomScores as Record<string, number> | null) ?? null,
     testResults: strippedResults,
+    faceDistance,
+    chartSmoothing: {
+      method: appCfg.chartSmoothingMethod ?? ChartSmoothingMethod.MOVING_AVERAGE,
+      window: appCfg.chartSmoothingWindow ?? 7,
+    },
     session: {
       id: run.session?.id ?? '',
       meanErrorPx: run.session?.meanErrorPx ?? null,

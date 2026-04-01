@@ -123,6 +123,12 @@ export enum CalibrationMethod {
   CLICK_HOLD = 'CLICK_HOLD' // New click and hold method
 }
 
+export enum ChartSmoothingMethod {
+  NONE = 'NONE',
+  MOVING_AVERAGE = 'MOVING_AVERAGE',
+  GAUSSIAN = 'GAUSSIAN',
+}
+
 // --- EYE MOVEMENT EXERCISE TYPES ---
 export type EyeMovementKind =
   | 'wiggling'
@@ -205,6 +211,10 @@ export interface AppConfig {
   // --- RECORDING & CAPTURE ---
   enableVideoRecording: boolean;
   faceCaptureInterval: number; // Seconds. 0 to disable.
+
+  // --- CHART DISPLAY ---
+  chartSmoothingMethod: ChartSmoothingMethod;
+  chartSmoothingWindow: number; // Frames (2–30)
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -247,5 +257,9 @@ export const DEFAULT_CONFIG: AppConfig = {
 
   // Recording Defaults
   enableVideoRecording: true,
-  faceCaptureInterval: 5 // Capture face every 5 seconds
+  faceCaptureInterval: 5, // Capture face every 5 seconds
+
+  // Chart Display Defaults
+  chartSmoothingMethod: ChartSmoothingMethod.MOVING_AVERAGE,
+  chartSmoothingWindow: 7,
 };

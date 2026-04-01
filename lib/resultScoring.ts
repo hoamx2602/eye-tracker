@@ -8,6 +8,21 @@
  * IMPORTANT: These are pure functions — no side effects, no DB calls.
  */
 
+/**
+ * Convert a calibration mean pixel error to visual angle (degrees).
+ *
+ * Uses the CSS standard: 1 CSS pixel = 1/96 inch = 2.54/96 cm.
+ * Formula: θ = atan(errorCm / viewingDistanceCm) × (180/π)
+ *
+ * @param meanErrorPx   Mean error from calibration validation (CSS pixels)
+ * @param viewingDistanceCm  Distance from eye to screen in centimetres (default 60)
+ */
+export function angularErrorDeg(meanErrorPx: number, viewingDistanceCm = 60): number {
+  const CM_PER_CSS_PX = 2.54 / 96; // ≈ 0.02646 cm
+  const errorCm = meanErrorPx * CM_PER_CSS_PX;
+  return (Math.atan(errorCm / viewingDistanceCm) * 180) / Math.PI;
+}
+
 /** Clamp a value between min and max. */
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));

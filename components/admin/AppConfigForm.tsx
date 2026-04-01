@@ -5,6 +5,7 @@ import {
   AppConfig,
   RegressionMethod,
   SmoothingMethod,
+  ChartSmoothingMethod,
   OutlierMethod,
   CalibrationMethod,
   DEFAULT_CONFIG,
@@ -441,6 +442,41 @@ export default function AppConfigForm() {
                 />
               </section>
             )}
+            <section className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">
+              <h3 className="text-sm font-bold text-slate-300">Chart smoothing (results page)</h3>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Algorithm</label>
+                <select
+                  value={localConfig.chartSmoothingMethod ?? ChartSmoothingMethod.MOVING_AVERAGE}
+                  onChange={(e) => handleChange('chartSmoothingMethod', e.target.value)}
+                  className="w-full bg-slate-800 text-white rounded-lg px-3 py-2 text-sm border border-slate-600"
+                >
+                  <option value={ChartSmoothingMethod.MOVING_AVERAGE}>Moving average</option>
+                  <option value={ChartSmoothingMethod.GAUSSIAN}>Gaussian</option>
+                  <option value={ChartSmoothingMethod.NONE}>None (raw)</option>
+                </select>
+              </div>
+              {(localConfig.chartSmoothingMethod ?? ChartSmoothingMethod.MOVING_AVERAGE) !== ChartSmoothingMethod.NONE && (
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-slate-400">Window size (frames)</span>
+                    <span className="font-mono">{localConfig.chartSmoothingWindow ?? 7}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={2}
+                    max={30}
+                    step={1}
+                    value={localConfig.chartSmoothingWindow ?? 7}
+                    onChange={(e) => handleChange('chartSmoothingWindow', parseInt(e.target.value, 10))}
+                    className="w-full accent-violet-500 h-1 bg-slate-600 rounded-lg"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Smoothing is applied only to the gaze signal on the results charts. Raw data is never modified.
+                  </p>
+                </div>
+              )}
+            </section>
           </>
         )}
 

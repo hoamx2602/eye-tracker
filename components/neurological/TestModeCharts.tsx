@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -14,6 +14,76 @@ import {
 
 export type TestTrajectoryPoint = { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number };
 export type TestTrajectorySegment = { patternName: string; points: TestTrajectoryPoint[] };
+
+export interface ChartSmoothingConfig {
+  method: string; // 'NONE' | 'MOVING_AVERAGE' | 'GAUSSIAN'
+  window: number;
+}
+
+// ---------------------------------------------------------------------------
+// Smoothing utilities
+// ---------------------------------------------------------------------------
+
+function movingAverage(data: number[], win: number): number[] {
+  const half = Math.floor(win / 2);
+  return data.map((_, i) => {
+    const start = Math.max(0, i - half);
+    const end = Math.min(data.length, i + half + 1);
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += data[j];
+    return sum / (end - start);
+  });
+}
+
+function gaussianKernel(win: number): number[] {
+  const sigma = win / 4;
+  const center = Math.floor(win / 2);
+  const weights = Array.from({ length: win }, (_, i) =>
+    Math.exp(-0.5 * ((i - center) / sigma) ** 2)
+  );
+  const total = weights.reduce((a, b) => a + b, 0);
+  return weights.map((w) => w / total);
+}
+
+function gaussianSmooth(data: number[], win: number): number[] {
+  const kernel = gaussianKernel(win);
+  const half = Math.floor(win / 2);
+  return data.map((_, i) => {
+    let sum = 0, totalW = 0;
+    for (let k = 0; k < win; k++) {
+      const idx = i - half + k;
+      if (idx >= 0 && idx < data.length) {
+        sum += data[idx] * kernel[k];
+        totalW += kernel[k];
+      }
+    }
+    return sum / totalW;
+  });
+}
+
+function applySmoothing(values: number[], cfg: ChartSmoothingConfig): number[] {
+  if (cfg.method === 'NONE' || cfg.window < 2) return values;
+  if (cfg.method === 'GAUSSIAN') return gaussianSmooth(values, cfg.window);
+  // default: MOVING_AVERAGE
+  return movingAverage(values, cfg.window);
+}
+
+function smoothSegment(
+  seg: TestTrajectorySegment,
+  cfg: ChartSmoothingConfig
+): TestTrajectorySegment {
+  if (cfg.method === 'NONE' || cfg.window < 2) return seg;
+  const gazeXs = applySmoothing(seg.points.map((p) => p.gazeX), cfg);
+  const gazeYs = applySmoothing(seg.points.map((p) => p.gazeY), cfg);
+  return {
+    patternName: seg.patternName,
+    points: seg.points.map((p, i) => ({ ...p, gazeX: gazeXs[i], gazeY: gazeYs[i] })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tooltip
+// ---------------------------------------------------------------------------
 
 function DarkTooltip({
   active,
@@ -37,12 +107,40 @@ function DarkTooltip({
   );
 }
 
-export default function TestModeCharts({ testTrajectories }: { testTrajectories: TestTrajectorySegment[] | null }) {
-  if (!testTrajectories || testTrajectories.length === 0) return null;
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export default function TestModeCharts({
+  testTrajectories,
+  smoothing,
+}: {
+  testTrajectories: TestTrajectorySegment[] | null;
+  smoothing?: ChartSmoothingConfig;
+}) {
+  const cfg: ChartSmoothingConfig = smoothing ?? { method: 'NONE', window: 1 };
+
+  const smoothedTrajectories = useMemo(
+    () => testTrajectories?.map((seg) => smoothSegment(seg, cfg)) ?? null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [testTrajectories, cfg.method, cfg.window]
+  );
+
+  if (!smoothedTrajectories || smoothedTrajectories.length === 0) return null;
+
+  const smoothingLabel =
+    cfg.method === 'NONE' || cfg.window < 2
+      ? null
+      : cfg.method === 'GAUSSIAN'
+        ? `Gaussian smoothing (σ window ${cfg.window})`
+        : `Moving average (window ${cfg.window})`;
 
   return (
     <div className="space-y-4">
-      {testTrajectories.map((seg, i) => (
+      {smoothingLabel && (
+        <p className="text-xs text-gray-500 italic">{smoothingLabel} applied to gaze signal</p>
+      )}
+      {smoothedTrajectories.map((seg, i) => (
         <details key={i} className="rounded-xl border border-gray-800 bg-gray-900/50 overflow-hidden print:break-inside-avoid" open={true}>
           <summary className="cursor-pointer select-none px-4 py-3 flex items-center justify-between gap-3 hover:bg-gray-800/50">
             <span className="text-sm font-medium text-gray-200">{seg.patternName}</span>
@@ -54,15 +152,15 @@ export default function TestModeCharts({ testTrajectories }: { testTrajectories:
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={seg.points} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis 
-                    dataKey="t" 
-                    tick={{ fill: '#9ca3af', fontSize: 10 }} 
-                    name="Time (s)" 
+                  <XAxis
+                    dataKey="t"
+                    tick={{ fill: '#9ca3af', fontSize: 10 }}
+                    name="Time (s)"
                     tickFormatter={(val) => Number(val).toFixed(1)}
                     minTickGap={30}
                   />
-                  <YAxis 
-                    tick={{ fill: '#9ca3af', fontSize: 10 }} 
+                  <YAxis
+                    tick={{ fill: '#9ca3af', fontSize: 10 }}
                     tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
                   />
                   <Tooltip content={<DarkTooltip />} />
@@ -81,15 +179,15 @@ export default function TestModeCharts({ testTrajectories }: { testTrajectories:
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={seg.points} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis 
-                    dataKey="t" 
-                    tick={{ fill: '#9ca3af', fontSize: 10 }} 
-                    name="Time (s)" 
+                  <XAxis
+                    dataKey="t"
+                    tick={{ fill: '#9ca3af', fontSize: 10 }}
+                    name="Time (s)"
                     tickFormatter={(val) => Number(val).toFixed(1)}
                     minTickGap={30}
                   />
-                  <YAxis 
-                    tick={{ fill: '#9ca3af', fontSize: 10 }} 
+                  <YAxis
+                    tick={{ fill: '#9ca3af', fontSize: 10 }}
                     tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
                   />
                   <Tooltip content={<DarkTooltip />} />
