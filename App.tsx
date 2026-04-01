@@ -422,6 +422,14 @@ function App() {
           if (heatmapRef.current) heatmapRef.current.reset();
           trackingHistoryRef.current = [];
         }
+        // Auto-start camera & link session if coming from e.g. results page with a sid
+        const sid = searchParams.get('sessionId');
+        if (sid && sid !== createdSessionId) {
+          setCreatedSessionId(sid);
+        }
+        if (!hasCameraStream) {
+          startCamera().catch(() => {});
+        }
         break;
       case 'neuro_pre':
         if (status !== 'NEURO_FLOW') setStatus('NEURO_FLOW');
@@ -454,7 +462,7 @@ function App() {
         setCurrentNeuroTestId(null);
         break;
     }
-  }, [pathname]);
+  }, [pathname, searchParams, hasCameraStream]);
 
   // Debug: log status & pathname when they change (helps when tracking screen is blank)
   useEffect(() => {
