@@ -538,49 +538,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
 
 
 
-        {/* ——————————————————————————————————————————————
-            Section E — Symptom Change
-        —————————————————————————————————————————————— */}
-        {hasSymptoms && (
-          <section>
-            <SectionHeader
-              title="Symptom Change"
-              subtitle="Your reported symptoms before and after completing the assessment."
-            />
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 print:break-inside-avoid">
-              <p className="text-sm text-gray-300 mb-5">
-                Your overall symptom score changed from{' '}
-                <span className="font-bold text-white">{preTotal}</span>
-                {' → '}
-                <span className={`font-bold ${postTotal < preTotal ? 'text-emerald-400' : postTotal > preTotal ? 'text-red-400' : 'text-white'}`}>
-                  {postTotal}
-                </span>
-                {' '}after completing the assessment.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {Object.entries(SYMPTOM_LABELS).map(([key, label]) => {
-                  const pre = preSymptomScores?.[key] ?? 0;
-                  const post = postSymptomScores?.[key] ?? 0;
-                  const delta = post - pre;
-                  return (
-                    <div key={key} className="flex items-center gap-3 text-xs rounded-lg px-3 py-2 bg-gray-900/60">
-                      <span className="text-gray-500 w-5 shrink-0">{delta > 0 ? '↑' : delta < 0 ? '↓' : '='}</span>
-                      <span className="flex-1 text-gray-300">{label}</span>
-                      <span className="text-gray-500">{pre}</span>
-                      <span className="text-gray-600">→</span>
-                      <span className={delta > 0 ? 'text-red-400' : delta < 0 ? 'text-emerald-400' : 'text-gray-400'}>
-                        {post}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-gray-600 mt-4 leading-relaxed">
-                Symptom scores help us understand how you felt during the assessment. They do not constitute a medical assessment.
-              </p>
-            </div>
-          </section>
-        )}
+
 
         {/* ——————————————————————————————————————————————
             Section F — Download

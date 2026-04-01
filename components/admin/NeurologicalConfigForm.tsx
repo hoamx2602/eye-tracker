@@ -14,7 +14,7 @@ const TEST_LABELS: Record<string, string> = {
   visual_search: 'Visual Search',
   memory_cards: 'Memory Cards',
   anti_saccade: 'Anti-Saccade',
-  saccadic: 'Saccadic',
+  saccadic: 'Saccadic Eye Movement',
   fixation_stability: 'Fixation Stability',
   peripheral_vision: 'Peripheral Vision',
 };

@@ -10,7 +10,6 @@ import {
   eyeTrackingAccuracyScore,
   angularErrorDeg,
   DOMAIN_NAMES,
-  symptomTotal,
 } from '@/lib/resultScoring';
 
 import { 
@@ -24,8 +23,6 @@ interface PrintData {
   createdAt: string;
   testOrderSnapshot: string[];
   configSnapshot: Record<string, any>;
-  preSymptomScores: Record<string, number> | null;
-  postSymptomScores: Record<string, number> | null;
   testResults: Record<string, any>;
   trajectories: any[] | null;
   chartSmoothing?: ChartSmoothingConfig | null;
@@ -54,7 +51,7 @@ function ScoreLabel({ score }: { score: number | null }) {
 }
 
 export default function ResultsPrintLayout({ data }: { data: PrintData }) {
-  const { session, testOrderSnapshot, testResults, configSnapshot, preSymptomScores, postSymptomScores, trajectories, chartSmoothing } = data;
+  const { session, testOrderSnapshot, testResults, configSnapshot, trajectories, chartSmoothing } = data;
 
   const configSnap = configSnapshot as {
     testParameters?: Record<string, Record<string, unknown>>;
@@ -86,9 +83,6 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
   const lastName = demographics ? (demographics.lastName as string | undefined) : undefined;
   const fullName = [firstName, lastName].filter(Boolean).join(' ');
 
-  const preTotal = symptomTotal(preSymptomScores);
-  const postTotal = symptomTotal(postSymptomScores);
-  const hasSymptoms = preSymptomScores !== null && postSymptomScores !== null;
 
   const trajectoryList = useMemo(() => {
     const raw = Array.isArray(trajectories) ? trajectories as Array<{
@@ -153,25 +147,13 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
           </p>
           <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>degrees error</p>
         </div>
-        {hasSymptoms ? (
-          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '16px 20px' }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: '#b45309', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Symptom Change</p>
-            <p style={{ fontSize: 40, fontWeight: 900, color: '#78350f', margin: '6px 0 0', lineHeight: 1 }}>
-              {preTotal !== null && postTotal !== null
-                ? (preTotal - postTotal > 0 ? `−${preTotal - postTotal}` : (preTotal - postTotal < 0 ? `+${postTotal - preTotal}` : '0'))
-                : '—'}
-            </p>
-            <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>pre vs post session</p>
-          </div>
-        ) : (
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px' }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: '#15803d', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Tests Completed</p>
-            <p style={{ fontSize: 40, fontWeight: 900, color: '#14532d', margin: '6px 0 0', lineHeight: 1 }}>
-              {Object.keys(testResults).length}<span style={{ fontSize: 18 }}>/14</span>
-            </p>
-            <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>assessment domains</p>
-          </div>
-        )}
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px' }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#15803d', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Tests Completed</p>
+          <p style={{ fontSize: 40, fontWeight: 900, color: '#14532d', margin: '6px 0 0', lineHeight: 1 }}>
+            {Object.keys(testResults).length}<span style={{ fontSize: 18 }}>/14</span>
+          </p>
+          <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>assessment domains</p>
+        </div>
       </div>
 
       {/* ═══════════════════════════════════════════════════
@@ -228,36 +210,7 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
           );
         })()}
 
-        {/* Symptom comparison if available */}
-        {hasSymptoms && (
-          <div style={{ marginTop: 28, border: '1px solid #e2e8f0', borderRadius: 10, padding: '16px 20px', background: '#fffbeb' }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, color: '#92400e', margin: '0 0 12px' }}>Symptom Assessment Comparison</h3>
-            <div style={{ display: 'flex', gap: 32 }}>
-              <div>
-                <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>Before session</p>
-                <p style={{ fontSize: 28, fontWeight: 900, color: '#78350f', margin: '4px 0 0' }}>{preTotal ?? '—'}</p>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', color: '#94a3b8', fontSize: 20 }}>→</div>
-              <div>
-                <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>After session</p>
-                <p style={{ fontSize: 28, fontWeight: 900, color: '#78350f', margin: '4px 0 0' }}>{postTotal ?? '—'}</p>
-              </div>
-              {preTotal !== null && postTotal !== null && (
-                <div style={{ marginLeft: 20, display: 'flex', alignItems: 'center' }}>
-                  <div style={{
-                    background: preTotal > postTotal ? '#dcfce7' : preTotal < postTotal ? '#fee2e2' : '#f1f5f9',
-                    border: `1px solid ${preTotal > postTotal ? '#86efac' : preTotal < postTotal ? '#fca5a5' : '#e2e8f0'}`,
-                    borderRadius: 8, padding: '6px 14px'
-                  }}>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: preTotal > postTotal ? '#15803d' : preTotal < postTotal ? '#dc2626' : '#475569', margin: 0 }}>
-                      {preTotal > postTotal ? `${preTotal - postTotal} point improvement` : preTotal < postTotal ? `${postTotal - preTotal} point increase` : 'No change'}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+
       </div>
 
       {/* ═══════════════════════════════════════════════════
