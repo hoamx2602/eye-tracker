@@ -8,6 +8,7 @@ import {
 import {
   computeAllScores,
   eyeTrackingAccuracyScore,
+  angularErrorDeg,
   DOMAIN_NAMES,
   symptomTotal,
 } from '@/lib/resultScoring';
@@ -117,7 +118,7 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
       </div>
 
       {/* Overview strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 14, marginBottom: 28 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
         <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 12, padding: '16px 20px' }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: '#0369a1', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Eye Tracking Accuracy</p>
           <p style={{ fontSize: 40, fontWeight: 900, color: '#0c4a6e', margin: '6px 0 0', lineHeight: 1 }}>
@@ -126,20 +127,23 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
           <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>out of 100</p>
         </div>
         <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 12, padding: '16px 20px' }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Mean Gaze Error</p>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Mean Pixel Error</p>
           <p style={{ fontSize: 40, fontWeight: 900, color: '#4c1d95', margin: '6px 0 0', lineHeight: 1 }}>
             {session.meanErrorPx != null ? Math.round(session.meanErrorPx) : '—'}
           </p>
           <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>pixels deviation</p>
         </div>
-        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px' }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#15803d', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Tests Completed</p>
-          <p style={{ fontSize: 40, fontWeight: 900, color: '#14532d', margin: '6px 0 0', lineHeight: 1 }}>
-            14<span style={{ fontSize: 18 }}>/14</span>
+        <div style={{ background: '#fff7ed', border: '1px solid #ffedd5', borderRadius: 12, padding: '16px 20px' }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#9a3412', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Visual Angular</p>
+          <p style={{ fontSize: 40, fontWeight: 900, color: '#7c2d12', margin: '6px 0 0', lineHeight: 1 }}>
+            {session.meanErrorPx != null 
+              ? angularErrorDeg(session.meanErrorPx, (configSnapshot as any)?.faceDistance ?? 60).toFixed(1) 
+              : '—'}
+            <span style={{ fontSize: 18, fontWeight: 600 }}>°</span>
           </p>
-          <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>assessment domains</p>
+          <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>degrees error</p>
         </div>
-        {hasSymptoms && (
+        {hasSymptoms ? (
           <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '16px 20px' }}>
             <p style={{ fontSize: 11, fontWeight: 600, color: '#b45309', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Symptom Change</p>
             <p style={{ fontSize: 40, fontWeight: 900, color: '#78350f', margin: '6px 0 0', lineHeight: 1 }}>
@@ -149,11 +153,13 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
             </p>
             <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>pre vs post session</p>
           </div>
-        )}
-        {!hasSymptoms && (
-          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px 20px' }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Status</p>
-            <p style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: '8px 0 0' }}>Completed</p>
+        ) : (
+          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px' }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: '#15803d', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Tests Completed</p>
+            <p style={{ fontSize: 40, fontWeight: 900, color: '#14532d', margin: '6px 0 0', lineHeight: 1 }}>
+              {Object.keys(testResults).length}<span style={{ fontSize: 18 }}>/14</span>
+            </p>
+            <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>assessment domains</p>
           </div>
         )}
       </div>
