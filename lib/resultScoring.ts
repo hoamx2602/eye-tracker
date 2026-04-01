@@ -157,17 +157,26 @@ export function scoreAntiSaccade(
   scoringConfig?: ScoringConfig
 ): number {
   const metrics = (result.metrics ?? {}) as Record<string, unknown>;
-  // Prefer angular error if available
+
+  // Compute avgAngularErrorDeg from per-trial data if metrics doesn't have it
   const avgAngularErrorDeg = typeof metrics.avgAngularErrorDeg === 'number'
     ? metrics.avgAngularErrorDeg
     : typeof metrics.meanAngularErrorDeg === 'number'
     ? metrics.meanAngularErrorDeg
-    : null;
+    : (() => {
+        const trials = result.trials as Array<{ angularErrorDeg?: number }> | undefined;
+        if (!Array.isArray(trials) || trials.length === 0) return null;
+        const withErr = trials.filter(t => typeof t.angularErrorDeg === 'number');
+        if (withErr.length === 0) return null;
+        return withErr.reduce((s, t) => s + Math.abs(t.angularErrorDeg!), 0) / withErr.length;
+      })();
+
   if (avgAngularErrorDeg !== null) {
     const p10 = getBaseline('anti_saccade', 'p10ErrorDeg', scoringConfig);
     const p90 = getBaseline('anti_saccade', 'p90ErrorDeg', scoringConfig);
     return p10p90Score(avgAngularErrorDeg, p10, p90, true);
   }
+
   // Fall back to directionAccuracy (0–100 percent correct) when angular error isn't stored
   const dirAccuracy = typeof metrics.directionAccuracy === 'number' ? metrics.directionAccuracy : null;
   if (dirAccuracy !== null) {
@@ -181,11 +190,20 @@ export function scoreSaccadic(
   scoringConfig?: ScoringConfig
 ): number {
   const metrics = (result.metrics ?? {}) as Record<string, unknown>;
+  // Check all possible field names used across different payload versions
   const avgLatencyMs = typeof metrics.avgLatencyMs === 'number' ? metrics.avgLatencyMs
     : typeof metrics.meanLatencyMs === 'number' ? metrics.meanLatencyMs
     : typeof metrics.avgLatency === 'number' ? metrics.avgLatency
-    : null;
-  if (avgLatencyMs === null) return 0;
+    // Fall back to computing from cycles array if metrics is incomplete
+    : (() => {
+        const cycles = result.cycles as Array<{ latencyMs?: number }> | undefined;
+        if (!Array.isArray(cycles) || cycles.length === 0) return null;
+        const withLatency = cycles.filter(c => typeof c.latencyMs === 'number' && c.latencyMs > 0);
+        if (withLatency.length === 0) return null;
+        return withLatency.reduce((s, c) => s + c.latencyMs!, 0) / withLatency.length;
+      })();
+
+  if (avgLatencyMs === null || avgLatencyMs <= 0) return 0;
 
   const p10 = getBaseline('saccadic', 'p10LatencyMs', scoringConfig);
   const p90 = getBaseline('saccadic', 'p90LatencyMs', scoringConfig);
@@ -198,10 +216,26 @@ export function scoreFixationStability(
   scoringConfig?: ScoringConfig
 ): number {
   const metrics = (result.metrics ?? {}) as Record<string, unknown>;
+  // Check metrics sub-object first, then top-level fields (older payload format)
   const bcea95 = typeof metrics.bcea95Px2 === 'number' ? metrics.bcea95Px2
     : typeof metrics.bceaPx2 === 'number' ? metrics.bceaPx2
+    : typeof result.bcea95Px2 === 'number' ? result.bcea95Px2
     : null;
-  if (bcea95 === null) return 0;
+
+  // bcea95 === 0 means all gaze landed at exactly the same point (e.g. no gaze model);
+  // treat as invalid data rather than a perfect score.
+  if (bcea95 === null || bcea95 <= 0) {
+    // Fallback: use dispersion from metrics if available
+    const dispersion = typeof metrics.dispersionPx === 'number' ? metrics.dispersionPx
+      : typeof result.gazeDispersion === 'number' ? result.gazeDispersion
+      : null;
+    if (dispersion === null || dispersion <= 0) return 0;
+    // Convert dispersion (px std-dev) to approximate bcea95: π × z95² × σx × σy ≈ π × (1.96)² × σ² 
+    const approxBcea95 = Math.PI * 1.96 * 1.96 * dispersion * dispersion;
+    const p10 = getBaseline('fixation_stability', 'p10Bcea95', scoringConfig);
+    const p90 = getBaseline('fixation_stability', 'p90Bcea95', scoringConfig);
+    return p10p90Score(approxBcea95, p10, p90, true);
+  }
 
   const p10 = getBaseline('fixation_stability', 'p10Bcea95', scoringConfig);
   const p90 = getBaseline('fixation_stability', 'p90Bcea95', scoringConfig);
