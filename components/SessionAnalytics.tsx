@@ -59,12 +59,13 @@ function DarkTooltip({
   label?: string | number;
 }) {
   if (!active || !payload?.length) return null;
+  const timeLabel = label != null ? `t = ${Number(label).toFixed(2)} s` : null;
   return (
     <div className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 shadow-xl text-left">
-      {label != null && <p className="text-slate-200 text-xs font-medium mb-1">{String(label)}</p>}
+      {timeLabel && <p className="text-slate-400 text-xs mb-1">{timeLabel}</p>}
       {payload.map((entry, i) => (
         <p key={i} className="text-xs" style={{ color: entry.color ?? '#94a3b8' }}>
-          {entry.name}: <span className="font-mono">{typeof entry.value === 'number' ? entry.value.toFixed(3) : String(entry.value)}</span>
+          {entry.name}: <span className="font-mono">{typeof entry.value === 'number' ? entry.value.toFixed(1) : String(entry.value)}</span>
         </p>
       ))}
     </div>
@@ -240,8 +241,8 @@ export default function SessionAnalytics({ samples, validationErrors, meanErrorP
                     <ResponsiveContainer width="100%" height={200}>
                       <LineChart data={seg.points} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                        <XAxis dataKey="t" tick={{ fill: '#64748b', fontSize: 10 }} name="Time (s)" />
-                        <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10 }} />
+                        <XAxis dataKey="t" tick={{ fill: '#64748b', fontSize: 10 }} name="Time (s)" tickFormatter={(v) => `${Number(v).toFixed(1)}s`} minTickGap={35} />
+                        <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10 }} tickFormatter={(v) => `${Number(v).toFixed(0)}%`} width={36} />
                         <Tooltip content={<DarkTooltip />} />
                         <ReferenceLine y={50} stroke="#334155" />
                         <Line type="monotone" dataKey="targetX" stroke="#86efac" strokeWidth={2} dot={false} name="Target X" />
@@ -258,8 +259,8 @@ export default function SessionAnalytics({ samples, validationErrors, meanErrorP
                     <ResponsiveContainer width="100%" height={200}>
                       <LineChart data={seg.points} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                        <XAxis dataKey="t" tick={{ fill: '#64748b', fontSize: 10 }} name="Time (s)" />
-                        <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10 }} />
+                        <XAxis dataKey="t" tick={{ fill: '#64748b', fontSize: 10 }} name="Time (s)" tickFormatter={(v) => `${Number(v).toFixed(1)}s`} minTickGap={35} />
+                        <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10 }} tickFormatter={(v) => `${Number(v).toFixed(0)}%`} width={36} />
                         <Tooltip content={<DarkTooltip />} />
                         <ReferenceLine y={50} stroke="#334155" />
                         <Line type="monotone" dataKey="targetY" stroke="#86efac" strokeWidth={2} dot={false} name="Target Y" />

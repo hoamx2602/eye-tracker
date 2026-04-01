@@ -1575,6 +1575,8 @@ function App() {
       exerciseBlobsRef.current = [];
       exerciseKindRef.current = EXERCISE_KINDS[0];
       exerciseActiveRef.current = true;
+      currentTestSegmentRef.current = [];
+      testSegmentStartTimeRef.current = performance.now();
         } else {
             setCalibPhase(CalibrationPhase.VALIDATION);
             setCalibPoints(VALIDATION_POINTS);

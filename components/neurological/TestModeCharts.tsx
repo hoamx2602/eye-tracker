@@ -95,12 +95,13 @@ function DarkTooltip({
   label?: string | number;
 }) {
   if (!active || !payload?.length) return null;
+  const timeLabel = label != null ? `t = ${Number(label).toFixed(2)} s` : null;
   return (
     <div className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 shadow-xl text-left">
-      {label != null && <p className="text-gray-200 text-xs font-medium mb-1">{String(label)}</p>}
+      {timeLabel && <p className="text-gray-400 text-xs mb-1">{timeLabel}</p>}
       {payload.map((entry, i) => (
         <p key={i} className="text-xs" style={{ color: entry.color ?? '#9ca3af' }}>
-          {entry.name}: <span className="font-mono">{typeof entry.value === 'number' ? entry.value.toFixed(3) : String(entry.value)}</span>
+          {entry.name}: <span className="font-mono">{typeof entry.value === 'number' ? `${entry.value.toFixed(1)}%` : String(entry.value)}</span>
         </p>
       ))}
     </div>
@@ -156,12 +157,13 @@ export default function TestModeCharts({
                     dataKey="t"
                     tick={{ fill: '#9ca3af', fontSize: 10 }}
                     name="Time (s)"
-                    tickFormatter={(val) => Number(val).toFixed(1)}
-                    minTickGap={30}
+                    tickFormatter={(val) => `${Number(val).toFixed(1)}s`}
+                    minTickGap={35}
                   />
                   <YAxis
                     tick={{ fill: '#9ca3af', fontSize: 10 }}
-                    tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
+                    tickFormatter={(val) => `${Number(val).toFixed(0)}%`}
+                    width={36}
                   />
                   <Tooltip content={<DarkTooltip />} />
                   <ReferenceLine y={50} stroke="#374151" />
@@ -183,12 +185,13 @@ export default function TestModeCharts({
                     dataKey="t"
                     tick={{ fill: '#9ca3af', fontSize: 10 }}
                     name="Time (s)"
-                    tickFormatter={(val) => Number(val).toFixed(1)}
-                    minTickGap={30}
+                    tickFormatter={(val) => `${Number(val).toFixed(1)}s`}
+                    minTickGap={35}
                   />
                   <YAxis
                     tick={{ fill: '#9ca3af', fontSize: 10 }}
-                    tickFormatter={(val) => Math.round(Number(val)).toLocaleString()}
+                    tickFormatter={(val) => `${Number(val).toFixed(0)}%`}
+                    width={36}
                   />
                   <Tooltip content={<DarkTooltip />} />
                   <ReferenceLine y={50} stroke="#374151" />
