@@ -381,7 +381,7 @@ export default function VisualSearchTest() {
               aria-label={`Target ${pos.number}${confirmed ? ' (confirmed)' : ' — hold to confirm'}`}
               className={[
                 'absolute w-14 h-14 flex items-center justify-center rounded-full',
-                'text-white text-2xl font-bold border-2 touch-manipulation select-none',
+                'text-white text-2xl font-bold border-2 touch-none select-none [-webkit-touch-callout:none]',
                 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400',
                 confirmed
                   ? 'bg-emerald-500 border-emerald-300 shadow-lg shadow-emerald-500/50'
