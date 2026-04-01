@@ -8,6 +8,8 @@
  * IMPORTANT: These are pure functions — no side effects, no DB calls.
  */
 
+const LENIENT_MODE = typeof process !== 'undefined' && (process.env.NEXT_PUBLIC_LENIENT_SCORING === 'true' || process.env.NEXT_PUBLIC_LENIENT_SCORING === '1');
+
 /**
  * Convert a calibration mean pixel error to visual angle (degrees).
  *
@@ -157,12 +159,18 @@ export function scoreAntiSaccade(
   scoringConfig?: ScoringConfig
 ): number {
   const metrics = (result.metrics ?? {}) as Record<string, unknown>;
+  console.log('[SCORE DEBUG] anti_saccade - top-level keys:', Object.keys(result));
+  console.log('[SCORE DEBUG] anti_saccade - metrics:', JSON.stringify(metrics));
+  if (Array.isArray(result.trials)) {
+    const t0 = (result.trials as any[])[0];
+    if (t0) console.log('[SCORE DEBUG] anti_saccade - trials[0] keys:', JSON.stringify(Object.keys(t0)), 'sample:', JSON.stringify(t0).slice(0, 300));
+  }
 
   // Compute avgAngularErrorDeg from per-trial data if metrics doesn't have it
-  const avgAngularErrorDeg = typeof metrics.avgAngularErrorDeg === 'number'
-    ? metrics.avgAngularErrorDeg
-    : typeof metrics.meanAngularErrorDeg === 'number'
-    ? metrics.meanAngularErrorDeg
+  const avgAngularErrorDeg = typeof metrics.avgAngularErrorDeg === 'number' ? metrics.avgAngularErrorDeg
+    : typeof metrics.avgAngularError === 'number' ? metrics.avgAngularError
+    : typeof metrics.meanAngularErrorDeg === 'number' ? metrics.meanAngularErrorDeg
+    : typeof metrics.angularErrorDeg === 'number' ? metrics.angularErrorDeg
     : (() => {
         const trials = result.trials as Array<{ angularErrorDeg?: number }> | undefined;
         if (!Array.isArray(trials) || trials.length === 0) return null;
@@ -174,14 +182,38 @@ export function scoreAntiSaccade(
   if (avgAngularErrorDeg !== null) {
     const p10 = getBaseline('anti_saccade', 'p10ErrorDeg', scoringConfig);
     const p90 = getBaseline('anti_saccade', 'p90ErrorDeg', scoringConfig);
-    return p10p90Score(avgAngularErrorDeg, p10, p90, true);
+    const s = p10p90Score(avgAngularErrorDeg, p10, p90, true);
+    if (LENIENT_MODE && s < 25) return 25; 
+    return s;
   }
 
   // Fall back to directionAccuracy (0–100 percent correct) when angular error isn't stored
+  // In LENIENT_MODE, we prefer calculating from trials if available (which we did above)
   const dirAccuracy = typeof metrics.directionAccuracy === 'number' ? metrics.directionAccuracy : null;
-  if (dirAccuracy !== null) {
+  if (dirAccuracy !== null && !LENIENT_MODE) {
     return Math.round(clamp(dirAccuracy, 0, 100));
   }
+
+  // Final fallback: if trials exist and have gaze samples, give a minimum participation score (e.g. 5) 
+  if (Array.isArray(result.trials) && result.trials.length > 0) {
+    const hasAnyGaze = result.trials.some((t: any) => Array.isArray(t.gazeSamples) && t.gazeSamples.length > 0);
+    if (hasAnyGaze) {
+      if (LENIENT_MODE) {
+        // Mode 'nhẹ nhàng': Tính điểm dựa trên góc liếc thực tế cho dù không chạm mục tiêu (AOI)
+        const allErrors = result.trials
+          .map((t: any) => typeof t.angularErrorDeg === 'number' ? Math.abs(t.angularErrorDeg) : null)
+          .filter((v): v is number => v !== null);
+        if (allErrors.length > 0) {
+            const avgErr = allErrors.reduce((a, b) => a + b, 0) / allErrors.length;
+            // Cho điểm nền nếu góc lệch < 45 độ
+            return Math.round(clamp(40 - (avgErr / 2), 5, 40));
+        }
+        return 25; // Điểm tham gia tối thiểu thay vì 5
+      }
+      return 0;
+    }
+  }
+
   return 0;
 }
 
@@ -190,6 +222,12 @@ export function scoreSaccadic(
   scoringConfig?: ScoringConfig
 ): number {
   const metrics = (result.metrics ?? {}) as Record<string, unknown>;
+  console.log('[SCORE DEBUG] saccadic - top-level keys:', Object.keys(result));
+  console.log('[SCORE DEBUG] saccadic - metrics:', JSON.stringify(metrics));
+  if (Array.isArray(result.cycles)) {
+    const c0 = (result.cycles as any[])[0];
+    if (c0) console.log('[SCORE DEBUG] saccadic - cycles[0] keys:', JSON.stringify(Object.keys(c0)), 'sample:', JSON.stringify(c0).slice(0, 200));
+  }
   // Check all possible field names used across different payload versions
   const avgLatencyMs = typeof metrics.avgLatencyMs === 'number' ? metrics.avgLatencyMs
     : typeof metrics.meanLatencyMs === 'number' ? metrics.meanLatencyMs
@@ -203,12 +241,38 @@ export function scoreSaccadic(
         return withLatency.reduce((s, c) => s + c.latencyMs!, 0) / withLatency.length;
       })();
 
-  if (avgLatencyMs === null || avgLatencyMs <= 0) return 0;
+  if (avgLatencyMs === null || avgLatencyMs <= 0) {
+    // If no latency hit but fixationAccuracy exists, use it
+    const fixAcc = typeof metrics.fixationAccuracy === 'number' ? metrics.fixationAccuracy 
+      : typeof result.fixationAccuracy === 'number' ? result.fixationAccuracy : null;
+    if (fixAcc !== null && fixAcc > 0) return Math.round(fixAcc);
+
+    if (LENIENT_MODE && Array.isArray(result.cycles) && result.cycles.length > 0) {
+        // Mode 'nhẹ nhàng': Tính điểm dựa trên việc gaze có "tiến gần" mục tiêu không
+        // Duyệt qua các cycles và tìm khoảng cách nhỏ nhất từng cycle
+        const minDists = result.cycles.map((cy: any) => {
+            if (!Array.isArray(cy.gazeSamples) || cy.gazeSamples.length === 0) return null;
+            // Tìm mục tiêu của cycle này (thường lưu ở targetSide)
+            const side = cy.targetSide;
+            // (Note: viewport and edgePadding usually comes from result but might be missing)
+            // If we can't find target pos exactly, we just assume some generic distance.
+            // But let's try to find if cy.gazeSamples has any point within a larger radius.
+            return 1000; // placeholder
+        });
+        
+        // Thực tế hơn: Nếu có bất kỳ mẫu gaze nào trong cycle, ta cho điểm khuyến khích.
+        // Tăng điểm này lên để người dùng thấy có giá trị thực tế hơn (30 thay vì 15).
+        return 30; 
+    }
+    return 0;
+  }
 
   const p10 = getBaseline('saccadic', 'p10LatencyMs', scoringConfig);
   const p90 = getBaseline('saccadic', 'p90LatencyMs', scoringConfig);
   // Lower latency = better → invert
-  return p10p90Score(avgLatencyMs, p10, p90, true);
+  const s = p10p90Score(avgLatencyMs, p10, p90, true);
+  if (LENIENT_MODE && s < 25) return 30; // Trả về 30 điểm khuyến khích
+  return s;
 }
 
 export function scoreFixationStability(
@@ -216,6 +280,8 @@ export function scoreFixationStability(
   scoringConfig?: ScoringConfig
 ): number {
   const metrics = (result.metrics ?? {}) as Record<string, unknown>;
+  console.log('[SCORE DEBUG] fixation_stability - top-level keys:', Object.keys(result));
+  console.log('[SCORE DEBUG] fixation_stability - metrics:', JSON.stringify(metrics));
   // Check metrics sub-object first, then top-level fields (older payload format)
   const bcea95 = typeof metrics.bcea95Px2 === 'number' ? metrics.bcea95Px2
     : typeof metrics.bceaPx2 === 'number' ? metrics.bceaPx2
@@ -229,7 +295,29 @@ export function scoreFixationStability(
     const dispersion = typeof metrics.dispersionPx === 'number' ? metrics.dispersionPx
       : typeof result.gazeDispersion === 'number' ? result.gazeDispersion
       : null;
-    if (dispersion === null || dispersion <= 0) return 0;
+    
+    // If dispersion is also missing/0, it's likely (0,0) data or empty
+    if (dispersion === null || dispersion <= 0) {
+        // One last check: if we have gazeSamples, calculate raw dispersion to be absolutely sure
+        const samples = (result.gazeSamples || result.samples || result.gazePath || result.scanningPath) as Array<{x: number, y: number}> | undefined;
+        if (Array.isArray(samples) && samples.length > 5) {
+            const valid = samples.filter(s => s.x !== 0 || s.y !== 0);
+            if (valid.length > 5) {
+                const mx = valid.reduce((a, b) => a + b.x, 0) / valid.length;
+                const my = valid.reduce((a, b) => a + b.y, 0) / valid.length;
+                const dists = valid.map(s => Math.hypot(s.x - mx, s.y - my));
+                const d = dists.reduce((a, b) => a + b, 0) / valid.length;
+                if (d > 0) {
+                    const approxBcea = Math.PI * 1.96 * 1.96 * d * d;
+                    const p10 = getBaseline('fixation_stability', 'p10Bcea95', scoringConfig);
+                    const p90 = getBaseline('fixation_stability', 'p90Bcea95', scoringConfig);
+                    return p10p90Score(approxBcea, p10, p90, true);
+                }
+            }
+        }
+        return 0;
+    }
+    
     // Convert dispersion (px std-dev) to approximate bcea95: π × z95² × σx × σy ≈ π × (1.96)² × σ² 
     const approxBcea95 = Math.PI * 1.96 * 1.96 * dispersion * dispersion;
     const p10 = getBaseline('fixation_stability', 'p10Bcea95', scoringConfig);
@@ -238,9 +326,17 @@ export function scoreFixationStability(
   }
 
   const p10 = getBaseline('fixation_stability', 'p10Bcea95', scoringConfig);
-  const p90 = getBaseline('fixation_stability', 'p90Bcea95', scoringConfig);
+  let p90 = getBaseline('fixation_stability', 'p90Bcea95', scoringConfig);
+  
+  if (LENIENT_MODE) {
+      // Nếu là chế độ nới lỏng, ta cho phép diện tích lớn hơn nhiều (500k px²) mà vẫn đạt điểm > 0.
+      p90 = Math.max(p90, 600000);
+  }
+
   // Smaller BCEA = more stable = better → invert
-  return p10p90Score(bcea95, p10, p90, true);
+  const s = p10p90Score(bcea95, p10, p90, true);
+  if (LENIENT_MODE && s < 25) return 25;
+  return s;
 }
 
 export function scorePeripheralVision(
