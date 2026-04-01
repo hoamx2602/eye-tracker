@@ -459,12 +459,6 @@ export default function HomePage() {
             </div>
             <span className="text-sm font-semibold tracking-tight">Eye Assessment</span>
           </div>
-          <Link
-            href="/experiments"
-            className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
-          >
-            Researcher access →
-          </Link>
         </div>
       </header>
 
@@ -492,11 +486,6 @@ export default function HomePage() {
               />
             ))}
 
-            <div className="my-6 flex items-center gap-3">
-              <div className="flex-1 h-px bg-gray-700" />
-              <span className="text-[10px] text-gray-600 tracking-widest uppercase font-medium">then</span>
-              <div className="flex-1 h-px bg-gray-700" />
-            </div>
 
             <SectionLabel part="Part 2" title="Neurological Assessment" />
             {NEURO_STEPS.map((step, i) => (
