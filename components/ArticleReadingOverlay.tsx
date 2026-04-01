@@ -235,9 +235,7 @@ const ArticleReadingOverlay: React.FC<ArticleReadingOverlayProps> = ({ gazeX, ga
 
   // Article view (ready or running)
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" />
-
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black">
       <div
         ref={containerRef}
         className="relative z-10 w-full max-w-3xl max-h-[85vh] mx-4 overflow-y-auto bg-slate-900/95 border border-slate-600 rounded-2xl shadow-2xl scrollbar-thin"

@@ -213,9 +213,8 @@ const RandomDotsOverlay: React.FC<RandomDotsOverlayProps> = ({ gazeX, gazeY, onC
     );
   }
 
-  // Showing or result phase
   return (
-    <div className="fixed inset-0 z-[90] pointer-events-none">
+    <div className="fixed inset-0 z-[90] bg-black">
       {/* Progress bar */}
       <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[95] bg-slate-800/90 rounded-full px-4 py-1.5 border border-slate-600">
         <span className="text-xs font-mono text-gray-300">
@@ -226,7 +225,7 @@ const RandomDotsOverlay: React.FC<RandomDotsOverlayProps> = ({ gazeX, gazeY, onC
       {/* Target dot */}
       {currentDot && (
         <div
-          className="absolute transition-all duration-300"
+          className="absolute w-16 h-16 flex items-center justify-center transition-all duration-300"
           style={{
             left: `${currentDot.x}%`,
             top: `${currentDot.y}%`,
@@ -234,14 +233,18 @@ const RandomDotsOverlay: React.FC<RandomDotsOverlayProps> = ({ gazeX, gazeY, onC
           }}
         >
           {/* Pulsing ring */}
-          <div className="absolute inset-0 w-12 h-12 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-emerald-400 animate-ping opacity-40" />
-          {/* Outer circle */}
-          <div className="w-12 h-12 rounded-full bg-emerald-500/30 border-2 border-emerald-400 flex items-center justify-center -translate-x-1/2 -translate-y-1/2">
-            {/* Inner dot */}
+          <div className="absolute w-12 h-12 rounded-full border-2 border-emerald-400 animate-ping opacity-40" />
+          
+          {/* Outer circle and inner dot */}
+          <div className="relative w-12 h-12 rounded-full bg-emerald-500/30 border-2 border-emerald-400 flex items-center justify-center">
             <div className="w-3 h-3 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.8)]" />
           </div>
+
           {/* Shrinking timer ring */}
-          <svg className="absolute w-16 h-16 -translate-x-1/2 -translate-y-1/2 -top-2 -left-2" viewBox="0 0 64 64">
+          <svg 
+            className="absolute inset-0 w-full h-full" 
+            viewBox="0 0 64 64"
+          >
             <circle
               cx="32" cy="32" r="28"
               fill="none"
