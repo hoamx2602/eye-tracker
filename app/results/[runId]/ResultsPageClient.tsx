@@ -411,55 +411,52 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
             Section A — Header
         —————————————————————————————————————————————— */}
         <section>
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 sm:p-8 print:break-inside-avoid flex items-start justify-between gap-6">
-            <div className="flex-1">
-              <p className="text-xs text-gray-500 uppercase tracking-widest mb-2 font-semibold">Assessment complete</p>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
-                Your Assessment Results
-                {firstName ? <span className="text-blue-400">, {firstName}</span> : null}
-              </h1>
-              <p className="text-sm text-gray-400 mb-5">{assessmentDate}</p>
-              {meanErrorPx != null && (
-                <div className="space-y-4">
-                  <div className={`inline-flex items-center gap-2 text-sm font-medium ${calibrationQualityColour(meanErrorPx)}`}>
-                    <span className="text-lg">●</span>
-                    <span>{calibrationQualityLabel(meanErrorPx)}</span>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    {/* Diagram — dominant, fills available space */}
-                    <div className="flex-1 min-w-0 rounded-xl border border-gray-800 bg-gray-900/70 p-2 overflow-visible">
-                      <GazeErrorDiagram
-                        pixelError={meanErrorPx}
-                        angularError={angularErr ?? 0}
-                        viewingDistanceCm={viewingDistanceCm}
-                      />
-                    </div>
-                    {/* Value cards — compact, shrink-0 */}
-                    <div className="shrink-0 flex flex-col gap-2 w-[160px]">
-                      <div className="rounded-xl border border-gray-800 bg-gray-900/70 px-3 py-2.5">
-                        <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-0.5">Pixel Error</div>
-                        <div className="text-lg font-mono font-bold text-white tabular-nums leading-tight">
-                          {meanErrorPx.toFixed(1)}<span className="text-xs text-gray-400 ml-1">px</span>
-                        </div>
-                        <div className="text-[9px] text-gray-600 mt-0.5">Euclidean distance on screen</div>
-                      </div>
-                      {angularErr != null && (
-                        <div className="rounded-xl border border-blue-900/40 bg-blue-950/20 px-3 py-2.5">
-                          <div className="text-[9px] text-blue-400/70 uppercase tracking-wider mb-0.5">Angular Error (θ)</div>
-                          <div className="text-lg font-mono font-bold text-blue-300 tabular-nums leading-tight">
-                            {angularErr.toFixed(2)}<span className="text-xs text-blue-400/60 ml-1">°</span>
-                          </div>
-                          <div className="text-[9px] text-gray-600 mt-0.5">Visual angle @ {viewingDistanceCm} cm</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 sm:p-8 print:break-inside-avoid flex flex-col gap-5">
+            {/* Top row: text info + dial */}
+            <div className="flex items-start justify-between gap-6">
+              <div className="flex-1">
+                <p className="text-xs text-gray-500 uppercase tracking-widest mb-2 font-semibold">Assessment complete</p>
+                <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
+                  Your Assessment Results
+                  {firstName ? <span className="text-blue-400">, {firstName}</span> : null}
+                </h1>
+                <p className="text-sm text-gray-400">{assessmentDate}</p>
+              </div>
+              {etScore != null && (
+                <div className="shrink-0">
+                  <AccuracyDial score={etScore} />
                 </div>
               )}
             </div>
-            {etScore != null && (
-              <div className="shrink-0">
-                <AccuracyDial score={etScore} />
+
+            {/* Quality label + diagram + metric cards — full width, centred */}
+            {meanErrorPx != null && (
+              <div className="flex flex-col items-center gap-3">
+                <div className={`inline-flex items-center gap-2 text-sm font-medium ${calibrationQualityColour(meanErrorPx)}`}>
+                  <span className="text-lg">●</span>
+                  <span>{calibrationQualityLabel(meanErrorPx)}</span>
+                </div>
+                <div className="w-full max-w-[320px] rounded-xl border border-gray-800 bg-gray-900/70 p-2 overflow-visible">
+                  <GazeErrorDiagram
+                    pixelError={meanErrorPx}
+                    angularError={angularErr ?? 0}
+                    viewingDistanceCm={viewingDistanceCm}
+                  />
+                </div>
+                <div className="w-full max-w-[320px] grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2">
+                    <div className="text-[9px] text-gray-500 uppercase tracking-wider">Pixel error</div>
+                    <div className="text-sm font-mono font-semibold text-white tabular-nums mt-0.5">
+                      {meanErrorPx.toFixed(1)} px
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-blue-900/30 bg-blue-950/15 px-3 py-2">
+                    <div className="text-[9px] text-blue-400/60 uppercase tracking-wider">Angular error</div>
+                    <div className="text-sm font-mono font-semibold text-blue-300 tabular-nums mt-0.5">
+                      {(angularErr ?? 0).toFixed(2)}° <span className="text-[9px] text-gray-600">@ {viewingDistanceCm}cm</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
