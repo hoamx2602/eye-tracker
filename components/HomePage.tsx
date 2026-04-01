@@ -22,6 +22,7 @@ interface Step {
   id: string;
   label: string;
   duration: string;
+  durationSec: number;
   icon: React.ReactNode;
   tagline: string;
   description: string;
@@ -35,7 +36,8 @@ const CALIBRATION_STEPS: Step[] = [
   {
     id: 'calibration',
     label: 'Calibration',
-    duration: '~3 min',
+    duration: '~45 sec',
+    durationSec: 45,
     section: 'calibration',
     icon: <DotGridIcon />,
     tagline: 'Follow a series of dots to calibrate the eye tracker to your gaze.',
@@ -45,7 +47,8 @@ const CALIBRATION_STEPS: Step[] = [
   {
     id: 'wiggling',
     label: 'Wiggling',
-    duration: '~1 min',
+    duration: '15-20 sec',
+    durationSec: 20,
     section: 'calibration',
     icon: <WiggleIcon />,
     tagline: 'Follow a target that moves in a quick back-and-forth pattern.',
@@ -55,7 +58,8 @@ const CALIBRATION_STEPS: Step[] = [
   {
     id: 'horizontal',
     label: 'Horizontal',
-    duration: '~1 min',
+    duration: '15-20 sec',
+    durationSec: 20,
     section: 'calibration',
     icon: <HArrowIcon />,
     tagline: 'Track a target sweeping smoothly from left to right.',
@@ -65,7 +69,8 @@ const CALIBRATION_STEPS: Step[] = [
   {
     id: 'vertical',
     label: 'Vertical',
-    duration: '~1 min',
+    duration: '15-20 sec',
+    durationSec: 20,
     section: 'calibration',
     icon: <VArrowIcon />,
     tagline: 'Track a target sweeping smoothly from top to bottom.',
@@ -75,7 +80,8 @@ const CALIBRATION_STEPS: Step[] = [
   {
     id: 'forward_backward',
     label: 'Forward-Backward',
-    duration: '~1 min',
+    duration: '15-20 sec',
+    durationSec: 20,
     section: 'calibration',
     icon: <ZoomIcon />,
     tagline: 'Focus on a target as it appears to move toward and away from you.',
@@ -85,7 +91,8 @@ const CALIBRATION_STEPS: Step[] = [
   {
     id: 'diagonal',
     label: 'Diagonal',
-    duration: '~1 min',
+    duration: '15-20 sec',
+    durationSec: 20,
     section: 'calibration',
     icon: <DiagIcon />,
     tagline: 'Track a target moving diagonally across the screen.',
@@ -95,7 +102,8 @@ const CALIBRATION_STEPS: Step[] = [
   {
     id: 'h_pattern',
     label: 'H-Pattern',
-    duration: '~1 min',
+    duration: '15-20 sec',
+    durationSec: 20,
     section: 'calibration',
     icon: <HPatternIcon />,
     tagline: 'Follow a target tracing the shape of the letter H.',
@@ -109,7 +117,8 @@ const NEURO_STEPS: Step[] = [
   {
     id: 'head_orientation',
     label: 'Head Orientation',
-    duration: '~2 min',
+    duration: '~30 sec',
+    durationSec: 30,
     section: 'neuro',
     icon: <CompassIcon />,
     tagline: 'Look in different directions while holding your head still.',
@@ -119,7 +128,8 @@ const NEURO_STEPS: Step[] = [
   {
     id: 'visual_search',
     label: 'Visual Search',
-    duration: '~3 min',
+    duration: '~30 sec',
+    durationSec: 30,
     section: 'neuro',
     icon: <SearchIcon />,
     tagline: 'Find numbered targets scattered across the screen in order.',
@@ -129,7 +139,8 @@ const NEURO_STEPS: Step[] = [
   {
     id: 'memory_cards',
     label: 'Memory Cards',
-    duration: '~4 min',
+    duration: '~1 min',
+    durationSec: 60,
     section: 'neuro',
     icon: <CardIcon />,
     tagline: 'Find matching pairs of cards using your gaze.',
@@ -139,7 +150,8 @@ const NEURO_STEPS: Step[] = [
   {
     id: 'anti_saccade',
     label: 'Anti-Saccade',
-    duration: '~3 min',
+    duration: '~45 sec',
+    durationSec: 45,
     section: 'neuro',
     icon: <SwapIcon />,
     tagline: 'Look in the opposite direction to a moving shape.',
@@ -149,7 +161,8 @@ const NEURO_STEPS: Step[] = [
   {
     id: 'saccadic',
     label: 'Saccadic Eye Movement',
-    duration: '~2 min',
+    duration: '~20 sec',
+    durationSec: 20,
     section: 'neuro',
     icon: <BoltIcon />,
     tagline: 'React quickly to targets appearing alternately on each side.',
@@ -159,7 +172,8 @@ const NEURO_STEPS: Step[] = [
   {
     id: 'fixation_stability',
     label: 'Fixation Stability',
-    duration: '~1 min',
+    duration: '15-20 sec',
+    durationSec: 20,
     section: 'neuro',
     icon: <TargetIcon />,
     tagline: 'Hold your gaze perfectly still on a central dot.',
@@ -169,7 +183,8 @@ const NEURO_STEPS: Step[] = [
   {
     id: 'peripheral_vision',
     label: 'Peripheral Vision',
-    duration: '~3 min',
+    duration: '~30 sec',
+    durationSec: 30,
     section: 'neuro',
     icon: <EyeIcon />,
     tagline: 'Detect flashes of light at the edges of your vision.',
@@ -438,10 +453,7 @@ export default function HomePage() {
     return () => { html.style.overflow = prev; };
   }, []);
 
-  const totalMin = ALL_STEPS.reduce(
-    (sum, s) => sum + parseInt(s.duration.replace(/\D/g, ''), 10),
-    0,
-  );
+  const totalMin = Math.ceil(ALL_STEPS.reduce((sum, s) => sum + s.durationSec, 0) / 60);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
