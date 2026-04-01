@@ -2490,22 +2490,26 @@ function App() {
     reset();
     setShowStopSaveModal(false);
 
-    // Trigger downloads after a short delay so state has settled
+    // Trigger downloads immediately
+    if (options.csv && csvSnapshot.length > 0) {
+      let csvContent = "data:text/csv;charset=utf-8,Timestamp,ScreenX,ScreenY\n";
+      csvSnapshot.forEach(row => { csvContent += `${row.timestamp},${row.x},${row.y}\n`; });
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `eye_tracking_data_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+    if (videoBlob) downloadVideoBlob(videoBlob);
+    if (options.images && imagesSnapshot.length > 0) downloadCapturedImages(imagesSnapshot);
+
+    // Short delay before home, to ensure downloads are registered by browser
     setTimeout(() => {
-      if (options.csv && csvSnapshot.length > 0) {
-        let csvContent = "data:text/csv;charset=utf-8,Timestamp,ScreenX,ScreenY\n";
-        csvSnapshot.forEach(row => { csvContent += `${row.timestamp},${row.x},${row.y}\n`; });
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `eye_tracking_data_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-      if (videoBlob) downloadVideoBlob(videoBlob);
-      if (options.images && imagesSnapshot.length > 0) downloadCapturedImages(imagesSnapshot);
-    }, 100);
+      pathSyncSourceRef.current = 'internal';
+      router.push('/');
+    }, 150);
   };
 
 

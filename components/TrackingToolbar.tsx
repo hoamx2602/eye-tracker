@@ -119,7 +119,7 @@ function TrackingToolbar({
         onClick={onStopSave}
         className="px-4 py-1.5 text-xs font-bold rounded-md bg-gray-800 border border-gray-600 hover:bg-gray-700 transition text-red-300 flex-shrink-0"
       >
-        Stop &amp; Save
+        Stop
       </button>
     </div>
   );

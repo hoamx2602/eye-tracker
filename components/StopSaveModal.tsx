@@ -18,9 +18,9 @@ const StopSaveModal: React.FC<StopSaveModalProps> = ({
   onConfirm,
   onCancel,
 }) => {
-  const [csv, setCsv] = useState(true);
-  const [video, setVideo] = useState(true);
-  const [images, setImages] = useState(true);
+  const [csv, setCsv] = useState(false);
+  const [video, setVideo] = useState(false);
+  const [images, setImages] = useState(false);
 
   const handleConfirm = () => {
     onConfirm({
@@ -35,7 +35,7 @@ const StopSaveModal: React.FC<StopSaveModalProps> = ({
   return (
     <Modal open zIndexClassName="z-[300]" size="sm" disableBackdropClose>
       <div className="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4">
-        <h2 className="text-lg font-bold text-white mb-1">Stop & Save</h2>
+        <h2 className="text-lg font-bold text-white mb-1">Stop</h2>
         <p className="text-gray-400 text-sm mb-4">Download before leaving?</p>
 
         <div className="space-y-3 mb-6">
@@ -88,7 +88,7 @@ const StopSaveModal: React.FC<StopSaveModalProps> = ({
             onClick={handleConfirm}
             className="px-4 py-2 text-sm font-bold rounded-lg bg-red-600 text-white hover:bg-red-500 transition-colors"
           >
-            Stop & Save
+            Stop
           </button>
         </div>
       </div>
