@@ -210,6 +210,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
         <SetupGuideScreen
           onComplete={onSetupComplete}
           onBack={onSetupBack}
+          sittingDistanceCm={config.faceDistance}
         />
       )}
 
