@@ -54,6 +54,7 @@ import type { TestResultPayload } from '@/components/neurological';
 import NeurologicalFlowSection from '@/components/neurological/NeurologicalFlowSection';
 import { useNeuroFlowHandlers } from '@/components/neurological/useNeuroFlowHandlers';
 import AppMainOverlays from '@/components/AppMainOverlays';
+import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, roundedRect } from '@/lib/appHelpers';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
@@ -98,6 +99,7 @@ function App() {
   const [showPostSubmitConfirm, setShowPostSubmitConfirm] = useState(false);
   /** Which neurological test is running; null when between tests or in post/done. */
   const [currentNeuroTestId, setCurrentNeuroTestId] = useState<string | null>(null);
+  const [showNeuroExitConfirm, setShowNeuroExitConfirm] = useState(false);
   const currentNeuroTestIdRef = useRef<string | null>(null);
   useEffect(() => {
     currentNeuroTestIdRef.current = currentNeuroTestId;
@@ -1758,25 +1760,46 @@ function App() {
       }
     })();
   };
+ 
+  const reset = useCallback(() => {
+    stopVideoRecording();
+    setStatus('IDLE');
+    setCreatedSessionId(null);
+    setNeuroPhase('pre');
+    setPreSymptomScores(null);
+    setCurrentNeuroTestId(null);
+    setNeuroTestResults({});
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem(NEURO_LAST_RUN_ID_SS_KEY);
+      }
+    } catch (_) {}
+    demographicsRef.current = null;
+    setTrainingData([]);
+    trainingSamplesRef.current = [];
+    trackingHistoryRef.current = [];
+    hybridRegressorRef.current = new HybridRegressor();
+    setGazeModelReady(false);
+    setLoocvErrors(null);
+    setLoocvBaseline(null);
+    neuroLiveGazeRef.current = { x: 0, y: 0 };
+    setShowHeatmap(false);
+    setCurrentExerciseIndex(0);
+    exerciseDataRef.current = [];
+    exerciseBlobsRef.current = [];
+    exerciseActiveRef.current = false;
+    exerciseTargetRef.current = null;
+    if (typeof document !== 'undefined' && document.fullscreenElement) {
+      document.exitFullscreen();
+    }
+  }, [stopVideoRecording]);
+
 
   const startRealTimeTracking = useCallback(() => {
-    if (process.env.NODE_ENV === 'development') console.log('[App] startRealTimeTracking called');
-    pathSyncSourceRef.current = 'internal';
-    flushSync(() => {
-      setStatus('TRACKING');
-      statusRef.current = 'TRACKING';
-    });
-    smootherRef.current.reset();
-    if (heatmapRef.current) heatmapRef.current.reset();
-    trackingHistoryRef.current = [];
-    if (configRef.current.enableVideoRecording) {
-      startVideoRecording();
-    }
-    // Update URL without Next.js navigation to avoid remount (which resets hasCameraStream/createdSessionId and breaks tracking)
-    if (typeof window !== 'undefined') {
-      window.history.pushState(null, '', PATHS.TRACKING);
-    }
-  }, [router]);
+    if (process.env.NODE_ENV === 'development') console.log('[App] startRealTimeTracking: resetting and going to HOME');
+    reset();
+    router.push('/');
+  }, [reset, router]);
 
   const {
     handleNeuroTestComplete,
@@ -2477,35 +2500,7 @@ function App() {
     }, 100);
   };
 
-  const reset = () => {
-    stopVideoRecording();
-    setStatus('IDLE');
-    setCreatedSessionId(null);
-    setNeuroPhase('pre');
-    setPreSymptomScores(null);
-    setCurrentNeuroTestId(null);
-    setNeuroTestResults({});
-    try {
-      sessionStorage.removeItem(NEURO_LAST_RUN_ID_SS_KEY);
-    } catch (_) {}
-    demographicsRef.current = null;
-    setTrainingData([]);
-    trainingSamplesRef.current = [];
-    trackingHistoryRef.current = [];
-    hybridRegressorRef.current = new HybridRegressor();
-    setGazeModelReady(false);
-    setLoocvErrors(null);
-    setLoocvBaseline(null);
-    neuroLiveGazeRef.current = { x: 0, y: 0 };
-    setShowHeatmap(false);
-    // Reset exercise state
-    setCurrentExerciseIndex(0);
-    exerciseDataRef.current = [];
-    exerciseBlobsRef.current = [];
-    exerciseActiveRef.current = false;
-    exerciseTargetRef.current = null;
-    if (document.fullscreenElement) document.exitFullscreen();
-  };
+
 
   return (
     <div className={`relative w-full h-screen bg-gray-900 text-white selection:bg-none ${
@@ -2668,12 +2663,12 @@ function App() {
         gazePos={gazePos}
         gazeModelReady={gazeModelReady}
         neuroTestResults={neuroTestResults}
+        onExitRun={async () => setShowNeuroExitConfirm(true)}
         neuroResultsLoading={neuroResultsLoading}
         neuroResultsLoadError={neuroResultsLoadError}
         onNeuroResultsRetry={() => setNeuroResultsFetchKey((k) => k + 1)}
         onPreSubmit={handleNeuroPreSubmit}
         onPostSubmit={handlePostSubmitRequested}
-        onExitRun={handleNeuroExitRun}
         onTestComplete={handleNeuroTestComplete}
         onDoneBack={startRealTimeTracking}
         showPostSubmitConfirm={showPostSubmitConfirm}
@@ -2692,6 +2687,15 @@ function App() {
             : null
         }
         resultsInitialFocusTestId={searchParams.get('verify') === '1' ? searchParams.get('focus') : null}
+      />
+
+      <ExitConfirmModal
+        open={showNeuroExitConfirm}
+        onConfirm={() => {
+          setShowNeuroExitConfirm(false);
+          handleNeuroExitRun();
+        }}
+        onCancel={() => setShowNeuroExitConfirm(false)}
       />
 
     </div>

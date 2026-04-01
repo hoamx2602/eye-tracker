@@ -220,73 +220,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
         </div>
       )}
 
-      {status === 'IDLE' && currentScreen !== 'consent' && currentScreen !== 'demographics' && currentScreen !== 'setup' && currentScreen !== 'calibration' && (
-        <div className="flex flex-col items-center justify-center h-full space-y-8 p-4 z-10 relative">
-          <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
-            EYE TRACKER
-          </h1>
-
-          {recordedVideoUrl && (
-            <div className="bg-gray-800 p-4 rounded-xl border border-green-700 flex flex-col items-center space-y-2 animate-bounce-in">
-              <div className="text-green-400 font-bold text-sm uppercase">Last Session Recording Ready</div>
-              <a
-                href={recordedVideoUrl}
-                download={`eye_tracking_session_${new Date().toISOString()}.webm`}
-                className="px-6 py-2 bg-green-600 hover:bg-green-500 rounded-full font-bold text-white transition-all text-sm"
-              >
-                Download Video
-              </a>
-            </div>
-          )}
-
-          {capturedImages.length > 0 && (
-            <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 max-w-2xl w-full">
-              <div className="text-xs font-bold text-gray-400 uppercase mb-2">Captured Faces ({capturedImages.length})</div>
-              <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-thin">
-                {capturedImages.map((img, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => onSetCapturedImageModalIndex(i)}
-                    className="flex-shrink-0 relative group rounded overflow-hidden border-2 border-transparent hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 transition"
-                  >
-                    <img src={img.url} alt={`Face ${i + 1}`} className="h-20 w-auto rounded border border-gray-600 pointer-events-none" />
-                    <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-[8px] p-0.5 text-center text-white">{img.timestamp}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {capturedImageModalIndex !== null && capturedImages[capturedImageModalIndex] && (
-            <CapturedImageModal
-              image={capturedImages[capturedImageModalIndex]}
-              index={capturedImageModalIndex}
-              total={capturedImages.length}
-              onClose={() => onSetCapturedImageModalIndex(null)}
-              onPrev={capturedImageModalIndex > 0 ? () => onSetCapturedImageModalIndex(capturedImageModalIndex - 1) : undefined}
-              onNext={capturedImageModalIndex < capturedImages.length - 1 ? () => onSetCapturedImageModalIndex(capturedImageModalIndex + 1) : undefined}
-            />
-          )}
-
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => { onSetRunMode('calibration'); onStartCalibrationClick(); }}
-                className="group relative px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-full transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(37,99,235,0.5)]"
-              >
-                Start Calibration
-              </button>
-              <button
-                onClick={() => { onSetRunMode('test'); onStartCalibrationClick(); }}
-                className="px-8 py-4 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-full transition-all hover:scale-105 active:scale-95 border border-violet-500/50"
-              >
-                Start Test
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Legacy Home screen removed in favor of HomePage.tsx root component */}
 
       {status === 'LOADING_MODEL' && (
         <div className="flex items-center justify-center h-full">
