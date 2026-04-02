@@ -128,7 +128,7 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
         <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px' }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: '#15803d', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Tests Completed</p>
           <p style={{ fontSize: 40, fontWeight: 900, color: '#14532d', margin: '6px 0 0', lineHeight: 1 }}>
-            {Object.keys(testResults).length}<span style={{ fontSize: 18 }}>/14</span>
+            {Object.keys(testResults).length + (trajectories?.length ?? 0)}<span style={{ fontSize: 18 }}>/14</span>
           </p>
           <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>assessment domains</p>
         </div>
