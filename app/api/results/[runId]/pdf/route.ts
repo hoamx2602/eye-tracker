@@ -29,11 +29,13 @@ export async function GET(
       // Configure sparticuz/chromium for Vercel
       console.log('[PDF] Launching chromium via puppeteer-core on Vercel...');
       
-      const executablePath = await chromium.executablePath();
-      console.log(`[PDF] Executable path retrieved: ${executablePath ? 'OK' : 'EMPTY'}`);
+      const executablePath = await chromium.executablePath(
+        `https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar`
+      );
+      console.log(`[PDF] Remote executable path retrieved: ${executablePath ? 'OK' : 'EMPTY'}`);
 
       browser = await puppeteerCore.launch({
-        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process'],
         executablePath: executablePath || '',
         headless: true,
         defaultViewport: { width: 1080, height: 1600 },
