@@ -45,15 +45,12 @@ export async function GET(
     const page = await browser.newPage();
     
     // Build the absolute URL to access the hidden print layout
-    let origin = req.nextUrl.origin;
-    // On Vercel, prioritize using the system VERCEL_URL for internal navigation to avoid DNS issues with custom domains
-    if (process.env.VERCEL_URL && !origin.includes('localhost')) {
-      origin = `https://${process.env.VERCEL_URL}`;
-    }
-    
+    // We must use the current origin (e.g., eyetracking.space) because VERCEL_URL (*.vercel.app)
+    // is often protected by Vercel Authentication, leading to a login page in the PDF.
+    const origin = req.nextUrl.origin;
     const printUrl = `${origin}/results/${runId}/print`;
 
-    console.log(`[PDF] Using origin: ${origin}, navigating to: ${printUrl}`);
+    console.log(`[PDF] Navigating to: ${printUrl} (Origin: ${origin})`);
 
     // Wait for the page to fully load
     // Use 'networkidle2' which is more permissive than 'networkidle0' (good for sites with analytics)
