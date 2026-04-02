@@ -34,22 +34,6 @@ interface PrintData {
   };
 }
 
-function ScoreBar({ score }: { score: number | null }) {
-  const pct = score ?? 0;
-  const color = pct >= 70 ? '#16a34a' : pct >= 40 ? '#d97706' : '#dc2626';
-  return (
-    <div className="w-full bg-gray-200 rounded-full h-2">
-      <div className="h-2 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
-    </div>
-  );
-}
-
-function ScoreLabel({ score }: { score: number | null }) {
-  if (score === null) return <span className="text-gray-400 font-bold">N/A</span>;
-  const color = score >= 70 ? 'text-green-600' : score >= 40 ? 'text-amber-600' : 'text-red-500';
-  return <span className={`font-black text-lg ${color}`}>{score}</span>;
-}
-
 export default function ResultsPrintLayout({ data }: { data: PrintData }) {
   const { session, testOrderSnapshot, testResults, configSnapshot, trajectories, chartSmoothing } = data;
 
@@ -83,7 +67,6 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
   const lastName = demographics ? (demographics.lastName as string | undefined) : undefined;
   const fullName = [firstName, lastName].filter(Boolean).join(' ');
 
-
   const trajectoryList = useMemo(() => {
     const raw = Array.isArray(trajectories) ? trajectories as Array<{
       patternName: string;
@@ -96,11 +79,7 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
   return (
     <div className="bg-white text-black font-sans" style={{ maxWidth: 900, margin: '0 auto', padding: '40px 48px' }}>
 
-      {/* ═══════════════════════════════════════════════════
-          PAGE 1: Header + Overview + Radar
-      ═══════════════════════════════════════════════════ */}
-      
-      {/* Header */}
+      {/* PAGE 1: Header + Overview + Radar */}
       <div style={{ borderBottom: '3px solid #1e3a8a', paddingBottom: 20, marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <div>
@@ -121,7 +100,6 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
         </div>
       </div>
 
-      {/* Overview strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
         <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 12, padding: '16px 20px' }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: '#0369a1', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Eye Tracking Accuracy</p>
@@ -156,7 +134,6 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
         </div>
       </div>
 
-      {/* Domain Scores Radar Chart */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24, marginBottom: 28 }}>
         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: '24px' }}>
           <h2 style={{ fontSize: 14, fontWeight: 800, color: '#1e293b', marginBottom: 16, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid #e2e8f0', paddingBottom: 10 }}>
@@ -184,9 +161,7 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
         </div>
       </div>
 
-      {/* ═══════════════════════════════════════════════════
-          PAGE 2: Detailed Domain Scores
-      ═══════════════════════════════════════════════════ */}
+      {/* PAGE 2: Detailed Domain Scores */}
       <div style={{ marginTop: 24 }}>
         <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', margin: '0 0 4px', borderBottom: '2px solid #e2e8f0', paddingBottom: 10 }}>
           Detailed Domain Scores
@@ -201,6 +176,17 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
             return sa?.focusRating != null && s.score !== null;
           });
           if (selfAssessRows.length === 0) return null;
+
+          const StarRating = ({ rating }: { rating: number }) => (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <svg key={i} width="14" height="14" viewBox="0 0 24 24" fill={i <= rating ? "#eab308" : "#e2e8f0"}>
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+              ))}
+            </div>
+          );
+
           return (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
@@ -219,11 +205,11 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
                     <tr key={s.testId} style={{ background: isEven ? '#f8fafc' : 'white', borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '10px 12px', fontWeight: 700, color: '#0f172a' }}>{s.domainName}</td>
                       <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                        <span style={{ color: '#eab308' }}>{'★'.repeat(sa?.focusRating ?? 0)}</span><span style={{ color: '#d1d5db' }}>{'☆'.repeat(5 - (sa?.focusRating ?? 0))}</span>
+                        <StarRating rating={sa?.focusRating ?? 0} />
                       </td>
                       <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                         {sa?.accuracyPrediction != null ? (
-                          <><span style={{ color: '#eab308' }}>{'★'.repeat(sa.accuracyPrediction)}</span><span style={{ color: '#d1d5db' }}>{'☆'.repeat(5 - sa.accuracyPrediction)}</span></>
+                          <StarRating rating={sa.accuracyPrediction} />
                         ) : '—'}
                       </td>
                       <td style={{ padding: '10px 12px', textAlign: 'right' }}>
@@ -237,13 +223,9 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
             </table>
           );
         })()}
-
-
       </div>
 
-      {/* ═══════════════════════════════════════════════════
-          PAGE 3+: Eye Gaze Trajectories (Chunked into 3 per page)
-      ═══════════════════════════════════════════════════ */}
+      {/* PAGE 3+: Eye Gaze Trajectories */}
       {(() => {
         const chunks: any[][] = [];
         for (let i = 0; i < trajectoryList.length; i += 3) {
@@ -276,7 +258,6 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
                   pageBreakInside: 'avoid',
                   breakInside: 'avoid',
                 }}>
-                  {/* Segment header */}
                   <div style={{ background: '#f1f5f9', padding: '10px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h3 style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', margin: 0 }}>{seg.patternName}</h3>
                     <span style={{ fontSize: 10, color: '#64748b', fontWeight: 500 }}>
@@ -284,9 +265,7 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
                     </span>
                   </div>
 
-                  {/* Charts */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, padding: '16px 16px 16px 4px', background: 'white' }}>
-                    {/* X axis */}
                     <div>
                       <p style={{ fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 8px' }}>
                         Horizontal (X-axis)
@@ -318,7 +297,6 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
                       </div>
                     </div>
 
-                    {/* Y axis */}
                     <div>
                       <p style={{ fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 8px' }}>
                         Vertical (Y-axis)
@@ -351,7 +329,6 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
                     </div>
                   </div>
 
-                  {/* Legend */}
                   <div style={{ background: '#f8fafc', padding: '6px 16px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: 16 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       <span style={{ display: 'inline-block', width: 16, height: 2, background: '#10b981', borderRadius: 1 }} />
@@ -369,7 +346,6 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
         ));
       })()}
 
-      {/* Footer */}
       <div style={{ marginTop: 40, paddingTop: 16, borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <p style={{ fontSize: 10, color: '#94a3b8', margin: 0 }}>
           This report is for personal reference only and does not constitute a medical diagnosis.
