@@ -1,0 +1,30 @@
+---
+description: Project architecture and development workflow guidelines. Ensure a maintainable and scalable project structure.
+---
+
+# Architecture & Development Workflow
+
+## 1. Project Structure (Next.js App Router)
+- **`app/`**: Core directory for Pages and APIs following Next.js standards (`page.tsx`, `layout.tsx`, `loading.tsx`).
+  - `app/api/`: Server-side API endpoints.
+  - `app/results/[runId]/`: Dynamic routes for user dashboard results.
+  - `app/results/[runId]/print/`: Optimized printing-only routes.
+- **`components/`**: Reusable React components (Charts, UI, Flow Sections).
+- **`lib/`**: Utilities (formatters), Global Configuration (`neurologicalConfig.ts`), and constants.
+
+## 2. TypeScript Standards
+- Prefer **`interface`** for stable object definitions (Tests, Steps, RunData).
+- Every API response must have a clean interface definition for frontend safety.
+- Avoid **`any`** at all costs. Strictly type sensitive data like trajectories.
+
+## 3. Dependency Management
+- **Next.js Config**: Update `serverExternalPackages` in `next.config.mjs` for server-side libraries like `puppeteer-core` and `@sparticuz/chromium`.
+- **Package.json**: Verify chromium-pack compatibility before upgrading dependencies.
+
+## 4. Deployment & Reliability (Vercel)
+- Manage all sensitive environment variables on the Vercel Dashboard.
+- **Preview Staging**: Verify font and chart rendering on Vercel Preview before merging to Production.
+- **Branding**: Update `/app/icon.png` to auto-generate Favicons synchronously across all pages.
+
+## 5. Persistence & Mocking
+- Results Storage: Use external databases (if available) or a stable mock engine to avoid disrupting the user experience during testing.

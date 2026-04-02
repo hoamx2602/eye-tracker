@@ -1,0 +1,28 @@
+---
+description: Standards for Frontend UI/UX design. Ensure high aesthetic quality, consistent color palettes, and smooth user interactions.
+---
+
+# Frontend & UI Development Standards
+
+## 1. Design System (Aesthetic)
+- **Theme**: High-contrast **Dark Mode** is the default.
+- **Color Palette**:
+  - Background: `bg-gray-950` (Primary), `bg-gray-900` (Secondary).
+  - Accent: `blue-600` (Primary Action), `blue-500` (Hover), `blue-400` (Focus).
+  - Border: `border-gray-800` or `border-gray-700/50`.
+- **Typography**: Modern sans-serif fonts (Inter, Roboto). Titles must be font-bold with tracking-tight.
+
+## 2. Component Guidelines
+- **Consistency**: Use unified UI components (Buttons, Cards, Inputs). Avoid ad-hoc styling.
+- **Responsive Design**: Mobile-first approach, but prioritize Desktop experience for Dashboard and Results analysis.
+- **Micro-interactions**: Use Tailwind transitions (`duration-150`, `ease-out`) for hover and active states to feel premium.
+
+## 3. Data Visualization (Charts)
+- Use **Recharts** for the dashboard.
+- Chart colors (Radar/Line) must provide high contrast against the dark background.
+- Axis labels and legends should be compact and clean (`text-[10px]`).
+
+## 4. PDF Layout (Print Optimization)
+- Avoid using direct Tailwind classes for page-break properties.
+- Use **inline SVGs** instead of Unicode or font-icons to ensure stable rendering on Vercel/Chromium.
+- Chart height in print layouts must not exceed **280px** to prevent cropping across page breaks.

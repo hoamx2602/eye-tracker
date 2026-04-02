@@ -1,0 +1,28 @@
+---
+description: Standards for API development (Next.js App Router API Routes). Ensure stable data exchange and serverless-optimized code.
+---
+
+# API Development & Backend Standards
+
+## 1. Request/Response Structure
+- Use **Next.js App Router API Routes** (`app/api/**/route.ts`).
+- Response: Always return `NextResponse.json(...)` with a standardized JSON structure.
+- Status Codes:
+  - `200`: Success.
+  - `400`: Input/Validation error.
+  - `404`: Resource not found (e.g., invalid Session ID).
+  - `500`: Server error / Chromium crash.
+
+## 2. Serverless Best Practices (Vercel)
+- **Puppeteer & Chromium**:
+  - Always use `@sparticuz/chromium` with a remote pack URL for serverless environments.
+  - Use dynamic `executablePath` detection for Local vs. Vercel development.
+- **Internal Requests**: Use environment variables or `process.env.VERCEL_URL` for internal calls to `/print` to avoid DNS resolution issues (`ERR_NAME_NOT_RESOLVED`).
+- **Optimization**: API responses should complete under 10 seconds to avoid Vercel Free Plan timeouts.
+
+## 3. Data Validation
+- Validate `runId` and other URL parameters using regex or standard validation logic.
+- Deny API execution if required body keys (trajectories, testResults) are missing.
+
+## 4. Error Logging
+- All server-side errors must be logged with `console.error` and detailed context for easier debugging on Vercel Logs.

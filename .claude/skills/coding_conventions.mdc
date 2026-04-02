@@ -1,0 +1,78 @@
+---
+description: Standards for coding style and maintainability. Ensure clean, readable, and structured code across the repository.
+---
+
+# Coding & Naming Conventions
+
+## 1. Naming Conventions
+
+### Variables & Functions (camelCase)
+- Example: `const testResults = ...`, `function calculateDomainScore() { ... }`.
+- Use descriptive naming (evocative names). Avoid meaningless names like `data`, `res`, `tmp`.
+
+### Components & Interfaces (PascalCase)
+- **Components**: Functional naming (e.g., `RadarChartCard.tsx`, `ResultsHeader.tsx`).
+- **Interfaces/Types**: PascalCase naming (e.g., `interface GazePoint { ... }`, `interface UserReportProps { ... }`).
+
+### Files & Folders (kebab-case or PascalCase)
+- **App Router Folders**: Always use kebab-case (e.g., `eye-tracking-flow/`, `results/`).
+- **React Components**: Always use PascalCase for filenames (e.g., `NeutralHeader.tsx`).
+- **Logic Utils**: Use camelCase or kebab-case (e.g., `gazeUtils.ts`).
+
+## 2. Functional Component Structure
+
+### Order of Content
+1.  **Imports**: React -> Next/Third-party -> Local Components -> Types -> Assets.
+2.  **Types/Interfaces**: Props Interface above the component.
+3.  **Component Definition**: `export default function ...` for pages, `const ...` for sub-components.
+4.  **Hooks**: `useState`, `useMemo`, `useEffect` at the top of the function.
+5.  **Render logic**: Keep data processing logic separate from the JSX return.
+
+### Example Template
+```tsx
+import React, { useState, useEffect } from 'react';
+import { Radar } from 'recharts'; // lib
+import { formatTime } from '@/lib/utils'; // local
+
+interface MyComponentProps {
+  data: number[];
+}
+
+export const MyComponent = ({ data }: MyComponentProps) => {
+  // 1. Hooks
+  const [active, setActive] = useState(false);
+
+  // 2. Pure logic / Calculations
+  const processedData = React.useMemo(() => data.map(d => d * 10), [data]);
+
+  // 3. Render
+  return (
+    <div className="bg-gray-900 p-4">
+       {/* Content */}
+    </div>
+  );
+};
+```
+
+## 3. TypeScript & Clean Code Rules
+- **Strict Types**: Always define interfaces/types for props and API data. Avoid `any`.
+- **Destructuring**: Use destructuring for Props and State (`const { x, y } = point;`).
+- **Early Return**: Handle error/loading states first to flatten the code structure.
+- **JSDoc**: Comment with JSDoc (`@param`, `@returns`) for complex calculations in `lib/`.
+
+## 4. Complexity & Refactoring Rules
+
+### File & Component Length Limits
+- **Component Files**: Try to keep under **250 lines**. If exceeding **300 lines**, suggest splitting sub-components into separate files (e.g., `ResultsHeader.tsx`, `ResultsChart.tsx`).
+- **Logic Snippets**: Helper functions should not exceed **40 lines**.
+- **Utility Files**: Limit to **200 lines** per file.
+
+### Refactoring Thresholds (Triggers for splitting)
+- Create a new file when the current component:
+  - Contains more than **3 sub-components** defined in the same file.
+  - Uses more than **5 hooks** (`useState`, `useMemo`, `useEffect`, etc.).
+  - Contains data transformation logic longer than **30 lines**.
+
+### Logic Flow & Nesting
+- **Maximum Nesting**: Do not nest logic blocks (`if`, `for`, `map`) more than **3 levels deep**. Use `Early Return` to flatten the flow.
+- **Props Management**: If a component receives more than **6 props**, group them into a Configuration Object or use Context.

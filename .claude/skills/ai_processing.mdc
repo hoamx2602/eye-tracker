@@ -1,0 +1,22 @@
+---
+description: Standards for Gaze data processing and AI integration. Ensure data integrity and consistent scoring across neurological domains.
+---
+
+# AI Data & Processing Standards
+
+## 1. Gaze Data Input (Trajectories)
+- Raw Data: Array of `{x: number, y: number, timestamp: number}` objects.
+- **Normalization**: Coordinates must be normalized relative to the Window size (%) (0-100) to ensure consistency across different screen resolutions.
+- **Cleaning**: Remove invalid points (null/NaN) or noise (outliers) before chart rendering or scoring.
+
+## 2. Neurological Scoring (Domain Analysis)
+- **Domain Mapping**: Exactly 14 activities (7 tests + 7 exercises) must map to the 5 domains: **Stability, Range, Speed, Accuracy, Attention**.
+- **Calculation Rules**: Do not modify score weighting without corresponding neurological documentation.
+- **Star Icons**: Use **inline SVG icons** in print reports for 1-5 star ratings to avoid Unicode/font issues in PDFs.
+
+## 3. Visualization Hierarchy
+- **Radar Charts**: Map domains directly from source data without mock values.
+- **Color Consistency**: Use high-contrast colors (Electric Blue, Slate) for charts to ensure readability for doctors and patients.
+
+## 4. Metadata Recording
+- Always store results with associated **metadata** (Browser, Device Resolution, Screen Size) to interpret any potential technical anomalies in results correctly.
