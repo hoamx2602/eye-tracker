@@ -150,9 +150,37 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
         <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px' }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: '#15803d', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Tests Completed</p>
           <p style={{ fontSize: 40, fontWeight: 900, color: '#14532d', margin: '6px 0 0', lineHeight: 1 }}>
-            {Object.keys(testResults).length}<span style={{ fontSize: 18 }}>/14</span>
+            {Object.keys(testResults).length}<span style={{ fontSize: 18 }}>/7</span>
           </p>
           <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>assessment domains</p>
+        </div>
+      </div>
+
+      {/* Domain Scores Radar Chart */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24, marginBottom: 28 }}>
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: '24px' }}>
+          <h2 style={{ fontSize: 14, fontWeight: 800, color: '#1e293b', marginBottom: 16, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid #e2e8f0', paddingBottom: 10 }}>
+            Neurological Domain Profile
+          </h2>
+          <div style={{ height: 350, width: '100%' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
+                <PolarGrid stroke="#cbd5e1" />
+                <PolarAngleAxis dataKey="domain" tick={{ fill: '#475569', fontSize: 10, fontWeight: 600 }} />
+                <Radar
+                  name="Score"
+                  dataKey="score"
+                  stroke="#2563eb"
+                  fill="#3b82f6"
+                  fillOpacity={0.6}
+                  isAnimationActive={false}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+          <p style={{ fontSize: 10, color: '#64748b', textAlign: 'center', marginTop: 12 }}>
+            Scores are normalized to a 0–100 scale, where 100 represents peak performance.
+          </p>
         </div>
       </div>
 

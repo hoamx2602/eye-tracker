@@ -552,6 +552,12 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
                 setPdfLoading(true);
                 try {
                   const res = await fetch(`/api/results/${runData.id}/pdf`);
+                  if (!res.ok) {
+                    const errorJson = await res.json().catch(() => ({ error: 'Unexpected error' }));
+                    console.error('PDF Generation failed:', errorJson);
+                    alert(`Failed to generate PDF: ${errorJson.details || errorJson.error || 'Check server logs'}`);
+                    return;
+                  }
                   const blob = await res.blob();
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
