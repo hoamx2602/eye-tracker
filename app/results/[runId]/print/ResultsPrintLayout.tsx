@@ -139,9 +139,9 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
           <h2 style={{ fontSize: 14, fontWeight: 800, color: '#1e293b', marginBottom: 16, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid #e2e8f0', paddingBottom: 10 }}>
             Neurological Domain Profile
           </h2>
-          <div style={{ height: 350, width: '100%' }}>
+          <div style={{ height: 280, width: '100%' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
+              <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
                 <PolarGrid stroke="#cbd5e1" />
                 <PolarAngleAxis dataKey="domain" tick={{ fill: '#475569', fontSize: 10, fontWeight: 600 }} />
                 <Radar
