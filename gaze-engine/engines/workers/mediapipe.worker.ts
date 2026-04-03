@@ -20,6 +20,7 @@ import type { EyeFeatures } from '../../services/FeatureExtractor';
 import { HybridRegressor, type RegressionMethod } from '../../services/RegressionService';
 import { GazeSmoother } from '../../core/filters/GazeSmoother';
 import { DriftCompensator } from '../../core/filters/DriftCompensator';
+import { AutoConfigManager } from '../../services/AutoConfigManager';
 import type { GazeResult, HeadPoseResult, CalibrationSample, LOOCVMetrics } from '../../core/IGazeEngine';
 
 // ─── Worker State ─────────────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ let landmarker: FaceLandmarker | null = null;
 let regressor: HybridRegressor | null = null;
 const smoother = new GazeSmoother({ minCutoff: 0.005, beta: 0.01 });
 const driftComp = new DriftCompensator();
+const autoConfig = new AutoConfigManager();
 let running = false;
 let regressionMethod: RegressionMethod = 'HYBRID';
 let prevFeatures: EyeFeatures | null = null;
@@ -99,6 +101,12 @@ self.onmessage = async (e: MessageEvent) => {
       break;
     case 'STOP':
       running = false;
+      break;
+    case 'GET_AUTO_CONFIG':
+      self.postMessage({ type: 'AUTO_CONFIG', payload: autoConfig.recommend() });
+      break;
+    case 'REFINE_CONFIG':
+      self.postMessage({ type: 'AUTO_CONFIG_REFINED', payload: autoConfig.refineAfterCalibration(payload as import('../../core/IGazeEngine').LOOCVMetrics) });
       break;
     case 'DESTROY':
       landmarker?.close();
@@ -181,8 +189,11 @@ function handleFrame({ bitmap, timestamp }: { bitmap: ImageBitmap; timestamp: nu
   const headPayload: HeadPoseResult = { pitch: hp.pitch, yaw: hp.yaw, roll: hp.roll, timestamp };
   self.postMessage({ type: 'HEAD_POSE', payload: headPayload });
 
-  // Gaze prediction (only after calibration)
-  if (!regressor?.hasModel()) return;
+  // Pre-calibration: feed environment probes for auto-config
+  if (!regressor?.hasModel()) {
+    autoConfig.pushProbe(features, timestamp);
+    return;
+  }
 
   // Feature vector is built inside the worker using stored flags — no cross-thread flag sync needed
   // For now use default flags; UPDATE_FLAGS message can carry new flags
@@ -241,6 +252,7 @@ function handleCalibrate(payload: { samples: CalibrationSample[]; method: Regres
   const ok = regressor.train(inputs, outputs, weights);
   smoother.reset();
   driftComp.reset();
+  autoConfig.reset();
   prevFeatures = null;
 
   const metrics: LOOCVMetrics = ok

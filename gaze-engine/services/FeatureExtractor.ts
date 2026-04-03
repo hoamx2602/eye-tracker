@@ -26,6 +26,12 @@ export interface EyeFeatures {
   matrixHeadPose?: HeadPose;
   /** MediaPipe face detection confidence (0–1), forwarded from result. */
   faceConfidence?: number;
+  /**
+   * Average pupil diameter (normalized by eye width).
+   * Used for pupil dilation compensation — rapid changes indicate
+   * lighting shifts that cause fake gaze displacement.
+   */
+  pupilDiameter: number;
 }
 
 export interface FeatureFlags {
@@ -47,6 +53,9 @@ const GAZE_BLENDSHAPES = [
 const L = {
   LEFT_INNER: 133, LEFT_OUTER: 33, LEFT_TOP: 159, LEFT_BOTTOM: 145, LEFT_IRIS: 468,
   RIGHT_INNER: 362, RIGHT_OUTER: 263, RIGHT_TOP: 386, RIGHT_BOTTOM: 374, RIGHT_IRIS: 473,
+  // Iris ring landmarks (top/bottom) for pupil diameter estimation
+  LEFT_IRIS_TOP: 469, LEFT_IRIS_BOTTOM: 471,
+  RIGHT_IRIS_TOP: 474, RIGHT_IRIS_BOTTOM: 476,
   NOSE: 1, HEAD_TOP: 10, CHIN: 152, LEFT_EDGE: 234, RIGHT_EDGE: 454,
 } as const;
 
@@ -119,6 +128,11 @@ export function extractEyeFeatures(
   const leftEAR  = lw > 0 ? dist2d(lt, lb) / lw : 0;
   const rightEAR = rw > 0 ? dist2d(rt, rb) / rw : 0;
 
+  // Pupil diameter: vertical iris span normalized by eye width (average of both eyes)
+  const lIrisD = lw > 0 ? dist2d(landmarks[L.LEFT_IRIS_TOP], landmarks[L.LEFT_IRIS_BOTTOM]) / lw : 0;
+  const rIrisD = rw > 0 ? dist2d(landmarks[L.RIGHT_IRIS_TOP], landmarks[L.RIGHT_IRIS_BOTTOM]) / rw : 0;
+  const pupilDiameter = (lIrisD + rIrisD) / 2;
+
   // Blendshapes
   let blendshapes: Record<string, number> | undefined;
   if (blendshapeCategories?.length) {
@@ -137,6 +151,7 @@ export function extractEyeFeatures(
     zDistance,
     leftEAR,
     rightEAR,
+    pupilDiameter,
     blendshapes,
     matrixHeadPose: transformMatrix ? matrixHeadPose(transformMatrix.data) : undefined,
     faceConfidence,
@@ -205,6 +220,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
  *   2. Eye openness — continuous EAR curve, not a binary blink gate.
  *   3. Head angle penalty — gaze accuracy degrades at extreme yaw/pitch.
  *   4. Temporal iris stability — high frame-to-frame jitter = low quality.
+ *   5. Pupil dilation stability — rapid diameter change = lighting shift.
  *
  * The returned score is suitable for:
  *   - Weighting smoother aggressiveness (low confidence → heavier smoothing)
@@ -234,8 +250,8 @@ export function computeConfidence(
   // Full confidence up to ~0.3 rad (~17°), drops linearly to 0.3 at π
   score *= Math.max(0.3, 1 - angleSum / Math.PI);
 
-  // 4. Temporal iris consistency (jitter detection)
   if (prevFeatures) {
+    // 4. Temporal iris consistency (jitter detection)
     const dlx = features.leftRelative.x  - prevFeatures.leftRelative.x;
     const dly = features.leftRelative.y  - prevFeatures.leftRelative.y;
     const drx = features.rightRelative.x - prevFeatures.rightRelative.x;
@@ -245,6 +261,13 @@ export function computeConfidence(
     // Typical stable jitter < 0.5; artifact > 3.0
     const jitterPenalty = Math.max(0.2, 1 - jitter / 4.0);
     score *= jitterPenalty;
+
+    // 5. Pupil dilation stability — rapid diameter change means lighting shift
+    //    which displaces iris landmarks and creates fake gaze movement.
+    //    Typical stable delta < 0.02; sudden light change > 0.08.
+    const pupilDelta = Math.abs(features.pupilDiameter - prevFeatures.pupilDiameter);
+    const dilationPenalty = Math.max(0.3, 1 - pupilDelta / 0.12);
+    score *= dilationPenalty;
   }
 
   return score;
