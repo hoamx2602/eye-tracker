@@ -44,6 +44,12 @@ export interface CalibrationSample {
   featureVector: number[];
   /** Optional: raw eye features for flag-based re-evaluation. */
   rawFeatures?: Record<string, unknown>;
+  /**
+   * Quality weight (0–1) for confidence-weighted regression.
+   * Higher = more influence on the model. Combines spatial weight
+   * (center > corners) and temporal weight (end of dwell > start).
+   */
+  weight?: number;
 }
 
 export interface LOOCVMetrics {

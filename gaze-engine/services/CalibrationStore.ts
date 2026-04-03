@@ -28,6 +28,15 @@ export interface CleanCalibrationOptions {
   outlierMethod?: OutlierMethod;
   outlierThreshold?: number;
   flags?: FeatureFlags;
+  /**
+   * When true, each sample gets a quality weight (0–1) based on:
+   *   - Spatial: center-of-screen points weighted higher than corners
+   *   - Temporal: later frames in a dwell period weighted higher than early ones
+   * Requires screenWidth/screenHeight to compute spatial weights.
+   */
+  useConfidenceWeights?: boolean;
+  screenWidth?: number;
+  screenHeight?: number;
 }
 
 // ─── Store ───────────────────────────────────────────────────────────────────
@@ -68,6 +77,9 @@ export class CalibrationStore {
       outlierMethod = 'NONE',
       outlierThreshold = 0.1,
       flags = {},
+      useConfidenceWeights = false,
+      screenWidth = 1920,
+      screenHeight = 1080,
     } = opts;
 
     const samples: CalibrationSample[] = [];
@@ -79,16 +91,39 @@ export class CalibrationStore {
       const cleaned = DataCleaner.clean(entry.featureBuffer, outlierMethod, outlierThreshold);
       if (!cleaned.length) continue;
 
-      // Average across frames collected at this point
+      // Temporal weighting: later frames in dwell are more stable.
+      // Weight ramps from 0.5 (first frame) to 1.0 (last frame).
       const dim = cleaned[0].length;
-      const avg = new Array<number>(dim).fill(0);
-      for (const vec of cleaned) for (let i = 0; i < dim; i++) avg[i] += vec[i] / cleaned.length;
+      let avg: number[];
+      if (useConfidenceWeights && cleaned.length > 1) {
+        const totalWeight = cleaned.reduce((s, _, i) => s + (0.5 + 0.5 * i / (cleaned.length - 1)), 0);
+        avg = new Array<number>(dim).fill(0);
+        for (let fi = 0; fi < cleaned.length; fi++) {
+          const tw = (0.5 + 0.5 * fi / (cleaned.length - 1)) / totalWeight;
+          for (let d = 0; d < dim; d++) avg[d] += cleaned[fi][d] * tw;
+        }
+      } else {
+        avg = new Array<number>(dim).fill(0);
+        for (const vec of cleaned) for (let i = 0; i < dim; i++) avg[i] += vec[i] / cleaned.length;
+      }
+
+      // Spatial weight: center points are more reliable than corners.
+      // Normalized distance from screen center: 0 at center, 1 at corner.
+      let weight = 1.0;
+      if (useConfidenceWeights) {
+        const cx = screenWidth / 2, cy = screenHeight / 2;
+        const maxDist = Math.hypot(cx, cy);
+        const dist = Math.hypot(entry.screenX - cx, entry.screenY - cy);
+        // Weight: 1.0 at center, 0.6 at corners
+        weight = 1.0 - 0.4 * (dist / maxDist);
+      }
 
       samples.push({
         screenX: entry.screenX,
         screenY: entry.screenY,
         featureVector: avg,
         rawFeatures: entry.rawFeatures as unknown as Record<string, unknown> | undefined,
+        weight,
       });
     }
 

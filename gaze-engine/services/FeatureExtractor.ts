@@ -24,6 +24,8 @@ export interface EyeFeatures {
   rightEAR: number;
   blendshapes?: Record<string, number>;
   matrixHeadPose?: HeadPose;
+  /** MediaPipe face detection confidence (0–1), forwarded from result. */
+  faceConfidence?: number;
 }
 
 export interface FeatureFlags {
@@ -87,6 +89,7 @@ export function extractEyeFeatures(
   landmarks: NormalizedLandmark[],
   blendshapeCategories?: { categoryName: string; score: number }[],
   transformMatrix?: { data: ArrayLike<number> },
+  faceConfidence?: number,
 ): EyeFeatures | null {
   if (!landmarks || landmarks.length < 478) return null;
 
@@ -136,6 +139,7 @@ export function extractEyeFeatures(
     rightEAR,
     blendshapes,
     matrixHeadPose: transformMatrix ? matrixHeadPose(transformMatrix.data) : undefined,
+    faceConfidence,
   };
 }
 
@@ -183,6 +187,67 @@ export function buildFeatureVector(f: EyeFeatures, flags: FeatureFlags = {}): nu
   }
 
   return vec;
+}
+
+// ─── Multi-Factor Confidence Score ──────────────────────────────────────────
+
+/** Hermite smoothstep: 0 at edge0, 1 at edge1, smooth in between. */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Compute a continuous multi-factor confidence score (0–1).
+ *
+ * Factors:
+ *   1. Face detection confidence from MediaPipe (raw detector score).
+ *   2. Eye openness — continuous EAR curve, not a binary blink gate.
+ *   3. Head angle penalty — gaze accuracy degrades at extreme yaw/pitch.
+ *   4. Temporal iris stability — high frame-to-frame jitter = low quality.
+ *
+ * The returned score is suitable for:
+ *   - Weighting smoother aggressiveness (low confidence → heavier smoothing)
+ *   - Gating glasses-mode artifact rejection
+ *   - UI feedback (cursor opacity)
+ */
+export function computeConfidence(
+  features: EyeFeatures,
+  prevFeatures: EyeFeatures | null,
+): number {
+  let score = 1.0;
+
+  // 1. Face detection confidence (if available)
+  if (features.faceConfidence !== undefined) {
+    // Map [0.5, 1.0] → [0.5, 1.0]; below 0.5 detection is unreliable
+    score *= Math.max(0.5, features.faceConfidence);
+  }
+
+  // 2. Eye openness (continuous, not binary)
+  //    smoothstep(0.15, 0.25) → 0 when EAR≤0.15 (closed), 1 when EAR≥0.25 (open)
+  const minEAR = Math.min(features.leftEAR, features.rightEAR);
+  score *= smoothstep(0.15, 0.25, minEAR);
+
+  // 3. Head angle penalty — accuracy drops at extreme angles
+  const hp = features.matrixHeadPose ?? features.headPose;
+  const angleSum = Math.abs(hp.yaw) + Math.abs(hp.pitch);
+  // Full confidence up to ~0.3 rad (~17°), drops linearly to 0.3 at π
+  score *= Math.max(0.3, 1 - angleSum / Math.PI);
+
+  // 4. Temporal iris consistency (jitter detection)
+  if (prevFeatures) {
+    const dlx = features.leftRelative.x  - prevFeatures.leftRelative.x;
+    const dly = features.leftRelative.y  - prevFeatures.leftRelative.y;
+    const drx = features.rightRelative.x - prevFeatures.rightRelative.x;
+    const dry = features.rightRelative.y - prevFeatures.rightRelative.y;
+    // Average iris displacement (already ×10 scale)
+    const jitter = (Math.hypot(dlx, dly) + Math.hypot(drx, dry)) / 2;
+    // Typical stable jitter < 0.5; artifact > 3.0
+    const jitterPenalty = Math.max(0.2, 1 - jitter / 4.0);
+    score *= jitterPenalty;
+  }
+
+  return score;
 }
 
 /**

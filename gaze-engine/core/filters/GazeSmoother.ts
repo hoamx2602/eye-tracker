@@ -144,10 +144,12 @@ export class GazeSmoother {
   }
 
   /**
-   * @param frameQuality 0–1 quality score from the frame quality gate (ticket 03-01).
-   *   undefined = no quality info (glasses mode inactive or non-glasses path).
+   * @param frameQuality 0–1 quality/confidence score.
+   *   undefined = no quality info (legacy path).
    *   When glassesMode=true and quality is low, Kalman R is boosted and
    *   hold-last-valid is applied for artifact frames.
+   *   When glassesMode=false, low quality still scales Kalman R for gentler
+   *   noise rejection (confidence-aware smoothing).
    */
   process(x: number, y: number, timestamp: number, frameQuality?: number): { x: number; y: number } {
     // ── Glasses: pre-filter velocity spike ───────────────────────────────────
@@ -167,6 +169,12 @@ export class GazeSmoother {
       }
       // Scale Kalman R by quality: quality=1 → ×1, quality=0 → ×glassesKalmanRMultiplier
       const rScale = 1 + (1 - Math.max(0, frameQuality)) * (this.glassesKalmanRMultiplier - 1);
+      this.kalX.setRScale(rScale);
+      this.kalY.setRScale(rScale);
+    } else if (frameQuality !== undefined && frameQuality < 0.8) {
+      // Confidence-aware smoothing (non-glasses path):
+      // Low-confidence frames get scaled Kalman R (up to 3× at confidence=0)
+      const rScale = 1 + (1 - frameQuality) * 2;
       this.kalX.setRScale(rScale);
       this.kalY.setRScale(rScale);
     } else {
