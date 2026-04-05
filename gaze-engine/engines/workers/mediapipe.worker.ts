@@ -21,6 +21,7 @@ import { HybridRegressor, type RegressionMethod } from '../../services/Regressio
 import { GazeSmoother } from '../../core/filters/GazeSmoother';
 import { DriftCompensator } from '../../core/filters/DriftCompensator';
 import { AutoConfigManager } from '../../services/AutoConfigManager';
+import { ImagePreprocessor } from '../../services/ImagePreprocessor';
 import type { GazeResult, HeadPoseResult, CalibrationSample, LOOCVMetrics } from '../../core/IGazeEngine';
 
 // ─── Worker State ─────────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ let regressor: HybridRegressor | null = null;
 const smoother = new GazeSmoother({ minCutoff: 0.005, beta: 0.01 });
 const driftComp = new DriftCompensator();
 const autoConfig = new AutoConfigManager();
+const preprocessor = new ImagePreprocessor();
 let running = false;
 let regressionMethod: RegressionMethod = 'HYBRID';
 let prevFeatures: EyeFeatures | null = null;
@@ -145,7 +147,7 @@ async function handleInit(cfg: {
 
 // ─── Per-Frame Processing ─────────────────────────────────────────────────────
 
-function handleFrame({ bitmap, timestamp }: { bitmap: ImageBitmap; timestamp: number }) {
+async function handleFrame({ bitmap, timestamp }: { bitmap: ImageBitmap; timestamp: number }) {
   if (!running || !landmarker) {
     bitmap.close();
     return;
@@ -154,12 +156,18 @@ function handleFrame({ bitmap, timestamp }: { bitmap: ImageBitmap; timestamp: nu
   // Track frame rate and auto-tune smoother when FPS deviates from reference
   updateFpsAdaptiveParams(timestamp);
 
+  // Image conditioning: auto-enhance contrast/sharpness for low-quality cameras.
+  // The preprocessor self-calibrates during the first 30 frames and only
+  // applies processing when the camera actually needs it (zero cost otherwise).
+  const preprocessed = await preprocessor.process(bitmap);
+  const frameBitmap = preprocessed.bitmap;
+
   // ImageBitmap can be passed directly to detectForVideo in a worker
   let result: FaceLandmarkerResult;
   try {
-    result = landmarker.detectForVideo(bitmap as unknown as HTMLVideoElement, timestamp);
+    result = landmarker.detectForVideo(frameBitmap as unknown as HTMLVideoElement, timestamp);
   } finally {
-    bitmap.close(); // always release memory
+    frameBitmap.close(); // always release memory
   }
 
   const landmarks = result.faceLandmarks?.[0];
@@ -184,10 +192,18 @@ function handleFrame({ bitmap, timestamp }: { bitmap: ImageBitmap; timestamp: nu
   const features = extractEyeFeatures(landmarks, blendshapes, matrix, faceConf);
   if (!features) return;
 
-  // Head pose (always emit regardless of regressor state)
-  const hp = features.matrixHeadPose ?? features.headPose;
+  // Head pose — prefer matrix pose when mask detected (more robust to lower-face occlusion)
+  const useMaskFallback = features.maskScore > 0.5;
+  const hp = (useMaskFallback && features.matrixHeadPose)
+    ? features.matrixHeadPose  // 3D model fitting is more robust to mask occlusion
+    : (features.matrixHeadPose ?? features.headPose);
   const headPayload: HeadPoseResult = { pitch: hp.pitch, yaw: hp.yaw, roll: hp.roll, timestamp };
   self.postMessage({ type: 'HEAD_POSE', payload: headPayload });
+
+  // Notify main thread about mask detection (for UI feedback)
+  if (useMaskFallback) {
+    self.postMessage({ type: 'MASK_DETECTED', payload: { maskScore: features.maskScore } });
+  }
 
   // Pre-calibration: feed environment probes for auto-config
   if (!regressor?.hasModel()) {

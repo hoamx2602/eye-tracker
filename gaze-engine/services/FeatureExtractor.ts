@@ -32,6 +32,8 @@ export interface EyeFeatures {
    * lighting shifts that cause fake gaze displacement.
    */
   pupilDiameter: number;
+  /** Mask detection score (0–1). >0.6 = likely wearing a mask. */
+  maskScore: number;
 }
 
 export interface FeatureFlags {
@@ -57,6 +59,13 @@ const L = {
   LEFT_IRIS_TOP: 469, LEFT_IRIS_BOTTOM: 471,
   RIGHT_IRIS_TOP: 474, RIGHT_IRIS_BOTTOM: 476,
   NOSE: 1, HEAD_TOP: 10, CHIN: 152, LEFT_EDGE: 234, RIGHT_EDGE: 454,
+  // Forehead/brow landmarks for mask-resilient pitch estimation
+  LEFT_BROW_INNER: 107, RIGHT_BROW_INNER: 336,
+  LEFT_BROW_OUTER: 70, RIGHT_BROW_OUTER: 300,
+  // Nose bridge (above mask line) for mask detection
+  NOSE_BRIDGE: 6,
+  // Upper lip (below mask line) for mask detection
+  UPPER_LIP: 13,
 } as const;
 
 // ─── Core Extraction ─────────────────────────────────────────────────────────
@@ -74,6 +83,89 @@ function geometricHeadPose(lm: NormalizedLandmark[]): HeadPose {
   const fh    = dist2d(chin, top);
   const pitch = fh > 0 ? ((nose.y - (top.y + chin.y) / 2) / fh) * Math.PI : 0;
   return { pitch, yaw, roll };
+}
+
+/**
+ * Mask-resilient head pose — uses forehead and brow landmarks instead of chin.
+ *
+ * When a face mask covers the lower face, CHIN (152) is displaced upward and
+ * NOSE (1) may shift, corrupting pitch estimation. This fallback uses:
+ *   - HEAD_TOP (10) and brow center as the vertical reference
+ *   - NOSE_BRIDGE (6) instead of NOSE (1) — the bridge is above mask line
+ *   - LEFT/RIGHT_EDGE for yaw/roll (usually unaffected by masks)
+ */
+function maskResilientHeadPose(lm: NormalizedLandmark[]): HeadPose {
+  const le = lm[L.LEFT_EDGE], re = lm[L.RIGHT_EDGE];
+  const top = lm[L.HEAD_TOP];
+  const noseBridge = lm[L.NOSE_BRIDGE];
+
+  // Brow center as chin substitute (reliable above-mask reference)
+  const browCenter = {
+    x: (lm[L.LEFT_BROW_INNER].x + lm[L.RIGHT_BROW_INNER].x) / 2,
+    y: (lm[L.LEFT_BROW_INNER].y + lm[L.RIGHT_BROW_INNER].y) / 2,
+  };
+
+  const roll = Math.atan2(re.y - le.y, re.x - le.x);
+  const fw = dist2d(re, le);
+  const yaw = fw > 0 ? ((noseBridge.x - (le.x + re.x) / 2) / fw) * Math.PI * 2 : 0;
+
+  // Pitch: use forehead height (top → brow center) instead of full face height
+  // The nose bridge Y relative to the top-brow midpoint gives pitch direction
+  const foreheadHeight = Math.abs(browCenter.y - top.y);
+  const midY = (top.y + browCenter.y) / 2;
+  const pitch = foreheadHeight > 0.01
+    ? ((noseBridge.y - midY) / foreheadHeight) * Math.PI * 0.5
+    : 0;
+
+  return { pitch, yaw, roll };
+}
+
+/**
+ * Detect whether the user is likely wearing a face mask.
+ *
+ * Heuristic: Compare the distance between nose bridge (above mask) and upper
+ * lip (below mask). With a mask, the upper lip landmark gets pushed upward
+ * toward the nose, collapsing the nose-to-lip vertical gap. We also check
+ * for abnormal chin position relative to the nose.
+ *
+ * Returns a 0–1 score where >0.6 strongly suggests a mask.
+ */
+export function detectMask(lm: NormalizedLandmark[]): number {
+  if (!lm || lm.length < 478) return 0;
+
+  const noseBridge = lm[L.NOSE_BRIDGE];
+  const upperLip = lm[L.UPPER_LIP];
+  const chin = lm[L.CHIN];
+  const top = lm[L.HEAD_TOP];
+
+  // Full face height (top → chin)
+  const faceH = Math.abs(chin.y - top.y);
+  if (faceH < 0.01) return 0;
+
+  // Nose-bridge to upper-lip gap (normalized by face height)
+  // Normal: ~0.12–0.18; with mask: <0.08 (lip landmark collapses toward nose)
+  const noseLipGap = Math.abs(upperLip.y - noseBridge.y) / faceH;
+
+  // Chin-to-nose ratio (normalized)
+  // Normal: chin is ~0.35–0.40 of face height below nose
+  // With mask: chin landmark shifts up, ratio shrinks
+  const chinNoseRatio = Math.abs(chin.y - noseBridge.y) / faceH;
+
+  let maskScore = 0;
+
+  // Collapsed nose-lip gap
+  if (noseLipGap < 0.08) maskScore += 0.5;
+  else if (noseLipGap < 0.12) maskScore += 0.3;
+
+  // Abnormal chin position
+  if (chinNoseRatio < 0.25) maskScore += 0.4;
+  else if (chinNoseRatio < 0.30) maskScore += 0.2;
+
+  // Z-depth anomaly: mask surface pushes chin z forward
+  const chinNoseZ = Math.abs((chin.z ?? 0) - (noseBridge.z ?? 0));
+  if (chinNoseZ > 0.05) maskScore += 0.2;
+
+  return Math.min(1, maskScore);
 }
 
 function matrixHeadPose(data: ArrayLike<number>): HeadPose | undefined {
@@ -144,14 +236,21 @@ export function extractEyeFeatures(
     }
   }
 
+  // Mask detection: use forehead-based pose when mask covers lower face
+  const maskScore = detectMask(landmarks);
+  const geoHeadPose = maskScore > 0.5
+    ? maskResilientHeadPose(landmarks)
+    : geometricHeadPose(landmarks);
+
   return {
     leftRelative:  { x: lx * 10, y: ly * 10 },
     rightRelative: { x: rx * 10, y: ry * 10 },
-    headPose:      geometricHeadPose(landmarks),
+    headPose:      geoHeadPose,
     zDistance,
     leftEAR,
     rightEAR,
     pupilDiameter,
+    maskScore,
     blendshapes,
     matrixHeadPose: transformMatrix ? matrixHeadPose(transformMatrix.data) : undefined,
     faceConfidence,
@@ -221,6 +320,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
  *   3. Head angle penalty — gaze accuracy degrades at extreme yaw/pitch.
  *   4. Temporal iris stability — high frame-to-frame jitter = low quality.
  *   5. Pupil dilation stability — rapid diameter change = lighting shift.
+ *   6. Mask penalty — lower face occlusion degrades head pose reliability.
  *
  * The returned score is suitable for:
  *   - Weighting smoother aggressiveness (low confidence → heavier smoothing)
@@ -268,6 +368,14 @@ export function computeConfidence(
     const pupilDelta = Math.abs(features.pupilDiameter - prevFeatures.pupilDiameter);
     const dilationPenalty = Math.max(0.3, 1 - pupilDelta / 0.12);
     score *= dilationPenalty;
+  }
+
+  // 6. Mask penalty — with a mask the head pose is less reliable (even with
+  //    the forehead fallback), so we slightly reduce confidence to make the
+  //    smoother more conservative. Eye landmarks themselves are unaffected.
+  if (features.maskScore > 0.5) {
+    // maskScore 0.5→1.0 maps to multiplier 0.85→0.7
+    score *= 0.85 - 0.15 * (features.maskScore - 0.5) / 0.5;
   }
 
   return score;
