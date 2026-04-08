@@ -23,6 +23,10 @@ export interface CalibrationDotProps {
   onProgress?: (progress: number) => void;
   /** Called once when capture completes. */
   onCapture: () => void;
+  /** Called when the user starts holding (CLICK_HOLD mode only). */
+  onHoldStart?: () => void;
+  /** Called when the user releases hold (CLICK_HOLD mode only). */
+  onHoldEnd?: () => void;
   /** Dot size in px. Default 24. */
   size?: number;
   index?: number;
@@ -30,7 +34,7 @@ export interface CalibrationDotProps {
 }
 
 export default function CalibrationDot({
-  x, y, mode, dwellMs, onProgress, onCapture, size = 24, index, total,
+  x, y, mode, dwellMs, onProgress, onCapture, onHoldStart, onHoldEnd, size = 24, index, total,
 }: CalibrationDotProps) {
   const [progress, setProgress] = useState(0);
   const [holding, setHolding] = useState(mode === 'TIMER'); // auto-start for TIMER
@@ -79,11 +83,11 @@ export default function CalibrationDot({
 
   const handlers = mode === 'CLICK_HOLD'
     ? {
-        onMouseDown:  () => setHolding(true),
-        onMouseUp:    () => { setHolding(false); startRef.current = null; },
-        onMouseLeave: () => { setHolding(false); startRef.current = null; },
-        onTouchStart: () => setHolding(true),
-        onTouchEnd:   () => { setHolding(false); startRef.current = null; },
+        onMouseDown:  () => { setHolding(true); onHoldStart?.(); },
+        onMouseUp:    () => { setHolding(false); startRef.current = null; onHoldEnd?.(); },
+        onMouseLeave: () => { setHolding(false); startRef.current = null; onHoldEnd?.(); },
+        onTouchStart: () => { setHolding(true); onHoldStart?.(); },
+        onTouchEnd:   () => { setHolding(false); startRef.current = null; onHoldEnd?.(); },
       }
     : {};
 

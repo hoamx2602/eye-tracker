@@ -89,12 +89,16 @@ export default function CalibrationScreen({
   }, []);
 
   // When current point index changes → begin new point
+  // TIMER: start collecting immediately (user should already be looking at the dot)
+  // CLICK_HOLD: only register the point target; collecting starts on hold via onHoldStart
   useEffect(() => {
     if (done || current >= points.length) return;
     const p = points[current];
     beginPoint(p.x, p.y, `Point ${current + 1}`);
-    startCollecting();
-    return stopCollecting;
+    if (mode === 'TIMER') {
+      startCollecting();
+      return stopCollecting;
+    }
   }, [current, done]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCapture = useCallback(async () => {
@@ -142,6 +146,8 @@ export default function CalibrationScreen({
         mode={mode}
         dwellMs={dwellMs}
         onCapture={handleCapture}
+        onHoldStart={mode === 'CLICK_HOLD' ? startCollecting : undefined}
+        onHoldEnd={mode === 'CLICK_HOLD' ? stopCollecting : undefined}
         index={current}
         total={points.length}
       />
