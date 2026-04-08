@@ -30,3 +30,4 @@ dist-ssr
 .vercel
 .next
 tickets
+tsconfig.tsbuildinfo
