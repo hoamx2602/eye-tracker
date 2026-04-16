@@ -6,11 +6,12 @@ import { useNeuroGaze } from '../../NeuroGazeContext';
 import {
   DEFAULT_AOI_RADIUS_PX,
   DEFAULT_NUMBER_COUNT,
-  DEFAULT_ALLOW_CLICK_TARGETS,
+  DEFAULT_CONFIRM_MODE,
   DEFAULT_CLICK_HOLD_DURATION_MS,
   GAZE_PATH_INTERVAL_MS,
   DWELL_CONFIRM_MS,
 } from './constants';
+import type { VisualSearchConfirmMode } from './constants';
 import { generateNumberPositions } from './utils';
 import { neuroDebugLog } from '@/lib/neuroDebugLog';
 import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
@@ -55,7 +56,7 @@ export interface VisualSearchResult {
   viewportWidth?: number;
   viewportHeight?: number;
   stimulusBounds?: { left: number; top: number; width: number; height: number };
-  allowClickTargets?: boolean;
+  confirmMode?: VisualSearchConfirmMode;
   clickHoldDurationMs?: number;
 }
 
@@ -65,7 +66,9 @@ export default function VisualSearchTest() {
 
   const numberCount = Math.max(6, Math.min(10, Number(config.numberCount) ?? DEFAULT_NUMBER_COUNT));
   const aoiRadiusPx = Math.max(20, Number(config.aoiRadiusPx) ?? DEFAULT_AOI_RADIUS_PX);
-  const allowClickTargets = Boolean(config.allowClickTargets ?? DEFAULT_ALLOW_CLICK_TARGETS);
+  const confirmMode = (['gaze', 'hold', 'click'].includes(config.confirmMode as string)
+    ? config.confirmMode
+    : DEFAULT_CONFIRM_MODE) as VisualSearchConfirmMode;
   const clickHoldDurationMs = Math.max(
     0,
     Math.min(2000, Number(config.clickHoldDurationMs ?? DEFAULT_CLICK_HOLD_DURATION_MS))
@@ -85,7 +88,7 @@ export default function VisualSearchTest() {
   const sequenceRef = useRef<number[]>([]);
   const gazePathRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
   const lastInNumberRef = useRef<number | null>(null);
-  // Legacy pointer ref — used only when allowClickTargets is on for fixation recording on release
+  // Legacy pointer ref — used only when confirmMode is 'hold' for fixation recording on release
   const pointerHoldRef = useRef<{ number: number; t0: number; pointerId: number } | null>(null);
 
   // ── Hold-confirmation state ────────────────────────────────────────────────
@@ -104,7 +107,7 @@ export default function VisualSearchTest() {
     setHoldingNumber(null);
   }, []);
 
-  // Legacy: record fixation on pointer release (only when allowClickTargets config is on)
+  // Legacy: record fixation on pointer release (only when confirmMode is 'hold')
   const recordPointerConfirmation = useCallback(
     (number: number, e: React.PointerEvent) => {
       const h = pointerHoldRef.current;
@@ -163,8 +166,8 @@ export default function VisualSearchTest() {
       viewportWidth: typeof window !== 'undefined' ? window.innerWidth : undefined,
       viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
       stimulusBounds,
-      allowClickTargets,
-      clickHoldDurationMs: allowClickTargets ? clickHoldDurationMs : undefined,
+      confirmMode,
+      clickHoldDurationMs: confirmMode === 'hold' ? clickHoldDurationMs : undefined,
     };
     try {
       localStorage.setItem(
@@ -184,7 +187,7 @@ export default function VisualSearchTest() {
       hasStimulusBounds: Boolean(stimulusBounds),
     });
     completeTest(payload);
-  }, [completeTest, positions, allowClickTargets, clickHoldDurationMs]);
+  }, [completeTest, positions, confirmMode, clickHoldDurationMs]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -201,19 +204,47 @@ export default function VisualSearchTest() {
       e.preventDefault();
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
 
-      // Legacy fixation tracking on release
-      if (allowClickTargets) {
+      // Legacy fixation tracking on release (hold mode only)
+      if (confirmMode === 'hold') {
         pointerHoldRef.current = { number, t0: performance.now(), pointerId: e.pointerId };
       }
 
-      // Start hold-confirmation timer
+      // ── Click mode: confirm immediately on pointer down ──
+      if (confirmMode === 'click') {
+        cancelHold();
+        const g = neuroLiveGazeRef.current;
+        const t = performance.now();
+        fixationsRef.current.push({
+          number,
+          timestamp: t,
+          gazeX: g.x,
+          gazeY: g.y,
+          source: 'pointer',
+          pointerX: e.clientX,
+          pointerY: e.clientY,
+          holdDurationMs: 0,
+        });
+        if (!sequenceRef.current.includes(number)) {
+          sequenceRef.current.push(number);
+        }
+        setConfirmedNumbers(prev => {
+          const next = new Set(prev);
+          next.add(number);
+          if (next.size >= positions.length) {
+            setTimeout(() => finishTest(), 100);
+          }
+          return next;
+        });
+        return;
+      }
+
+      // Start hold-confirmation timer (gaze & hold modes)
       cancelHold();
       setHoldingNumber(number);
       const t0 = performance.now();
       holdTimerRef.current = setTimeout(() => {
         holdTimerRef.current = null;
         setHoldingNumber(null);
-        // Record the fixation at hold completion
         const g = neuroLiveGazeRef.current;
         const t = performance.now();
         fixationsRef.current.push({
@@ -228,8 +259,8 @@ export default function VisualSearchTest() {
           sequenceRef.current.push(number);
         }
 
-        // Auto-complete if all confirmed on click/hold
-        if (allowClickTargets) {
+        // Auto-complete if all confirmed (hold mode)
+        if (confirmMode === 'hold') {
           setConfirmedNumbers(prev => {
             const next = new Set(prev);
             next.add(number);
@@ -241,7 +272,7 @@ export default function VisualSearchTest() {
         }
       }, DWELL_CONFIRM_MS);
     },
-    [allowClickTargets, cancelHold, finishTest, positions.length]
+    [confirmMode, cancelHold, finishTest, positions.length]
   );
 
   const onPointerUpTarget = useCallback(
@@ -253,9 +284,9 @@ export default function VisualSearchTest() {
         }
       } catch (_) {}
       cancelHold();
-      if (allowClickTargets) recordPointerConfirmation(number, e);
+      if (confirmMode === 'hold') recordPointerConfirmation(number, e);
     },
-    [allowClickTargets, cancelHold, recordPointerConfirmation]
+    [confirmMode, cancelHold, recordPointerConfirmation]
   );
 
   const onPointerCancelTarget = useCallback(
@@ -354,11 +385,13 @@ export default function VisualSearchTest() {
       `}</style>
 
       <p className="text-center text-gray-400 text-sm mt-4 mb-2">
-        {allowClickTargets
-          ? `Click and hold each number in order (1 → 2 → … → ${numberCount}) until it turns green.`
-          : `Look at each number in order (1 → 2 → … → ${numberCount}). Hold each number for 1.5 s until it turns green, then move on.`
+        {confirmMode === 'click'
+          ? `Click each number in order (1 → 2 → … → ${numberCount}).`
+          : confirmMode === 'hold'
+            ? `Click and hold each number in order (1 → 2 → … → ${numberCount}) until it turns green.`
+            : `Look at each number in order (1 → 2 → … → ${numberCount}). Hold each number for 1.5 s until it turns green, then move on.`
         }
-        {!allowClickTargets && (
+        {confirmMode === 'gaze' && (
           <> Press <kbd className="px-1.5 py-0.5 rounded bg-gray-700 font-mono">SPACE</kbd> when done.</>
         )}
       </p>
@@ -429,7 +462,7 @@ export default function VisualSearchTest() {
         })}
       </div>
 
-      {!allowClickTargets && (
+      {confirmMode === 'gaze' && (
         <p className="text-center text-amber-400/90 text-xs pb-6">
           Press SPACE when you have confirmed all numbers.
         </p>

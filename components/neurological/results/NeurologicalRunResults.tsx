@@ -107,7 +107,7 @@ function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly 
       | undefined;
     const startTime = r.startTime as number | undefined;
     const endTime = r.endTime as number | undefined;
-    const allowClickTargets = r.allowClickTargets as boolean | undefined;
+    const confirmMode = (r.confirmMode as string | undefined) ?? (r.allowClickTargets ? 'hold' : undefined);
     const clickHoldDurationMs = r.clickHoldDurationMs as number | undefined;
     return (
       <VisualSearchResultsPreview
@@ -123,7 +123,7 @@ function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly 
         startTime={startTime}
         endTime={endTime}
         visualOnly={visualOnly}
-        allowClickTargets={allowClickTargets}
+        confirmMode={confirmMode}
         clickHoldDurationMs={clickHoldDurationMs}
       />
     );

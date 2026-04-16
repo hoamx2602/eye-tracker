@@ -36,7 +36,7 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     numberCount: 8,
     practiceCount: 4,
     aoiRadiusPx: 80,
-    allowClickTargets: false,
+    confirmMode: 'gaze',
     clickHoldDurationMs: 300,
     gazeSampleIntervalMs: DEFAULT_GAZE_SAMPLE_INTERVAL_MS,
   },

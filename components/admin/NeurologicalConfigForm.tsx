@@ -42,7 +42,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
       numberCount: 8,
       practiceCount: 4,
       aoiRadiusPx: 80,
-      allowClickTargets: false,
+      confirmMode: 'gaze',
       clickHoldDurationMs: 300,
     },
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg', cardGapPx: 8 },
@@ -367,26 +367,30 @@ export default function NeurologicalConfigForm() {
                         max={200}
                       />
                       <div className="sm:col-span-2 lg:col-span-3 flex flex-col gap-2 rounded-lg border border-slate-700 bg-slate-900/50 p-3">
-                        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-200">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(params.allowClickTargets)}
-                            onChange={(e) => setParam(id, 'allowClickTargets', e.target.checked)}
-                            className="rounded border-slate-500 bg-slate-800"
-                          />
-                          Allow hold-and-click on targets
-                        </label>
-                        <p className="text-xs text-slate-500">
-                          When on, participants press and hold each number, then release to log pointer position with gaze — useful to compare gaze vs touch/mouse.
-                        </p>
-                        <LabelInput
-                          label="Min hold before release (ms)"
-                          value={Number(params.clickHoldDurationMs ?? 300)}
-                          onChange={(v) => setParam(id, 'clickHoldDurationMs', v)}
-                          min={0}
-                          max={2000}
-                        />
-                        <p className="text-xs text-slate-500">0 = single tap/click counts without a minimum hold.</p>
+                        <div>
+                          <label className="block text-slate-400 text-sm mb-0.5">Confirm mode</label>
+                          <select
+                            value={String(params.confirmMode ?? 'gaze')}
+                            onChange={(e) => setParam(id, 'confirmMode', e.target.value)}
+                            className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
+                          >
+                            <option value="gaze">Gaze — hold 1.5 s to confirm, press SPACE when done</option>
+                            <option value="hold">Hold — press and hold each number for 1.5 s</option>
+                            <option value="click">Click — single click instantly confirms</option>
+                          </select>
+                        </div>
+                        {String(params.confirmMode) === 'hold' && (
+                          <>
+                            <LabelInput
+                              label="Min hold before release (ms)"
+                              value={Number(params.clickHoldDurationMs ?? 300)}
+                              onChange={(v) => setParam(id, 'clickHoldDurationMs', v)}
+                              min={0}
+                              max={2000}
+                            />
+                            <p className="text-xs text-slate-500">0 = single tap/click counts without a minimum hold.</p>
+                          </>
+                        )}
                       </div>
                       <SelectNumber
                         label="Gaze sample interval (ms)"

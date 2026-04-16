@@ -28,9 +28,15 @@ export const DEFAULT_AOI_RADIUS_PX = 80;
 export const MIN_SPACING_FRACTION = 0.15;
 /** Gaze path sample interval (ms) — 0.1s cố định, đồng bộ với yêu cầu lưu scanpath. */
 export const GAZE_PATH_INTERVAL_MS = 100;
-/** Default: targets are gaze-only (no pointer). Admin can enable hold-and-click confirmations. */
-export const DEFAULT_ALLOW_CLICK_TARGETS = false;
-/** Minimum press duration (ms) before release counts as a pointer confirmation (0 = any tap). */
+/**
+ * Confirmation mode for Visual Search targets:
+ * - 'gaze'  — gaze-only, hold 1.5 s to confirm, press SPACE when done
+ * - 'hold'  — press and hold each number for 1.5 s to confirm
+ * - 'click' — single click instantly confirms
+ */
+export type VisualSearchConfirmMode = 'gaze' | 'hold' | 'click';
+export const DEFAULT_CONFIRM_MODE: VisualSearchConfirmMode = 'gaze';
+/** Minimum press duration (ms) before release counts as a pointer confirmation (hold mode, 0 = any tap). */
 export const DEFAULT_CLICK_HOLD_DURATION_MS = 300;
 /** Gaze dwell duration (ms) on a number before it is visually confirmed (turns green). */
 export const DWELL_CONFIRM_MS = 1500;

@@ -304,7 +304,7 @@ function TestVisualization({ testId, raw }: { testId: string; raw: Record<string
           stimulusBounds={stimulusBounds}
           startTime={raw.startTime as number | undefined}
           endTime={raw.endTime as number | undefined}
-          allowClickTargets={raw.allowClickTargets as boolean | undefined}
+          confirmMode={(raw.confirmMode as string | undefined) ?? (raw.allowClickTargets ? 'hold' : undefined)}
           clickHoldDurationMs={raw.clickHoldDurationMs as number | undefined}
           visualOnly
         />

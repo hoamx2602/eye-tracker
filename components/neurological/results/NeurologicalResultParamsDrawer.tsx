@@ -41,7 +41,7 @@ function renderParamsForTest(testId: string, r: Record<string, unknown>): React.
     const sequence = (r.sequence as number[]) ?? (r.gazeSequence as number[]) ?? [];
     const completionTimeMs = Number(r.completionTimeMs ?? 0);
     const fixations = (r.fixations as VisualSearchFixationPt[]) ?? [];
-    const allowClickTargets = r.allowClickTargets as boolean | undefined;
+    const confirmMode = (r.confirmMode as string | undefined) ?? (r.allowClickTargets ? 'hold' : undefined);
     const clickHoldDurationMs = r.clickHoldDurationMs as number | undefined;
     return (
       <VisualSearchParamsSection
@@ -49,7 +49,7 @@ function renderParamsForTest(testId: string, r: Record<string, unknown>): React.
         sequence={sequence}
         gazeFixationPerNumber={gazeFixationPerNumber}
         fixations={fixations}
-        allowClickTargets={allowClickTargets}
+        confirmMode={confirmMode}
         clickHoldDurationMs={clickHoldDurationMs}
       />
     );

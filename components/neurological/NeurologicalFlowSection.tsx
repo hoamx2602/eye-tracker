@@ -21,7 +21,7 @@ import {
   DEFAULT_NUMBER_COUNT,
   DEFAULT_AOI_RADIUS_PX,
   PRACTICE_COUNT,
-  DEFAULT_ALLOW_CLICK_TARGETS,
+  DEFAULT_CONFIRM_MODE,
   DEFAULT_CLICK_HOLD_DURATION_MS,
 } from '@/components/neurological/tests/visualSearch/constants';
 import MemoryCardsTest from '@/components/neurological/tests/memoryCards/MemoryCardsTest';
@@ -217,7 +217,7 @@ export default function NeurologicalFlowSection({
                 numberCount: DEFAULT_NUMBER_COUNT,
                 practiceCount: PRACTICE_COUNT,
                 aoiRadiusPx: DEFAULT_AOI_RADIUS_PX,
-                allowClickTargets: DEFAULT_ALLOW_CLICK_TARGETS,
+                confirmMode: DEFAULT_CONFIRM_MODE,
                 clickHoldDurationMs: DEFAULT_CLICK_HOLD_DURATION_MS,
               }),
             }}

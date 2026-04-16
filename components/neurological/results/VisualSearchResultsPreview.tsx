@@ -37,7 +37,7 @@ type Props = {
   startTime?: number;
   endTime?: number;
   visualOnly?: boolean;
-  allowClickTargets?: boolean;
+  confirmMode?: string;
   clickHoldDurationMs?: number;
 };
 
@@ -46,7 +46,7 @@ export function VisualSearchParamsSection({
   sequence,
   gazeFixationPerNumber,
   fixations,
-  allowClickTargets,
+  confirmMode,
   clickHoldDurationMs,
 }: Pick<
   Props,
@@ -54,7 +54,7 @@ export function VisualSearchParamsSection({
   | 'sequence'
   | 'gazeFixationPerNumber'
   | 'fixations'
-  | 'allowClickTargets'
+  | 'confirmMode'
   | 'clickHoldDurationMs'
 >) {
   const pointerConfirmCount = useMemo(
@@ -80,11 +80,11 @@ export function VisualSearchParamsSection({
           Order found:{' '}
           <span className="font-mono text-slate-200">{sequence?.length ? sequence.join(' → ') : '—'}</span>
         </span>
-        {allowClickTargets != null && (
+        {confirmMode != null && (
           <span>
-            Hold-and-click:{' '}
-            <span className="font-mono text-slate-200">{allowClickTargets ? 'on' : 'off'}</span>
-            {allowClickTargets && clickHoldDurationMs != null && (
+            Confirm mode:{' '}
+            <span className="font-mono text-slate-200">{confirmMode}</span>
+            {confirmMode === 'hold' && clickHoldDurationMs != null && (
               <span className="text-slate-500">
                 {' '}
                 (min hold {clickHoldDurationMs} ms)
@@ -128,7 +128,7 @@ export default function VisualSearchResultsPreview({
   startTime,
   endTime,
   visualOnly,
-  allowClickTargets,
+  confirmMode,
   clickHoldDurationMs,
 }: Props) {
   const { showStimulusReplay, showGazeHeatmap } = useNeurologicalResultsViewOptions();
@@ -579,7 +579,7 @@ export default function VisualSearchResultsPreview({
         sequence={sequence}
         gazeFixationPerNumber={gazeFixationPerNumber}
         fixations={fixations}
-        allowClickTargets={allowClickTargets}
+        confirmMode={confirmMode}
         clickHoldDurationMs={clickHoldDurationMs}
       />
       <p className="text-[11px] leading-relaxed text-slate-500">
