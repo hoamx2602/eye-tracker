@@ -214,71 +214,22 @@ function LightingStep() {
 // ────────────────────────────────────────────────────────────────
 // Posture step
 // ────────────────────────────────────────────────────────────────
-function PostureStep({ distanceCm }: { distanceCm: number }) {
-  const tips = [
-    {
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
-          <path strokeLinecap="round" strokeLinejoin="round"
-            d="M9 6h6M9 12h6M9 18h6M5 6h.01M5 12h.01M5 18h.01" />
-        </svg>
-      ),
-      label: `Sit ~${distanceCm} cm from the screen`,
-      desc: `Keep your face about ${distanceCm} cm (arm's length) from the camera for best accuracy.`,
-    },
-    {
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
-          <path strokeLinecap="round" strokeLinejoin="round"
-            d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-        </svg>
-      ),
-      label: 'Head level and centred',
-      desc: 'Your face should be roughly centred in the camera frame — not tilted left, right, or at an angle.',
-    },
-    {
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
-          <path strokeLinecap="round" strokeLinejoin="round"
-            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-        </svg>
-      ),
-      label: 'Sit upright, relax your shoulders',
-      desc: 'Sit in a comfortable, upright position. Avoid slouching or leaning in.',
-    },
-    {
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
-          <path strokeLinecap="round" strokeLinejoin="round"
-            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round"
-            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-        </svg>
-      ),
-      label: 'Keep glasses on if you wear them',
-      desc: 'If you wear prescription glasses, keep them on throughout the assessment.',
-    },
-  ];
+function PostureStep({ distanceCm, onAllViewed }: { distanceCm: number; onAllViewed: (done: boolean) => void }) {
+  useEffect(() => {
+    onAllViewed(true);
+  }, [onAllViewed]);
+
+  const validDistances = [50, 55, 60];
+  const imageDistance = validDistances.includes(distanceCm) ? distanceCm : 60;
+  const imgSrc = `/guide/${imageDistance}cm.png`;
 
   return (
-    <div className="flex flex-col gap-3 w-full">
-      <p className="text-sm text-gray-400 text-center leading-relaxed mb-1">
-        A comfortable, stable position improves calibration quality.
-      </p>
-      <div className="flex flex-col gap-2.5">
-        {tips.map((tip, i) => (
-          <div
-            key={i}
-            className="flex items-start gap-3 rounded-xl p-3.5 bg-blue-500/5 border border-blue-500/20"
-          >
-            <div className="mt-0.5 shrink-0 text-blue-400">{tip.icon}</div>
-            <div>
-              <p className="text-sm font-semibold text-blue-300">{tip.label}</p>
-              <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{tip.desc}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+    <div className="flex flex-col gap-4 w-full items-center">
+      <img
+        src={imgSrc}
+        alt={`Posture guide ${distanceCm}cm`}
+        className="w-full max-h-[50vh] object-contain rounded-xl shadow-md border border-gray-700 bg-gray-800"
+      />
     </div>
   );
 }
@@ -299,10 +250,14 @@ export default function SetupGuideScreen({
 }: SetupGuideScreenProps) {
   const [step, setStep] = useState<SetupStep>('camera');
   const [cameraGranted, setCameraGranted] = useState(false);
+  const [postureAllViewed, setPostureAllViewed] = useState(false);
 
   const currentIdx = STEPS.findIndex((s) => s.id === step);
 
-  const canProceed = step !== 'camera' || cameraGranted;
+  const canProceed =
+    step === 'camera' ? cameraGranted :
+    step === 'posture' ? postureAllViewed :
+    true;
 
   const handleNext = () => {
     if (step === 'camera') setStep('lighting');
@@ -402,7 +357,7 @@ export default function SetupGuideScreen({
               />
             )}
             {step === 'lighting' && <LightingStep />}
-            {step === 'posture' && <PostureStep distanceCm={sittingDistanceCm} />}
+            {step === 'posture' && <PostureStep distanceCm={sittingDistanceCm} onAllViewed={setPostureAllViewed} />}
           </div>
 
           {/* Card footer — navigation */}
@@ -419,7 +374,7 @@ export default function SetupGuideScreen({
               disabled={!canProceed}
               className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/30 disabled:text-blue-200/40 text-white text-sm font-semibold transition-colors"
             >
-              {step === 'posture' ? "Start Calibration" : "Continue"}
+              {step === 'posture' ? "Start" : "Continue"}
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 8h10M9 4l4 4-4 4" />
               </svg>
