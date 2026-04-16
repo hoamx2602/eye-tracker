@@ -87,7 +87,7 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
     <form onSubmit={handleSubmit} className={`bg-gray-900 border border-gray-700 rounded-3xl shadow-2xl max-w-xl w-full flex flex-col ${isPage ? 'h-[640px]' : 'max-h-[90vh]'}`}>
       <div className="p-6 border-b border-gray-700">
         <h2 className="text-xl font-bold text-white">Your information</h2>
-        <p className="text-sm text-gray-400 mt-1">Optional demographic data for analysis (non-commercial, educational use only).</p>
+        <p className="text-sm text-gray-400 mt-1">Optional demographic data for analysis.</p>
       </div>
       <div className="p-6 space-y-5 overflow-y-auto flex-1 scrollbar-invisible">
         {error && (
