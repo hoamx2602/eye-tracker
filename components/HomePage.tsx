@@ -31,7 +31,7 @@ interface Step {
 
 // ─── Step data ────────────────────────────────────────────────────────────────
 
-// Part 1: initial calibration grid + all 6 exercise kinds (from EXERCISE_KINDS in types.ts)
+// Set 1: initial calibration grid + all 6 exercise kinds (from EXERCISE_KINDS in types.ts)
 const CALIBRATION_STEPS: Step[] = [
   {
     id: 'calibration',
@@ -112,7 +112,7 @@ const CALIBRATION_STEPS: Step[] = [
   },
 ];
 
-// Part 2: 7 neurological tests (from DEFAULT_TEST_ORDER in lib/neurologicalConfig.ts)
+// Set 2: 7 neurological tests (from DEFAULT_TEST_ORDER in lib/neurologicalConfig.ts)
 const NEURO_STEPS: Step[] = [
   {
     id: 'head_orientation',
@@ -365,10 +365,10 @@ function SectionLabel({ part, title }: { part: string; title: string }) {
   return (
     <div className="mb-4">
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="text-[10px] font-bold tracking-[0.14em] text-blue-500 uppercase">{part}</span>
+        <span className="text-[11px] font-extrabold tracking-[0.12em] text-blue-400 uppercase">{part}</span>
         <div className="flex-1 h-px bg-gray-700" />
       </div>
-      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3">{title}</p>
+      <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-3">{title}</p>
     </div>
   );
 }
@@ -391,7 +391,7 @@ function StepPanel({ step }: { step: Step }) {
             : 'bg-gray-700 text-gray-400 border-gray-600'}
         `}>
           <span className={`w-1.5 h-1.5 rounded-full ${isCalibration ? 'bg-blue-500' : 'bg-gray-500'}`} />
-          {isCalibration ? 'Part 1 — Eye Tracking Setup' : 'Part 2 — Neurological Assessment'}
+          {isCalibration ? 'Neurological Assessment — Set 1' : 'Neurological Assessment — Set 2'}
         </span>
       </div>
 
@@ -487,7 +487,7 @@ export default function HomePage() {
               </p>
             </div>
 
-            <SectionLabel part="Part 1" title="Eye Tracking Setup" />
+            <SectionLabel part="Neurological Assessment" title="Set 1" />
             {CALIBRATION_STEPS.map((step, i) => (
               <TimelineItem
                 key={step.id}
@@ -499,7 +499,7 @@ export default function HomePage() {
             ))}
 
 
-            <SectionLabel part="Part 2" title="Neurological Assessment" />
+            <SectionLabel part="Neurological Assessment" title="Set 2" />
             {NEURO_STEPS.map((step, i) => (
               <TimelineItem
                 key={step.id}
