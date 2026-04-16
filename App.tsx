@@ -50,6 +50,7 @@ import HeadPositioningScreen from './components/HeadPositioningScreen';
 
 import type { SymptomScores } from '@/lib/symptomAssessment';
 import { SYMPTOM_QUESTIONS } from '@/lib/symptomAssessment';
+import SymptomAssessment from '@/components/SymptomAssessment';
 import type { TestResultPayload } from '@/components/neurological';
 import NeurologicalFlowSection from '@/components/neurological/NeurologicalFlowSection';
 import { useNeuroFlowHandlers } from '@/components/neurological/useNeuroFlowHandlers';
@@ -94,6 +95,8 @@ function App() {
   const NEURO_LAST_RUN_ID_SS_KEY = 'neuro_last_run_id';
   const [currentNeuroTestIndex, setCurrentNeuroTestIndex] = useState(0);
   const [preSymptomScores, setPreSymptomScores] = useState<SymptomScores | null>(null);
+  /** Show pre-questionnaire overlay between setup and calibration. */
+  const [showPreQBeforeCalib, setShowPreQBeforeCalib] = useState(false);
   const [postSymptomScores, setPostSymptomScores] = useState<SymptomScores | null>(null);
   const [pendingPostSymptomScores, setPendingPostSymptomScores] = useState<SymptomScores | null>(null);
   const [showPostSubmitConfirm, setShowPostSubmitConfirm] = useState(false);
@@ -1965,11 +1968,41 @@ function App() {
       });
       setNeuroRunStatus('ready');
       pathSyncSourceRef.current = 'internal';
-      if (process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true') {
+
+      // Pre-questionnaire already done before calibration (or skipped)?
+      const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
+      const preAlreadyDone = Boolean(preSymptomScores);
+
+      if (skipQ || preAlreadyDone) {
+        // Patch pre scores if they exist
+        if (preAlreadyDone && preSymptomScores) {
+          const questionnaire = {
+            variant: 'pre' as const,
+            submittedAt: new Date().toISOString(),
+            scores: preSymptomScores,
+            questions: SYMPTOM_QUESTIONS.map((q) => ({
+              id: q.id,
+              category: q.category,
+              question: q.question,
+              score: preSymptomScores[q.id] ?? null,
+            })),
+          };
+          try {
+            await neurologicalRunsApi.patch(run.id, { preSymptomScores: questionnaire as unknown as Record<string, number> });
+          } catch (e) {
+            console.error('Patch pre scores failed', e);
+          }
+        }
+        // Go straight to first test
+        const enabled = (configSnapshot as any)?.testEnabled as Record<string, boolean> | undefined ?? {};
+        let firstIdx = 0;
+        for (let i = 0; i < order.length; i++) {
+          if (enabled[order[i]] !== false) { firstIdx = i; break; }
+        }
         setNeuroPhase('tests');
-        setCurrentNeuroTestId(order[0] || null);
-        setCurrentNeuroTestIndex(0);
-        if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_TEST(order[0]));
+        setCurrentNeuroTestId(order[firstIdx] || null);
+        setCurrentNeuroTestIndex(firstIdx);
+        if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_TEST(order[firstIdx]));
       } else {
         if (typeof window !== 'undefined') window.history.pushState(null, '', PATHS.NEURO_PRE);
       }
@@ -1977,7 +2010,7 @@ function App() {
       console.error('Create neuro run failed', e);
       setNeuroRunStatus('error');
     }
-  }, [NEURO_CONFIG_LS_KEY, NEURO_TEST_PROGRESS_LS_KEY, createdSessionId, router]);
+  }, [NEURO_CONFIG_LS_KEY, NEURO_TEST_PROGRESS_LS_KEY, createdSessionId, preSymptomScores, router]);
 
   /** Progress LS stores merged testResults during the run — use if React state is empty at final save. */
   const readNeuroTestResultsFromProgressLs = useCallback((): Record<string, TestResultPayload> | null => {
@@ -2429,11 +2462,39 @@ function App() {
   };
 
   const handleSetupComplete = () => {
+    const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
+    if (skipQ || preSymptomScores) {
+      // Pre-questionnaire already done or skipped → go straight to calibration
+      pathSyncSourceRef.current = 'internal';
+      router.push('/calibration');
+      setTimeout(() => handleStartProcess(), 300);
+    } else {
+      // Show pre-questionnaire before calibration
+      setShowPreQBeforeCalib(true);
+    }
+  };
+
+  /** Called when user submits pre-questionnaire shown before calibration. */
+  const handlePreQBeforeCalibSubmit = (scores: SymptomScores) => {
+    setPreSymptomScores(scores);
+    setShowPreQBeforeCalib(false);
+    try {
+      const questionnaire = {
+        variant: 'pre' as const,
+        submittedAt: new Date().toISOString(),
+        scores,
+        questions: SYMPTOM_QUESTIONS.map((q) => ({
+          id: q.id,
+          category: q.category,
+          question: q.question,
+          score: scores[q.id] ?? null,
+        })),
+      };
+      localStorage.setItem('neuro_pre_questionnaire_v1', JSON.stringify(questionnaire));
+    } catch (_) {}
+    // Proceed to calibration
     pathSyncSourceRef.current = 'internal';
     router.push('/calibration');
-    // Defer handleStartProcess so React has time to unmount SetupGuideScreen
-    // and stop its preview stream before we call getUserMedia again.
-    // Without this delay the two getUserMedia calls overlap → camera denied.
     setTimeout(() => handleStartProcess(), 300);
   };
 
@@ -2753,6 +2814,16 @@ function App() {
         }
         resultsInitialFocusTestId={searchParams.get('verify') === '1' ? searchParams.get('focus') : null}
       />
+
+      {/* Pre-questionnaire shown before calibration */}
+      {showPreQBeforeCalib && (
+        <div className="fixed inset-0 z-[60] bg-gray-950 overflow-y-auto">
+          <SymptomAssessment
+            variant="pre"
+            onSubmit={handlePreQBeforeCalibSubmit}
+          />
+        </div>
+      )}
 
       {/* Fullscreen Guard Overlay */}
       {['HEAD_POSITIONING', 'CALIBRATION', 'TRACKING', 'NEURO_FLOW'].includes(status) && !isFullscreen && (
