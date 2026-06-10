@@ -235,9 +235,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   regressionMethod: RegressionMethod.TPS, // Default to TPS now
   smoothingMethod: SmoothingMethod.ONE_EURO,
   
-  // Smoothing Defaults
-  minCutoff: 0.005, // High smoothing when still
-  beta: 0.01,
+  // Smoothing Defaults — tuned for clinical assessment (low lag + fast saccade response).
+  // beta was 0.01 (≈200ms saccade lag, corrupts reaction-time tests). Raise toward 0.7
+  // if the cursor still trails during fast saccades; lower if it looks jittery.
+  minCutoff: 0.01, // was 0.005 — less lag during smooth pursuit
+  beta: 0.5,       // was 0.01  — responds to saccades within 1–2 frames
   maWindow: 5,
   kalmanQ: 0.01,
   kalmanR: 0.1,
@@ -263,11 +265,13 @@ export const DEFAULT_CONFIG: AppConfig = {
   // Exercises
   enableExercises: true,
 
-  // Feature Flags — all off by default; enable one at a time and re-evaluate LOOCV
-  useEAR: false,
+  // Feature Flags — enabled for accuracy (verified safe: calibration collects ~300+
+  // samples across the 9 points, so N ≫ vector dim even at 30D — TPS N>D+1 holds).
+  // Blendshapes stay off (need ≥12–16 calibration points for the +8 dims).
+  useEAR: true,                 // was false — compensates squint-induced vertical error
   useBlendshapes: false,
-  useTransformationMatrix: false,
-  useSymmetricFeatures: false,
+  useTransformationMatrix: true,// was false — accurate head pose beyond ~15° rotation
+  useSymmetricFeatures: true,   // was false — adds rx², ry², (lx−rx) vergence; fixes asymmetric correction
 
   // Recording Defaults
   enableVideoRecording: true,

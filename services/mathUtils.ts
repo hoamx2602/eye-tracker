@@ -115,7 +115,7 @@ export class Matrix {
 export class TPSRegressor {
   private controlPoints: number[][] = []; // The 'V' (source features)
   private weights: number[][] | null = null; // The 'w' coefficients
-  private regularization: number = 0.5; // lambda > 0 makes it a "smoothing" spline (robust to noise)
+  private regularization: number = 0.1; // was 0.5 — λ=0.5 over-smooths TPS into a near-linear fit, losing the non-linear edge warping that makes TPS worth using. 0.1 keeps it robust to noise while restoring curvature at screen edges.
 
   // Core eye-only features (always available).
   private readonly baseFeatureIndices = [1, 2, 3, 4];

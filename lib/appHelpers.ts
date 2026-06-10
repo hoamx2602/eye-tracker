@@ -21,6 +21,22 @@ export const VALIDATION_POINTS: CalibrationPoint[] = [
   { id: 1005, x: 50, y: 50, completed: false },
 ];
 
+/**
+ * Effective calibration point count.
+ *
+ * Prescription glasses introduce a *systematic* (not random) shift of the apparent
+ * pupil position that varies with gaze angle — see docs/EXPERT_ACCURACY_ASSESSMENT.md §2.
+ * A denser grid lets the per-subject regression absorb that lens distortion across the
+ * whole field, so glasses wearers get at least a 4×4 (16-point) grid. Non-glasses runs
+ * keep the configured count unchanged.
+ */
+export const GLASSES_MIN_CALIBRATION_POINTS = 16;
+export const effectiveCalibrationPointCount = (
+  configuredCount: number,
+  wearsGlasses: boolean,
+): number =>
+  wearsGlasses ? Math.max(configuredCount, GLASSES_MIN_CALIBRATION_POINTS) : configuredCount;
+
 export const generateCalibrationPoints = (count: number): CalibrationPoint[] => {
   const points: CalibrationPoint[] = [];
   let rows = Math.round(Math.sqrt(count));

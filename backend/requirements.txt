@@ -1,0 +1,16 @@
+# L2CS-Net offline gaze backend — Python deps.
+# torch/torchvision are installed in the Dockerfile against the CUDA base image,
+# so they are intentionally NOT pinned here (avoid pulling the CPU wheels).
+
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+python-multipart==0.0.*        # multipart/form-data video upload
+numpy==1.26.*
+opencv-python-headless==4.10.* # headless = no GUI libs, smaller image
+scikit-learn==1.5.*            # Ridge + PolynomialFeatures for calibration mapping
+pydantic==2.*
+
+# L2CS-Net — the maintained fork that ships the `Pipeline` / `render` API and
+# pulls in `face-detection` (RetinaFace). Pinned to a commit on the deploy server
+# for reproducibility once you confirm the working revision.
+l2cs @ git+https://github.com/edavalosanaya/L2CS-Net.git@main

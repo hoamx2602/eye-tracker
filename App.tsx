@@ -56,7 +56,7 @@ import NeurologicalFlowSection from '@/components/neurological/NeurologicalFlowS
 import { useNeuroFlowHandlers } from '@/components/neurological/useNeuroFlowHandlers';
 import AppMainOverlays from '@/components/AppMainOverlays';
 import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
-import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, roundedRect } from '@/lib/appHelpers';
+import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, roundedRect } from '@/lib/appHelpers';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
 
@@ -597,6 +597,9 @@ function App() {
         facingMode: 'user',
         width: { ideal: 1280 },
         height: { ideal: 720 },
+        // Request a stable frame rate: erratic fps makes the OneEuro dt jittery,
+        // which corrupts smoothing and reaction-time measurements in saccade tests.
+        frameRate: { ideal: 30, min: 24 },
         ...(wantsZoom ? { zoom: true } : {}),
       };
       const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
@@ -712,14 +715,26 @@ function App() {
     if (!videoRef.current || !videoRef.current.srcObject) return;
     const stream = videoRef.current.srcObject as MediaStream;
     
-    // Choose appropriate mime type
-    let mimeType = 'video/webm;codecs=vp9';
-    if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'video/webm'; 
-    }
-    
+    // Choose the best available codec. VP9 gives better quality-per-bit than VP8/the
+    // generic webm fallback, so the iris texture survives compression for offline analysis.
+    const codecPriority = [
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm',
+    ];
+    const mimeType = codecPriority.find(t => MediaRecorder.isTypeSupported(t)) ?? 'video/webm';
+
+    // High bitrate is the single most important recording setting for offline accuracy:
+    // the default (~1–2 Mbps at 720p) blurs the ~15–25px iris, which is exactly the
+    // detail gaze inference needs. ~16 Mbps preserves it at a manageable file size
+    // (~120 MB/min). See docs/EXPERT_ACCURACY_ASSESSMENT.md §1.1.
+    const RECORDING_BITS_PER_SECOND = 16_000_000;
+
     try {
-        const recorder = new MediaRecorder(stream, { mimeType });
+        const recorder = new MediaRecorder(stream, {
+          mimeType,
+          videoBitsPerSecond: RECORDING_BITS_PER_SECOND,
+        });
         recordedChunksRef.current = [];
         
         recorder.ondataavailable = (event) => {
@@ -2527,8 +2542,13 @@ function App() {
 
     setCalibPhase(CalibrationPhase.INITIAL_MAPPING);
     
-    // Generate points based on config
-    const points = generateCalibrationPoints(configRef.current.calibrationPointsCount);
+    // Generate points based on config (denser grid for glasses wearers — see appHelpers).
+    const points = generateCalibrationPoints(
+      effectiveCalibrationPointCount(
+        configRef.current.calibrationPointsCount,
+        !!demographicsRef.current?.wearsGlasses,
+      ),
+    );
     setCalibPoints(points);
     
     calibrationImagesRef.current = [];
@@ -2759,7 +2779,12 @@ function App() {
             const currentPending = assessmentPendingRef.current;
             setAssessmentPending(null);
             if (currentPending?.type === 'grid') {
-                setCalibPoints(generateCalibrationPoints(configRef.current.calibrationPointsCount));
+                setCalibPoints(generateCalibrationPoints(
+                  effectiveCalibrationPointCount(
+                    configRef.current.calibrationPointsCount,
+                    !!demographicsRef.current?.wearsGlasses,
+                  ),
+                ));
                 setCurrentCalibIndex(0);
                 trainingSamplesRef.current = [];
                 calibrationImagesRef.current = [];
