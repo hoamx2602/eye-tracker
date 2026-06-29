@@ -1199,14 +1199,17 @@ function App() {
       if (lm && lm.length > 0) {
         ctx.fillStyle = 'rgba(34, 197, 94, 0.95)';
         const r = 1.5;
+        // Batch all 478 dots into ONE path + ONE fill (was 478 separate beginPath/fill
+        // calls per frame). moveTo before each arc prevents connecting lines between dots.
+        ctx.beginPath();
         for (let i = 0; i < lm.length; i++) {
           const p = lm[i];
           const x = (1 - p.x) * W;
           const y = p.y * H;
-          ctx.beginPath();
+          ctx.moveTo(x + r, y);
           ctx.arc(x, y, r, 0, Math.PI * 2);
-          ctx.fill();
         }
+        ctx.fill();
       }
 
       rafId = requestAnimationFrame(draw);
