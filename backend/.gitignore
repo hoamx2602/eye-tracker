@@ -1,0 +1,6 @@
+# Mounted at runtime, not committed — large binaries.
+models/
+data/
+weights        # runtime symlink → models/openface (OpenFace relative-path shim)
+__pycache__/
+*.pyc
