@@ -20,6 +20,8 @@ Usage
       "head_compensation": true,          # parallax compensation (default true)
       "camera_hfov_deg": 60,              # webcam horizontal FOV assumption
       "head_comp_gain": 1.0,              # 0 disables; tune from validation A/B
+      "personalize": false,               # experimental per-subject fine-tuning;
+                                          # kept only if it beats the baseline
       "glasses": true,
       "calibration_dots": [{"screen_x":..,"screen_y":..,"t_start_ms":..,"t_end_ms":..}, ...],
       "validation_dots":  [{"screen_x":..,"screen_y":..,"t_start_ms":..,"t_end_ms":..}, ...]
@@ -71,10 +73,63 @@ def reprocess(video_path: str, meta: dict, weights_dir: str | None = None, model
     if model is None:
         from .gaze_model import GazeModel
         model = GazeModel(weights_dir=weights_dir) if weights_dir else GazeModel()
-    frames = process_video(video_path, model, frame_stride=meta.get("frame_stride", 1))
-    quality = frames.get("quality")
-
     cal_dots = _dots(meta["calibration_dots"])
+
+    frames = process_video(video_path, model, frame_stride=meta.get("frame_stride", 1))
+    analysis = _analyze(frames, meta, geo, cal_dots)
+
+    # ── Optional per-subject personalization (experimental) ──────────────────
+    # Fine-tune the gaze head on this session's own calibration dots, re-infer,
+    # refit — and KEEP only if the held-out score actually improved. Offline
+    # path only: mutating the model is unsafe in the shared-model API server.
+    personalization = None
+    if meta.get("personalize", False):
+        personalization = _try_personalize(
+            model, video_path, meta, geo, cal_dots, frames, analysis,
+        )
+        if personalization.get("kept"):
+            analysis = personalization.pop("_analysis")
+        else:
+            personalization.pop("_analysis", None)
+
+    # ── Authoritative biomarkers on the (compensated, quality-gated) trace ───
+    x_px, y_px = analysis["x_px"], analysis["y_px"]
+    bm = detect_events(
+        analysis["frames"]["t_ms"], x_px, y_px, geo,
+        saccade_velocity_threshold_deg_s=meta.get("saccade_velocity_threshold_deg_s", 30.0),
+    )
+
+    mapper = analysis["mapper"]
+    return {
+        "glasses": meta.get("glasses"),
+        "head": {
+            "compensation_applied": analysis["compensator"] is not None,
+            "hfov_deg": meta.get("camera_hfov_deg", DEFAULT_HFOV_DEG),
+            "gain": meta.get("head_comp_gain", 1.0),
+            "motion": analysis["head_motion"],
+        },
+        "calibration": {
+            "train_rmse_px": mapper.train_rmse_px,
+            "loocv_px": mapper.loocv_px,
+            "region_errors_px": mapper.region_errors_px,
+            "degree": mapper.degree,
+            "alpha": mapper.alpha,
+            "dots_used": mapper.n_dots_used,
+            "dots_total": mapper.n_dots_total,
+        },
+        "validation": analysis["validation"],
+        "personalization": personalization,
+        "biomarkers": asdict(bm),
+    }
+
+
+def _analyze(frames: dict, meta: dict, geo: ScreenGeometry, cal_dots: list[CalibrationDot]) -> dict:
+    """
+    One full analysis pass over inferred frames: calibration fit, head
+    compensation, held-out validation, compensated + quality-gated trace.
+    Reused for the baseline and (when personalizing) the fine-tuned pass.
+    """
+    quality = frames.get("quality")
     mapper = fit_mapper(
         cal_dots,
         frames["t_ms"], frames["yaw"], frames["pitch"],
@@ -82,10 +137,9 @@ def reprocess(video_path: str, meta: dict, weights_dir: str | None = None, model
         outlier_sigma=meta.get("calibration_outlier_sigma", 2.5),
     )
 
-    # ── Head-translation (parallax) compensation ─────────────────────────────
-    # Reference = head position during the calibration windows; every mapped
-    # point is shifted by the head displacement since then. Disable per session
-    # with "head_compensation": false in the meta.
+    # Head-translation (parallax) compensation: reference = head position during
+    # the calibration windows; every mapped point is shifted by the displacement
+    # since then. Disable per session with "head_compensation": false.
     compensator = None
     head = {k: frames[k] for k in ("head_u", "head_v", "head_w") if k in frames}
     if meta.get("head_compensation", True) and len(head) == 3:
@@ -99,7 +153,7 @@ def reprocess(video_path: str, meta: dict, weights_dir: str | None = None, model
             gain=meta.get("head_comp_gain", 1.0),
         )
 
-    # ── Held-out validation (truthful accuracy; raw vs compensated A/B) ─────
+    # Held-out validation (truthful accuracy; raw-vs-compensated A/B).
     validation = None
     if meta.get("validation_dots"):
         rep = evaluate_mapper(
@@ -119,7 +173,6 @@ def reprocess(video_path: str, meta: dict, weights_dir: str | None = None, model
             "per_point": [asdict(p) for p in rep.per_point],
         }
 
-    # ── Authoritative biomarkers on the quality-gated trace ──────────────────
     mapped = mapper.map(frames["yaw"], frames["pitch"])
     x_px, y_px = mapped[:, 0], mapped[:, 1]
     head_motion = None
@@ -136,31 +189,71 @@ def reprocess(video_path: str, meta: dict, weights_dir: str | None = None, model
         x_px = np.where(glare, np.nan, x_px)
         y_px = np.where(glare, np.nan, y_px)
 
-    bm = detect_events(
-        frames["t_ms"], x_px, y_px, geo,
-        saccade_velocity_threshold_deg_s=meta.get("saccade_velocity_threshold_deg_s", 30.0),
-    )
-
     return {
-        "glasses": meta.get("glasses"),
-        "head": {
-            "compensation_applied": compensator is not None,
-            "hfov_deg": meta.get("camera_hfov_deg", DEFAULT_HFOV_DEG),
-            "gain": meta.get("head_comp_gain", 1.0),
-            "motion": head_motion,
-        },
-        "calibration": {
-            "train_rmse_px": mapper.train_rmse_px,
-            "loocv_px": mapper.loocv_px,
-            "region_errors_px": mapper.region_errors_px,
-            "degree": mapper.degree,
-            "alpha": mapper.alpha,
-            "dots_used": mapper.n_dots_used,
-            "dots_total": mapper.n_dots_total,
-        },
-        "validation": validation,
-        "biomarkers": asdict(bm),
+        "frames": frames, "mapper": mapper, "compensator": compensator,
+        "validation": validation, "head_motion": head_motion,
+        "x_px": x_px, "y_px": y_px,
     }
+
+
+def _held_out_score_px(analysis: dict) -> float:
+    """Model-selection score: validation RMSE when available, else calibration LODO."""
+    val = analysis["validation"]
+    if val and np.isfinite(val["overall_px"]):
+        return float(val["overall_px"])
+    return float(analysis["mapper"].loocv_px)
+
+
+def _try_personalize(
+    model, video_path: str, meta: dict, geo: ScreenGeometry,
+    cal_dots: list[CalibrationDot], frames: dict, baseline: dict,
+) -> dict:
+    """
+    Run the personalization step and re-analysis; decide keep-vs-restore on the
+    held-out score. Never lets a failed/worse fine-tune leak into the report:
+    the gaze head is snapshotted before and restored unless it won.
+    """
+    from .personalize import personalize_on_session, restore_gaze_head, snapshot_gaze_head
+    from .video import process_video
+
+    out: dict = {"kept": False}
+    try:
+        snap = snapshot_gaze_head(model)
+    except Exception as e:  # noqa: BLE001 — e.g. stub/injected model without a torch net
+        out["reason"] = f"model does not expose a tunable gaze head ({e})"
+        return out
+
+    res = personalize_on_session(
+        model, video_path, cal_dots, frames,
+        screen_width_px=geo.width_px, screen_width_cm=geo.width_cm,
+        viewing_distance_cm=geo.viewing_distance_cm,
+        hfov_deg=meta.get("camera_hfov_deg", DEFAULT_HFOV_DEG),
+    )
+    out.update(res.to_dict())
+    if not res.applied:
+        restore_gaze_head(model, snap)
+        return out
+
+    frames_p = process_video(video_path, model, frame_stride=meta.get("frame_stride", 1))
+    analysis_p = _analyze(frames_p, meta, geo, cal_dots)
+
+    base_score = _held_out_score_px(baseline)
+    pers_score = _held_out_score_px(analysis_p)
+    out["baseline_score_px"] = base_score
+    out["personalized_score_px"] = pers_score
+    out["kept"] = bool(pers_score < base_score)
+    out["_analysis"] = analysis_p
+    if not out["kept"]:
+        restore_gaze_head(model, snap)
+        logger.info(
+            "Personalization NOT kept (%.1f px vs baseline %.1f px) — gaze head restored",
+            pers_score, base_score,
+        )
+    else:
+        logger.info(
+            "Personalization kept: held-out %.1f px → %.1f px", base_score, pers_score,
+        )
+    return out
 
 
 def main() -> None:
@@ -169,10 +262,15 @@ def main() -> None:
     ap.add_argument("--meta", required=True, help="metadata JSON (screen + dot windows)")
     ap.add_argument("--out", help="write full report JSON here (default: stdout)")
     ap.add_argument("--weights", help="OpenFace weights dir (default: $OPENFACE_WEIGHTS)")
+    ap.add_argument("--personalize", action="store_true",
+                    help="experimental per-subject gaze-head fine-tuning "
+                         "(kept only if it beats the baseline on held-out dots)")
     args = ap.parse_args()
 
     with open(args.meta) as f:
         meta = json.load(f)
+    if args.personalize:
+        meta["personalize"] = True
 
     report = reprocess(args.video, meta, weights_dir=args.weights)
     out = json.dumps(report, indent=2)

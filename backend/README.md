@@ -72,12 +72,18 @@ backend/
     video.py        decode video → per-frame gaze + quality + timestamps
     calibration.py  fit (yaw,pitch)→(x,y): gaze-contingent windows, glare-robust, CV-tuned
     head_comp.py    first-order head-translation (parallax) compensation + motion stats
+    personalize.py  EXPERIMENTAL per-subject gaze-head fine-tuning (safety-gated)
     validation.py   held-out accuracy report (px + degrees, by region, glasses vs clean,
                     raw vs head-compensated)
     events.py       I-VT event detection + biomarkers
     reprocess.py    batch CLI: video + meta.json → biomarkers + accuracy report (offline)
     reprocess_example.json   metadata schema example
     schemas.py      request/response models
+  tests/            synthetic test suites — run WITHOUT GPU/OpenFace weights:
+                    python -m tests.test_head_comp      (parallax math)
+                    python -m tests.test_pipeline_stub  (end-to-end, stub model)
+                    python -m tests.test_infer_batch    (batching glue, stubbed openface)
+                    python -m tests.test_personalize    (fine-tuning, fake torch net)
   Dockerfile
   requirements.txt
   README.md         ← this file
@@ -337,6 +343,21 @@ startup latency does not shift the calibration center.
       original per-frame/library path on failure. `infer()` (smoke.py) is now a
       batch of 1. Tests: `python -m tests.test_infer_batch` (stubbed OpenFace —
       no GPU needed).
+- [x] **Per-subject personalization** (`personalize.py`, EXPERIMENTAL — needs
+      GPU validation on real sessions): few-shot fine-tuning of the gaze branch
+      (fc_gaze + gaze_regressor, backbone frozen) on the session's own
+      calibration-dot crops. Targets are geometric eye→dot angles robustly
+      aligned to the model's own output convention (aborts if |corr| < 0.8, so
+      wrong labels can't poison the net). AdamW + mild photometric augmentation
+      + early stopping on dots held out of training. **Safety-gated**: reprocess
+      snapshots the gaze head, re-infers + refits after fine-tuning, and keeps
+      the personalized pass only if it beats the baseline on held-out validation
+      dots (else calibration LOOCV) — a failed fine-tune can never degrade a
+      report. Enable with `--personalize` or `"personalize": true` in the meta;
+      the report gains a `personalization` block (corr, epochs, val L1
+      before/after, baseline vs personalized held-out px, kept true/false).
+      Offline CLI only — never mutates the shared model in the API server.
+      Tests: `python -m tests.test_personalize` (fake torch model — no GPU).
 
 ### Remaining improvements (future work)
 
@@ -383,9 +404,11 @@ calibrated camera (intrinsics) instead of the HFOV assumption. Go here only if
 the raw-vs-compensated validation A/B on real sessions shows a remaining
 head-motion-correlated residual.
 
-#### 4. Per-subject CNN fine-tuning (high value, GPU available)
+#### 4. Personalization upgrades (after GPU validation of the shipped version)
 
-Few-shot personalisation of OpenFace on the 9–25 calibration crops (with
-gaze-redirection augmentation to avoid overfitting) — the single largest lever
-from the 2024–2025 literature, and the strongest glasses defence. Decouples
-accuracy from the generic cross-subject model.
+The experimental few-shot fine-tune is done (`personalize.py`, see "Done").
+Once real-session A/Bs confirm it helps, the upgrades in rough value order:
+gaze-redirection augmentation (synthesise novel gaze directions from the
+calibration crops instead of photometric jitter only), unfreezing the last
+backbone block with a tiny LR, and a persistent per-subject weight cache so a
+returning subject starts from their previous adaptation.
