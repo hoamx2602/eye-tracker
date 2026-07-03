@@ -57,6 +57,7 @@ import { useNeuroFlowHandlers } from '@/components/neurological/useNeuroFlowHand
 import AppMainOverlays from '@/components/AppMainOverlays';
 import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, roundedRect } from '@/lib/appHelpers';
+import { CalibrationMetaRecorder } from '@/lib/calibrationMeta';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
 
@@ -262,6 +263,8 @@ function App() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordingResolveRef = useRef<((b: Blob | null) => void) | null>(null);
+  // Records per-dot [t_start,t_end] windows on the video clock for offline reprocessing.
+  const metaRecorderRef = useRef(new CalibrationMetaRecorder());
   const [isRecording, setIsRecording] = useState(false);
   const [lightLevel, setLightLevel] = useState<{ value: number; status: 'too_dark' | 'low' | 'ok' | 'good' } | null>(null);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
@@ -755,6 +758,7 @@ function App() {
         };
 
         recorder.start();
+        metaRecorderRef.current.startRecording();   // t=0 for offline dot windows
         mediaRecorderRef.current = recorder;
         setIsRecording(true);
         setRecordedVideoUrl(null); // Clear previous video
@@ -1227,6 +1231,7 @@ function App() {
     rawCollectionBufferRef.current = [];
     isCollectingRef.current = true;
     holdStartTimeRef.current = performance.now();
+    metaRecorderRef.current.markWindowStart();   // dot dwell begins (click-hold mode)
     
     const updateProgress = () => {
         const elapsed = (performance.now() - holdStartTimeRef.current) / 1000; // seconds
@@ -1317,6 +1322,7 @@ function App() {
       collectionBufferRef.current = [];
       rawCollectionBufferRef.current = [];
       isCollectingRef.current = true;
+      metaRecorderRef.current.markWindowStart();   // dot dwell begins (timer mode)
       setIsCapturing(true);
     }, prepTime);
 
@@ -1417,6 +1423,9 @@ function App() {
 
         const screenX = (point.x / 100) * window.innerWidth;
         const screenY = (point.y / 100) * window.innerHeight;
+
+        // Record this dot's window on the video clock for offline reprocessing.
+        metaRecorderRef.current.addDot(screenX, screenY, calibPhase === CalibrationPhase.VALIDATION);
 
         if (calibPhase !== CalibrationPhase.VALIDATION) {
             const newSample: TrainingSample = {
@@ -1735,6 +1744,7 @@ function App() {
 
       try {
         const videoBlob = await stopVideoRecordingAndGetBlob();
+        maybeExportOfflineMeta(videoBlob);   // ?exportMeta=1 → local video+meta.json for offline reprocess
         const gridImageCount = calibrationImagesRef.current.length;
         const samples = trainingSamplesRef.current;
         const timestamp = Date.now();
@@ -2579,6 +2589,43 @@ function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Offline reprocessing export. With ?exportMeta=1 in the URL, downloads the
+  // recorded calibration video + its meta.json (per-dot windows on the video
+  // clock) so they can be dropped into backend/data and run through
+  // `python -m app.reprocess`. Off by default — zero effect on normal sessions.
+  const maybeExportOfflineMeta = (videoBlob: Blob | null) => {
+    try {
+      if (typeof window === 'undefined') return;
+      if (new URLSearchParams(window.location.search).get('exportMeta') !== '1') return;
+      const rec = metaRecorderRef.current;
+      if (rec.counts.calibration === 0) return;
+      const ts = new Date().toISOString().replace(/[:.]/g, "-");
+      const metaBlob = rec.toBlob({
+        widthPx: window.innerWidth,
+        heightPx: window.innerHeight,
+        widthCm: 34.5,   // TODO: set to your monitor's real physical width (cm) for accurate degree units
+        viewingDistanceCm: configRef.current.faceDistance,
+        glasses: !!demographicsRef.current?.wearsGlasses,
+      });
+      downloadBlob(metaBlob, `session-${ts}.meta.json`);
+      if (videoBlob && videoBlob.size > 0) downloadBlob(videoBlob, `session-${ts}.webm`);
+      console.log(`[offline] exported meta (${rec.counts.calibration} calib / ${rec.counts.validation} valid dots) + video`);
+    } catch (e) {
+      console.warn('[offline] exportMeta failed', e);
+    }
   };
 
   const downloadVideoBlob = (blob: Blob) => {
