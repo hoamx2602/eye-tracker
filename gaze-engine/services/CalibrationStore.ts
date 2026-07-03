@@ -82,7 +82,9 @@ export class CalibrationStore {
       // Average across frames collected at this point
       const dim = cleaned[0].length;
       const avg = new Array<number>(dim).fill(0);
-      for (const vec of cleaned) for (let i = 0; i < dim; i++) avg[i] += vec[i] / cleaned.length;
+      for (const vec of cleaned) for (let i = 0; i < dim; i++) avg[i] += vec[i];
+      const invLen = 1 / cleaned.length;
+      for (let i = 0; i < dim; i++) avg[i] *= invLen;
 
       samples.push({
         screenX: entry.screenX,

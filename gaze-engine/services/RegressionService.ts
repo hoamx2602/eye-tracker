@@ -213,21 +213,37 @@ export class HybridRegressor {
     const [gx, gy] = this.linearPredict(input);
     if (method === 'RIDGE') return { x: gx, y: gy };
 
-    // Hybrid: k-NN residual correction (k=4, inverse-distance weights)
+    // Hybrid: k-NN residual correction (k=4, inverse-distance weights).
+    // Avoid per-frame object spread/sort allocations: compute top-k in-place.
     const k = 4;
-    const sorted = this.data
-      .map(d => {
-        let dsq = 0;
-        for (let i = 0; i < input.length; i++) dsq += (input[i] - d.input[i]) ** 2;
-        return { ...d, dist: Math.sqrt(dsq) };
-      })
-      .sort((a, b) => a.dist - b.dist)
-      .slice(0, k);
+    const n = this.data.length;
+    // Track top-k as parallel arrays (no heap objects beyond simple numbers)
+    const kIdx  = [-1, -1, -1, -1];
+    const kDist = [Infinity, Infinity, Infinity, Infinity];
+    for (let i = 0; i < n; i++) {
+      let dsq = 0;
+      const inp = this.data[i].input;
+      for (let j = 0; j < input.length; j++) dsq += (input[j] - inp[j]) ** 2;
+      const dist = Math.sqrt(dsq);
+      if (dist < kDist[k - 1]) {
+        kDist[k - 1] = dist; kIdx[k - 1] = i;
+        // Insertion-sort the small fixed array (k=4, branchy but zero allocation)
+        for (let p = k - 2; p >= 0; p--) {
+          if (kDist[p + 1] < kDist[p]) {
+            const td = kDist[p]; kDist[p] = kDist[p + 1]; kDist[p + 1] = td;
+            const ti = kIdx[p];  kIdx[p]  = kIdx[p + 1];  kIdx[p + 1]  = ti;
+          } else break;
+        }
+      }
+    }
 
     let tw = 0, cx = 0, cy = 0;
-    for (const n of sorted) {
-      const w = 1 / (n.dist + 1e-4);
-      cx += n.error[0] * w; cy += n.error[1] * w; tw += w;
+    for (let p = 0; p < k; p++) {
+      if (kIdx[p] < 0) continue;
+      const w = 1 / (kDist[p] + 1e-4);
+      cx += this.data[kIdx[p]].error[0] * w;
+      cy += this.data[kIdx[p]].error[1] * w;
+      tw += w;
     }
     return { x: gx + cx / tw, y: gy + cy / tw };
   }

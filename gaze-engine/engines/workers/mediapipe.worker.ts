@@ -15,7 +15,7 @@
 
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import type { FaceLandmarkerResult } from '@mediapipe/tasks-vision';
-import { extractEyeFeatures, isBlinking } from '../../services/FeatureExtractor';
+import { extractEyeFeatures, buildFeatureVector, isBlinking, type FeatureFlags } from '../../services/FeatureExtractor';
 import { HybridRegressor, type RegressionMethod } from '../../services/RegressionService';
 import { GazeSmoother } from '../../core/filters/GazeSmoother';
 import type { GazeResult, HeadPoseResult, CalibrationSample, LOOCVMetrics } from '../../core/IGazeEngine';
@@ -131,9 +131,7 @@ function handleFrame({ bitmap, timestamp }: { bitmap: ImageBitmap; timestamp: nu
   // Gaze prediction (only after calibration)
   if (!regressor?.hasModel()) return;
 
-  // Feature vector is built inside the worker using stored flags — no cross-thread flag sync needed
-  // For now use default flags; UPDATE_FLAGS message can carry new flags
-  const featureVec = currentFeatureVec(features);
+  const featureVec = buildFeatureVector(features, currentFlags);
   const raw = regressor.predict(featureVec, regressionMethod);
   const smoothed = smoother.process(raw.x, raw.y, timestamp);
 
@@ -142,32 +140,13 @@ function handleFrame({ bitmap, timestamp }: { bitmap: ImageBitmap; timestamp: nu
   self.postMessage({ type: 'GAZE', payload: gazePayload });
 }
 
-// Simple passthrough — worker receives pre-built vectors during calibration
-// so no flag state needed here for the live path
-let _featureVecFn: ((f: ReturnType<typeof extractEyeFeatures>) => number[]) | null = null;
-
-function currentFeatureVec(features: NonNullable<ReturnType<typeof extractEyeFeatures>>): number[] {
-  // Import at top would create circular issue; use dynamic require pattern
-  // The feature vector is received from the main thread during calibration
-  // but for live prediction we need it here — use a cached builder
-  if (_featureVecFn) return _featureVecFn(features);
-
-  // Fallback: build from raw features (same flags as calibration assumed)
-  const { buildFeatureVector } = require('../../services/FeatureExtractor');
-  _featureVecFn = (f) => buildFeatureVector(f, currentFlags);
-  return _featureVecFn!(features);
-}
-
-let currentFlags: import('../../services/FeatureExtractor').FeatureFlags = {};
+let currentFlags: FeatureFlags = {};
 
 // ─── Calibration ──────────────────────────────────────────────────────────────
 
-function handleCalibrate(payload: { samples: CalibrationSample[]; method: RegressionMethod; flags?: import('../../services/FeatureExtractor').FeatureFlags }) {
+function handleCalibrate(payload: { samples: CalibrationSample[]; method: RegressionMethod; flags?: FeatureFlags }) {
   regressionMethod = payload.method;
-  if (payload.flags) {
-    currentFlags = payload.flags;
-    _featureVecFn = null; // reset cached fn so it picks up new flags
-  }
+  if (payload.flags) currentFlags = payload.flags;
 
   const inputs = payload.samples.map(s => s.featureVector);
   const outputs = payload.samples.map(s => [s.screenX, s.screenY]);

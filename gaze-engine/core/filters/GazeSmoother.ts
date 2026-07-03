@@ -134,13 +134,16 @@ export class GazeSmoother {
     if (cfg.glassesMaxHoldFrames !== undefined) this.glassesMaxHoldFrames = cfg.glassesMaxHoldFrames;
   }
 
-  /** Detect stable gaze from last N raw positions. */
+  /** Detect stable gaze from last N raw positions. Single-pass mean + variance. */
   private inFixation(): boolean {
-    if (this.rawBuf.length < GazeSmoother.FIX_BUF) return false;
-    const mx = this.rawBuf.reduce((s, p) => s + p.x, 0) / this.rawBuf.length;
-    const my = this.rawBuf.reduce((s, p) => s + p.y, 0) / this.rawBuf.length;
-    const variance = this.rawBuf.reduce((s, p) => s + (p.x - mx) ** 2 + (p.y - my) ** 2, 0) / this.rawBuf.length;
-    return variance < GazeSmoother.FIX_VAR;
+    const n = this.rawBuf.length;
+    if (n < GazeSmoother.FIX_BUF) return false;
+    let mx = 0, my = 0;
+    for (const p of this.rawBuf) { mx += p.x; my += p.y; }
+    mx /= n; my /= n;
+    let variance = 0;
+    for (const p of this.rawBuf) variance += (p.x - mx) ** 2 + (p.y - my) ** 2;
+    return variance / n < GazeSmoother.FIX_VAR;
   }
 
   /**
@@ -196,7 +199,9 @@ export class GazeSmoother {
       this.oeX.minCutoff = bx; this.oeY.minCutoff = by;
       this.lastX = result.x; this.lastY = result.y;
       if (!this.glassesMode) return result;
-      return this._clampOutput(result);
+      const clamped = this._clampOutput(result);
+      this.lastValidX = clamped.x; this.lastValidY = clamped.y;
+      return clamped;
     }
 
     // 4. Normal filtering
