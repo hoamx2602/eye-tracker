@@ -1,0 +1,33 @@
+{
+  "screen": {
+    "width_px": 1920,
+    "height_px": 1080,
+    "width_cm": 34.5,
+    "viewing_distance_cm": 60.0
+  },
+  "frame_stride": 1,
+  "saccade_velocity_threshold_deg_s": 30.0,
+  "calibration_outlier_sigma": 2.5,
+  "head_compensation": true,
+  "camera_hfov_deg": 60.0,
+  "head_comp_gain": 1.0,
+  "glasses": false,
+  "calibration_dots": [
+    {"screen_x": 230,  "screen_y": 130,  "t_start_ms": 1000,  "t_end_ms": 2200},
+    {"screen_x": 960,  "screen_y": 130,  "t_start_ms": 2600,  "t_end_ms": 3800},
+    {"screen_x": 1690, "screen_y": 130,  "t_start_ms": 4200,  "t_end_ms": 5400},
+    {"screen_x": 230,  "screen_y": 540,  "t_start_ms": 5800,  "t_end_ms": 7000},
+    {"screen_x": 960,  "screen_y": 540,  "t_start_ms": 7400,  "t_end_ms": 8600},
+    {"screen_x": 1690, "screen_y": 540,  "t_start_ms": 9000,  "t_end_ms": 10200},
+    {"screen_x": 230,  "screen_y": 950,  "t_start_ms": 10600, "t_end_ms": 11800},
+    {"screen_x": 960,  "screen_y": 950,  "t_start_ms": 12200, "t_end_ms": 13400},
+    {"screen_x": 1690, "screen_y": 950,  "t_start_ms": 13800, "t_end_ms": 15000}
+  ],
+  "validation_dots": [
+    {"screen_x": 595,  "screen_y": 335,  "t_start_ms": 15600, "t_end_ms": 16600},
+    {"screen_x": 1325, "screen_y": 335,  "t_start_ms": 17000, "t_end_ms": 18000},
+    {"screen_x": 595,  "screen_y": 745,  "t_start_ms": 18400, "t_end_ms": 19400},
+    {"screen_x": 1325, "screen_y": 745,  "t_start_ms": 19800, "t_end_ms": 20800},
+    {"screen_x": 960,  "screen_y": 540,  "t_start_ms": 21200, "t_end_ms": 22200}
+  ]
+}

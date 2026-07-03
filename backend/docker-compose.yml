@@ -1,0 +1,38 @@
+# Offline gaze backend — GPU, with host folders mounted so you never docker cp.
+#
+#   backend/models/openface/   ← OpenFace weights (Alignment_RetinaFace.pth, MTL_backbone.pth)
+#   backend/data/              ← drop videos/images/meta.json here; reports land here too
+#
+# Usage:
+#   cd backend
+#   mkdir -p data models/openface           # put weights in models/openface (see README)
+#   docker compose up -d --build            # starts the API on :8000 with GPU + mounts
+#   docker compose exec gaze-backend python3 -m app.smoke      /data/face.jpg
+#   docker compose exec gaze-backend python3 -m app.reprocess  --video /data/clip.webm --meta /data/meta.json --out /data/report.json
+#   docker compose logs -f                  # watch processing logs
+#   docker compose down                     # stop
+#
+# Requires the NVIDIA Container Toolkit on the host (`nvidia-smi` works in a test container).
+
+services:
+  gaze-backend:
+    build: .
+    image: gaze-backend
+    ports:
+      - "8000:8000"                         # FastAPI /process, /health
+    volumes:
+      - ./models/openface:/models/openface:ro   # weights (read-only)
+      - ./data:/data                            # videos / images / meta / reports (read-write)
+      - ./app:/app/app                          # live code: edit on host → re-run exec, no rebuild
+    environment:
+      OPENFACE_WEIGHTS: /models/openface
+    # GPU access (Docker Compose v2 GPU support). If your Compose is older and this
+    # is ignored, replace the `deploy:` block below with the single line:  gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped

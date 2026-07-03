@@ -24,6 +24,29 @@ class ProcessRequest(BaseModel):
     screen: ScreenGeometryIn
     frame_stride: int = 1
     saccade_velocity_threshold_deg_s: float = 30.0
+    calibration_outlier_sigma: float = Field(
+        default=2.5,
+        description=(
+            "Calibration dot outlier-rejection threshold in standard deviations. "
+            "Dots with reprojection error > μ + σ·this are removed before refitting. "
+            "Set to a very large number (e.g. 999) to disable rejection."
+        ),
+    )
+    head_compensation: bool = Field(
+        default=True,
+        description=(
+            "First-order parallax compensation: shift mapped gaze by the head "
+            "displacement since calibration (estimated from the face bbox)."
+        ),
+    )
+    camera_hfov_deg: float = Field(
+        default=60.0,
+        description="Assumed webcam horizontal FOV (deg) for head back-projection.",
+    )
+    head_comp_gain: float = Field(
+        default=1.0,
+        description="Scale on the parallax correction; 0 disables. Tune from validation A/B.",
+    )
 
 
 class BiomarkersOut(BaseModel):
@@ -44,7 +67,37 @@ class GazeSampleOut(BaseModel):
 
 
 class ProcessResponse(BaseModel):
-    calibration_train_rmse_px: float
+    calibration_train_rmse_px: float = Field(
+        description="In-sample calibration fit error (optimistic; sanity check only)."
+    )
+    calibration_loocv_px: float = Field(
+        default=float("nan"),
+        description="Leave-one-dot-out RMSE — honest generalisation accuracy of the mapping.",
+    )
+    calibration_region_errors_px: dict[str, float] = Field(
+        default_factory=dict,
+        description="LODO error broken down by screen region: center / edge / corner.",
+    )
+    calibration_degree: int = Field(
+        default=2, description="Polynomial degree auto-selected by cross-validation."
+    )
+    calibration_dots_used: int = Field(
+        description="Calibration dots kept after outlier rejection."
+    )
+    calibration_dots_total: int = Field(
+        description="Calibration dots with enough valid frames before rejection."
+    )
+    head_compensation_applied: bool = Field(
+        default=False,
+        description="Whether parallax compensation was applied to the scored trace.",
+    )
+    head_motion: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Head displacement since calibration over the trace (cm): "
+            "lateral_median/p95/max, moved_frames_frac, distance_ratio_median."
+        ),
+    )
     biomarkers: BiomarkersOut
     gaze_trace: list[GazeSampleOut] = Field(
         default_factory=list,
