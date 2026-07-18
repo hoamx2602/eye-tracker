@@ -3,7 +3,7 @@
  */
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { applyQuickMode, getDefaultConfigSnapshot, isQuickModeEnv } from '@/lib/neurologicalConfig';
+import { applyQuickMode, getDefaultConfigSnapshot, isQuickModeEnv, quickTestOrder } from '@/lib/neurologicalConfig';
 
 export async function GET() {
   try {
@@ -17,10 +17,13 @@ export async function GET() {
       const testParameters = quick
         ? applyQuickMode(defaultSnap.testParameters as Record<string, Record<string, unknown>>)
         : defaultSnap.testParameters;
-      console.log('[api/neurological-config GET] source=default quickMode=%s memory_cards=', quick, (testParameters as any)?.memory_cards);
+      const testOrder = quick
+        ? quickTestOrder(defaultSnap.testOrder as string[], defaultSnap.testEnabled)
+        : defaultSnap.testOrder;
+      console.log('[api/neurological-config GET] source=default quickMode=%s testOrder=', quick, testOrder);
       return NextResponse.json(
         {
-          testOrder: defaultSnap.testOrder,
+          testOrder,
           testParameters,
           testEnabled: defaultSnap.testEnabled,
           _source: quick ? 'default+quick' : 'default',
@@ -30,11 +33,14 @@ export async function GET() {
       );
     }
 
-    const testOrder = Array.isArray(row.testOrder) ? row.testOrder : (row.testOrder as unknown) as string[];
+    let testOrder = (Array.isArray(row.testOrder) ? row.testOrder : (row.testOrder as unknown)) as string[];
     let testParameters = (row.testParameters as Record<string, unknown>) ?? {};
     const testEnabled = (row.testEnabled as Record<string, boolean>) ?? {};
-    if (quick) testParameters = applyQuickMode(testParameters as Record<string, Record<string, unknown>>);
-    console.log('[api/neurological-config GET] source=db quickMode=%s updatedAt=', quick, row.updatedAt?.toISOString?.(), 'memory_cards=', (testParameters as any)?.memory_cards);
+    if (quick) {
+      testParameters = applyQuickMode(testParameters as Record<string, Record<string, unknown>>);
+      testOrder = quickTestOrder(testOrder as string[], testEnabled);
+    }
+    console.log('[api/neurological-config GET] source=db quickMode=%s testOrder=', quick, testOrder);
 
     return NextResponse.json(
       { testOrder, testParameters, testEnabled, _source: quick ? 'db+quick' : 'db', _quickMode: quick },

@@ -139,6 +139,19 @@ export function applyQuickMode(
 }
 
 /**
+ * Quick mode runs a SINGLE test instead of the full battery — the first enabled
+ * test in the order (fallback: the first test). Just enough to walk the flow to
+ * the results screen when smoke-testing.
+ */
+export function quickTestOrder(
+  testOrder: string[],
+  testEnabled?: Record<string, boolean>,
+): string[] {
+  const first = testOrder.find((t) => testEnabled?.[t] !== false) ?? testOrder[0];
+  return first ? [first] : testOrder;
+}
+
+/**
  * True when quick test mode is enabled via env. Reads NEXT_PUBLIC_NEURO_QUICK_MODE
  * (client-visible, so the same flag also shrinks calibration in App.tsx) and
  * falls back to the legacy server-only NEURO_QUICK_MODE. Works server-side (API

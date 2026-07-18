@@ -1703,8 +1703,10 @@ function App() {
             return;
         }
 
-        // Option 2 ('test' mode): Skip Eye Movement Exercises, go directly to Validation to compute Mean Accuracy.
-        if (configRef.current.enableExercises && runModeRef.current !== 'test') {
+        // Option 2 ('test' mode) and quick mode: skip Eye Movement Exercises
+        // (wiggling / horizontal / …), go directly to Validation. Quick mode keeps
+        // validation so the offline export still has held-out dots for the accuracy A/B.
+        if (configRef.current.enableExercises && runModeRef.current !== 'test' && !NEURO_QUICK_MODE) {
             console.log(`[Calibration] Grid mapping done with ${data.length} samples, starting exercises...`);
             setStatus('CALIBRATION');
             setCalibPhase(CalibrationPhase.EXERCISES);
