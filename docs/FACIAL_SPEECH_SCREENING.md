@@ -46,10 +46,14 @@ facial-speech-<timestamp>.webm
 facial-speech-<timestamp>.meta.json
 ```
 
-The metadata records the actual start/end time of every task on the recorder
-clock, capture settings, requested metrics, and protocol version. Do not infer
-task boundaries from video frames: use these recorded windows. This makes every
-session reproducible and permits re-analysis with future models.
+The metadata records the actual start/end time of every timed task on the
+recorder clock, capture settings, requested metrics, and protocol version. The
+source remains one continuous video: guide and countdown material has no task
+window, and the processor decodes only the recorded task windows. Do not infer
+task boundaries from video frames. This makes every session reproducible,
+prevents loss at separate MediaRecorder boundaries, and permits re-analysis with
+future models. The processor may generate derived per-task clips for replay, but
+the original continuous capture remains the evidence source.
 
 ## Capture protocol (version 1.0)
 
@@ -60,10 +64,15 @@ session reproducible and permits re-analysis with future models.
    interpretation, or aggressive auto-crop.
 2. Diffuse front lighting; no strong side/back light, sunglasses, mask, hand, or
    hair occluding landmarks. Keep head centred and level.
-3. Quiet room, one speaker, stable mouth-to-microphone distance. Browser requests
+3. Read each guide **before** its timed window. Facial-movement windows begin
+   after a three-second countdown and show no lateral instructions: the subject
+   looks into the camera lens, not at the screen. The fixed speech-reading prompt
+   is placed as close as the browser can place it to the webcam; eye position is
+   not a speech metric, but head remains centred.
+4. Quiet room, one speaker, stable mouth-to-microphone distance. Browser requests
    disabled echo cancellation/noise suppression/auto gain, but devices may
    override this; record the actual track settings and use audio-quality gating.
-4. Collect a 5 s silence/noise-floor segment before the first voice task in the
+5. Collect a 5 s silence/noise-floor segment before the first voice task in the
    production backend (the current UI displays the quality requirements; the
    processor should calculate and persist SNR/clipping).
 
