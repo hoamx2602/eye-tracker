@@ -19,6 +19,11 @@ Web-based eye tracking (MediaPipe Face Mesh, calibration, TPS/hybrid regression)
 5. **Chạy app:** `npm run dev` — chạy cả frontend và API (Next.js) tại http://localhost:3000. Không cần Vercel CLI; `/api/upload` và `/api/sessions` chạy ngay trên máy.
 6. **Test lưu trữ nhanh:** Set `NEXT_PUBLIC_CALIBRATION_TEST_MODE=1` trong `.env.local` → chỉ cần hoàn thành phase calibration đầu tiên (grid) là app lưu session và hiện màn chọn (Real-time tracking hoặc Neurological test). Vẫn bắt buộc chọn một trong hai; chỉ bỏ qua Exercises + Validation.
 
+## Offline gaze mode
+
+For GPU-side offline processing, replay visual QA, and pass/fail testing steps,
+see [`docs/OFFLINE_MODE_TESTING.md`](docs/OFFLINE_MODE_TESTING.md).
+
 ## API
 
 - **Base URL:** Same origin `/api` (optional: set `NEXT_PUBLIC_API_URL` in `.env.local` for a different host).

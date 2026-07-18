@@ -2,6 +2,9 @@
 
 High-accuracy, **GPU-side, non-real-time** gaze processing for the eye-tracker.
 
+For the end-to-end offline-mode test checklist and visual QA workflow, see
+[`../docs/OFFLINE_MODE_TESTING.md`](../docs/OFFLINE_MODE_TESTING.md).
+
 The browser uses MediaPipe for the live cursor during a test. After the session
 the **recorded video** is sent here. This service runs a deep gaze model per
 frame, re-fits the calibration mapping from the recorded calibration dots, maps
