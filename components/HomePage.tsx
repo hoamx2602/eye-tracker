@@ -15,6 +15,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { isOfflineMetaExportEnabled, withOfflineMetaExportFlag } from '@/lib/offlineExportMeta';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -450,6 +451,9 @@ export default function HomePage() {
     const html = document.documentElement;
     const prev = html.style.overflow;
     html.style.overflow = 'auto';
+    if (isOfflineMetaExportEnabled()) {
+      console.log('[offline] exportMeta enabled for this browser tab');
+    }
     return () => { html.style.overflow = prev; };
   }, []);
 
@@ -526,7 +530,7 @@ export default function HomePage() {
                 </div>
                 {/* Phase 2: router.push('/setup') */}
                 <button
-                  onClick={() => router.push('/consent')}
+                  onClick={() => router.push(withOfflineMetaExportFlag('/consent'))}
                   className="
                     flex items-center gap-2 px-5 py-2.5 rounded-xl flex-shrink-0
                     bg-blue-600 hover:bg-blue-500 active:scale-[0.97]

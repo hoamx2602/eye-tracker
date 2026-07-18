@@ -58,24 +58,9 @@ import AppMainOverlays from '@/components/AppMainOverlays';
 import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, QUICK_CALIBRATION_POINTS, roundedRect } from '@/lib/appHelpers';
 import { CalibrationMetaRecorder } from '@/lib/calibrationMeta';
+import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
-
-const OFFLINE_META_EXPORT_SESSION_KEY = 'eyeTracker.exportMeta';
-
-function isOfflineMetaExportEnabled(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const q = new URLSearchParams(window.location.search);
-    if (q.get('exportMeta') === '1') {
-      window.sessionStorage.setItem(OFFLINE_META_EXPORT_SESSION_KEY, '1');
-      return true;
-    }
-    return window.sessionStorage.getItem(OFFLINE_META_EXPORT_SESSION_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 /** When true (NEXT_PUBLIC_CALIBRATION_TEST_MODE=1): after first calibration phase (grid) only, save session and show choice screen (Real-time vs Neurological). Choice is always required. */
 const CALIBRATION_TEST_MODE =
