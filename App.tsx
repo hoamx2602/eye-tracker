@@ -61,6 +61,22 @@ import { CalibrationMetaRecorder } from '@/lib/calibrationMeta';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
 
+const OFFLINE_META_EXPORT_SESSION_KEY = 'eyeTracker.exportMeta';
+
+function isOfflineMetaExportEnabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('exportMeta') === '1') {
+      window.sessionStorage.setItem(OFFLINE_META_EXPORT_SESSION_KEY, '1');
+      return true;
+    }
+    return window.sessionStorage.getItem(OFFLINE_META_EXPORT_SESSION_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 /** When true (NEXT_PUBLIC_CALIBRATION_TEST_MODE=1): after first calibration phase (grid) only, save session and show choice screen (Real-time vs Neurological). Choice is always required. */
 const CALIBRATION_TEST_MODE =
   typeof process !== 'undefined' && process.env.NEXT_PUBLIC_CALIBRATION_TEST_MODE === '1';
@@ -187,6 +203,16 @@ function App() {
   const streamRef = useRef<MediaStream | null>(null);
   /** When we push a path from internal transition we skip one pathname sync to avoid overwriting state. */
   const pathSyncSourceRef = useRef<'url' | 'internal'>('url');
+
+  // `?exportMeta=1` is only present on the first URL. The assessment flow uses
+  // route transitions like /consent -> /setup -> /calibration, which drop the
+  // query string before `maybeExportOfflineMeta()` runs. Latch it for this tab so
+  // offline export survives the whole run without affecting normal sessions.
+  useEffect(() => {
+    if (isOfflineMetaExportEnabled()) {
+      console.log('[offline] exportMeta enabled for this browser tab');
+    }
+  }, []);
 
   useEffect(() => { statusRef.current = status; }, [status]);
   useEffect(() => {
@@ -2631,7 +2657,7 @@ function App() {
   const maybeExportOfflineMeta = (videoBlob: Blob | null) => {
     try {
       if (typeof window === 'undefined') return;
-      if (new URLSearchParams(window.location.search).get('exportMeta') !== '1') return;
+      if (!isOfflineMetaExportEnabled()) return;
       const rec = metaRecorderRef.current;
       if (rec.counts.calibration === 0) return;
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
