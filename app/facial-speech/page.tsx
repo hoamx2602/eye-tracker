@@ -7,8 +7,14 @@ import {
   FACIAL_SPEECH_TASKS,
   type MetricDefinition,
 } from '@/lib/facialSpeechProtocol';
+import {
+  facialSpeechHandlingEnabled,
+  getFacialSpeechJob,
+  startFacialSpeechProcessing,
+  type FacialSpeechJob,
+} from '@/lib/facialSpeechBackend';
 
-type CaptureState = 'ready' | 'recording' | 'complete' | 'error';
+type CaptureState = 'ready' | 'recording' | 'processing' | 'complete' | 'error';
 type TaskPhase = 'instruction' | 'countdown' | 'active';
 
 interface CompletedTask {
@@ -47,6 +53,9 @@ export default function FacialSpeechPage() {
   const taskStartRef = useRef(0);
   const captureStartedAtRef = useRef<string | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
+  const completedTasksRef = useRef<CompletedTask[]>([]);
+  const captureManifestRef = useRef<Record<string, unknown> | null>(null);
+  const processingCancelledRef = useRef(false);
 
   const [captureState, setCaptureState] = useState<CaptureState>('ready');
   const [taskPhase, setTaskPhase] = useState<TaskPhase>('instruction');
@@ -54,6 +63,7 @@ export default function FacialSpeechPage() {
   const [taskIndex, setTaskIndex] = useState(0);
   const [completedTasks, setCompletedTasks] = useState<CompletedTask[]>([]);
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
+  const [processingJob, setProcessingJob] = useState<FacialSpeechJob | null>(null);
   const [message, setMessage] = useState('Allow camera and microphone access, then begin the assessment.');
 
   const currentTask = FACIAL_SPEECH_TASKS[taskIndex];
@@ -65,9 +75,63 @@ export default function FacialSpeechPage() {
     return () => {
       document.documentElement.style.overflow = previousOverflow;
       if (countdownTimerRef.current !== null) window.clearInterval(countdownTimerRef.current);
+      processingCancelledRef.current = true;
       if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
+  }, []);
+
+  const buildManifest = useCallback((sessionId: string, video: Blob) => {
+    const stream = streamRef.current;
+    return {
+      protocol: 'facial-speech-screening',
+      protocolVersion: FACIAL_SPEECH_PROTOCOL_VERSION,
+      sessionId,
+      captureStartedAt: captureStartedAtRef.current,
+      media: {
+        container: video.type || 'video/webm',
+        video: getTrackSettings(stream?.getVideoTracks()[0]),
+        audio: getTrackSettings(stream?.getAudioTracks()[0]),
+      },
+      segmentation: {
+        source: 'single-continuous-video',
+        taskWindowClock: 'MediaRecorder start / performance.now()',
+        videoIncludesUntimedGuidance: true,
+      },
+      tasks: completedTasksRef.current,
+      expectedTaskOrder: FACIAL_SPEECH_TASKS.map((task) => ({ id: task.id, domain: task.domain, durationSec: task.durationSec })),
+      metricsRequested: FACIAL_SPEECH_METRICS.map((metric) => metric.id),
+      qualityPolicy: {
+        requireFrontalFace: true,
+        requireStableHeadPose: true,
+        requireAudioSnrGate: true,
+        interpretation: 'screening-and-clinical-review, not standalone diagnosis',
+      },
+    };
+  }, []);
+
+  const processCapture = useCallback(async (video: Blob, manifest: Record<string, unknown>) => {
+    setCaptureState('processing');
+    setMessage('Uploading the capture to the offline analysis backend…');
+    try {
+      let job = await startFacialSpeechProcessing(video, manifest);
+      setProcessingJob(job);
+      while (!processingCancelledRef.current && job.status !== 'complete' && job.status !== 'failed') {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 800));
+        job = await getFacialSpeechJob(job.id);
+        setProcessingJob(job);
+        setMessage(job.message);
+      }
+      if (processingCancelledRef.current) return;
+      if (job.status === 'failed') throw new Error(job.error || job.message);
+      setCaptureState('complete');
+      setMessage('Offline analysis complete. Review the quality gates and measurements below.');
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Unknown offline-processing error.';
+      setProcessingJob((current) => current ? { ...current, status: 'failed', phase: 'failed', message: detail, error: detail } : null);
+      setCaptureState('complete');
+      setMessage(`Offline analysis could not complete: ${detail}`);
+    }
   }, []);
 
   const prepareCapture = useCallback(async () => {
@@ -106,9 +170,16 @@ export default function FacialSpeechPage() {
       if (event.data.size > 0) chunksRef.current.push(event.data);
     };
     recorder.onstop = () => {
-      setVideoBlob(new Blob(chunksRef.current, { type: recorder.mimeType || 'video/webm' }));
-      setCaptureState('complete');
-      setMessage('Capture complete. Download the paired video and metadata for offline processing.');
+      const video = new Blob(chunksRef.current, { type: recorder.mimeType || 'video/webm' });
+      const manifest = buildManifest(`facial-speech-${Date.now()}`, video);
+      setVideoBlob(video);
+      captureManifestRef.current = manifest;
+      if (facialSpeechHandlingEnabled()) {
+        void processCapture(video, manifest);
+      } else {
+        setCaptureState('complete');
+        setMessage('Capture complete. Offline processing is disabled; download the paired files for later analysis.');
+      }
     };
     recorderRef.current = recorder;
     sessionStartRef.current = performance.now();
@@ -116,11 +187,15 @@ export default function FacialSpeechPage() {
     setTaskIndex(0);
     setTaskPhase('instruction');
     setCompletedTasks([]);
+    completedTasksRef.current = [];
+    captureManifestRef.current = null;
+    processingCancelledRef.current = false;
+    setProcessingJob(null);
     setVideoBlob(null);
     recorder.start(1000);
     setCaptureState('recording');
     setMessage('The session is recording. Read the task guide, then start the timed task when ready.');
-  }, [prepareCapture]);
+  }, [buildManifest, prepareCapture, processCapture]);
 
   const startCurrentTask = useCallback(() => {
     if (captureState !== 'recording' || taskPhase !== 'instruction') return;
@@ -149,7 +224,9 @@ export default function FacialSpeechPage() {
       recordedDurationMs: Math.round(now - taskStartRef.current),
       expectedDurationSec: currentTask.durationSec,
     };
-    setCompletedTasks((previous) => [...previous, completed]);
+    const updatedTasks = [...completedTasksRef.current, completed];
+    completedTasksRef.current = updatedTasks;
+    setCompletedTasks(updatedTasks);
 
     if (taskIndex === FACIAL_SPEECH_TASKS.length - 1) {
       recorderRef.current?.state === 'recording' && recorderRef.current.stop();
@@ -163,38 +240,11 @@ export default function FacialSpeechPage() {
 
   const exportArtifacts = useCallback(() => {
     if (!videoBlob) return;
-    const sessionId = `facial-speech-${Date.now()}`;
-    const stream = streamRef.current;
-    const manifest = {
-      protocol: 'facial-speech-screening',
-      protocolVersion: FACIAL_SPEECH_PROTOCOL_VERSION,
-      sessionId,
-      captureStartedAt: captureStartedAtRef.current,
-      media: {
-        container: videoBlob.type || 'video/webm',
-        video: getTrackSettings(stream?.getVideoTracks()[0]),
-        audio: getTrackSettings(stream?.getAudioTracks()[0]),
-      },
-      // The source is deliberately a single continuous recording. The backend
-      // uses these exact windows to decode only each task's valid frames/audio.
-      segmentation: {
-        source: 'single-continuous-video',
-        taskWindowClock: 'MediaRecorder start / performance.now()',
-        videoIncludesUntimedGuidance: true,
-      },
-      tasks: completedTasks,
-      expectedTaskOrder: FACIAL_SPEECH_TASKS.map((task) => ({ id: task.id, domain: task.domain, durationSec: task.durationSec })),
-      metricsRequested: FACIAL_SPEECH_METRICS.map((metric) => metric.id),
-      qualityPolicy: {
-        requireFrontalFace: true,
-        requireStableHeadPose: true,
-        requireAudioSnrGate: true,
-        interpretation: 'screening-and-clinical-review, not standalone diagnosis',
-      },
-    };
+    const manifest = captureManifestRef.current ?? buildManifest(`facial-speech-${Date.now()}`, videoBlob);
+    const sessionId = String(manifest.sessionId);
     download(videoBlob, `${sessionId}.webm`);
     download(new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }), `${sessionId}.meta.json`);
-  }, [completedTasks, videoBlob]);
+  }, [buildManifest, videoBlob]);
 
   return (
     <main className="min-h-screen bg-gray-950 px-4 py-8 text-white sm:px-8">
@@ -217,7 +267,7 @@ export default function FacialSpeechPage() {
             <div className="relative aspect-video bg-black">
               <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
               <div className="absolute left-4 top-4 rounded-full bg-black/70 px-3 py-1 text-xs font-medium text-white">
-                {captureState === 'recording' ? '● SESSION RECORDING' : captureState === 'complete' ? 'CAPTURE COMPLETE' : 'CAMERA PREVIEW'}
+                {captureState === 'recording' ? '● SESSION RECORDING' : captureState === 'processing' ? '● OFFLINE ANALYSIS' : captureState === 'complete' ? 'CAPTURE COMPLETE' : 'CAMERA PREVIEW'}
               </div>
               {captureState === 'recording' && taskPhase === 'countdown' ? (
                 <div className="absolute inset-0 grid place-items-center bg-black/55 text-center">
@@ -265,15 +315,19 @@ export default function FacialSpeechPage() {
             </div>
           </div>
 
-          <TaskGuide
-            captureState={captureState}
-            taskPhase={taskPhase}
-            currentTask={currentTask}
-            taskIndex={taskIndex}
-            completedCount={completedTasks.length}
-            onStart={startCurrentTask}
-            onComplete={completeCurrentTask}
-          />
+          {captureState === 'processing' || processingJob ? (
+            <AnalysisPanel job={processingJob} />
+          ) : (
+            <TaskGuide
+              captureState={captureState}
+              taskPhase={taskPhase}
+              currentTask={currentTask}
+              taskIndex={taskIndex}
+              completedCount={completedTasks.length}
+              onStart={startCurrentTask}
+              onComplete={completeCurrentTask}
+            />
+          )}
         </section>
 
         <section className="mt-6 rounded-2xl border border-gray-800 bg-gray-900 p-5">
@@ -348,6 +402,78 @@ function TaskGuide({
       )}
       <p className="mt-5 border-t border-gray-800 pt-4 text-xs text-gray-500">Completed task windows: {completedCount} / {FACIAL_SPEECH_TASKS.length}</p>
     </aside>
+  );
+}
+
+function AnalysisPanel({ job }: { job: FacialSpeechJob | null }) {
+  const report = job?.report;
+  const metricEntries = report ? Object.entries(report.face.metrics) : [];
+  const sustained = report?.speech.tasks.speech_sustained_a;
+  const ddk = report?.speech.tasks.speech_ddk_patka;
+
+  return (
+    <aside className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-400">Offline analysis</p>
+      <h2 className="mt-2 text-xl font-semibold">{job?.status === 'complete' ? 'Measurement report' : job?.status === 'failed' ? 'Analysis unavailable' : 'Processing capture'}</h2>
+      <p className="mt-3 text-sm leading-6 text-gray-400">{job?.message ?? 'Preparing the analysis job…'}</p>
+
+      {job?.status === 'processing' || job?.status === 'queued' ? (
+        <div className="mt-6">
+          <div className="flex justify-between text-xs text-gray-400"><span>{job.phase.replace(/_/g, ' ')}</span><span>{job.progress}%</span></div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-800">
+            <div className="h-full rounded-full bg-blue-500 transition-all duration-300" style={{ width: `${job.progress}%` }} />
+          </div>
+          <p className="mt-4 text-xs leading-5 text-gray-500">The backend is processing only the timestamped task windows, not the guide or countdown frames.</p>
+        </div>
+      ) : null}
+
+      {job?.status === 'failed' ? (
+        <div className="mt-6 rounded-lg border border-red-900/80 bg-red-950/30 p-3 text-sm text-red-200">
+          {job.error || 'The backend did not return a report.'}
+        </div>
+      ) : null}
+
+      {report ? (
+        <div className="mt-5 space-y-4">
+          <div className={`rounded-lg border p-3 text-sm ${report.quality.passed ? 'border-emerald-900 bg-emerald-950/30 text-emerald-100' : 'border-amber-800 bg-amber-950/30 text-amber-100'}`}>
+            <p className="font-semibold">{report.quality.passed ? 'Capture quality passed' : 'Capture quality needs review'}</p>
+            {report.quality.flags.length ? <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5">{report.quality.flags.map((flag) => <li key={flag}>{flag}</li>)}</ul> : <p className="mt-1 text-xs">Face visibility, illumination, and audio-clipping gates did not raise a re-capture flag.</p>}
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Facial movement measurements</p>
+            <div className="mt-2 space-y-2">
+              {metricEntries.map(([name, value]) => (
+                <div key={name} className="flex items-center justify-between gap-3 rounded bg-gray-800 px-3 py-2 text-xs">
+                  <span className="text-gray-400">{name.replace(/_/g, ' ')}</span>
+                  <span className="font-mono text-gray-100">{typeof value === 'number' ? value.toFixed(4) : 'unavailable'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <ReportMetric label="Sustained /a/ F0" value={numberFrom(sustained, 'f0_hz_median')} unit="Hz" />
+            <ReportMetric label="Sustained /a/ HNR" value={numberFrom(sustained, 'hnr_db_median')} unit="dB" />
+            <ReportMetric label="DDK peak rate" value={numberFrom(ddk, 'energy_peak_rate_hz')} unit="Hz" />
+            <ReportMetric label="DDK timing CV" value={numberFrom(ddk, 'peak_interval_cv')} unit="" />
+          </div>
+          <p className="rounded-lg bg-gray-800 p-3 text-xs leading-5 text-gray-400">{report.interpretation}</p>
+        </div>
+      ) : null}
+    </aside>
+  );
+}
+
+function numberFrom(values: Record<string, unknown> | undefined, key: string) {
+  const value = values?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function ReportMetric({ label, value, unit }: { label: string; value: number | null; unit: string }) {
+  return (
+    <div className="rounded-lg bg-gray-800 p-3">
+      <p className="text-gray-500">{label}</p>
+      <p className="mt-1 font-mono text-sm text-gray-100">{value === null ? 'unavailable' : `${value.toFixed(2)}${unit ? ` ${unit}` : ''}`}</p>
+    </div>
   );
 }
 

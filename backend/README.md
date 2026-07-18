@@ -5,6 +5,29 @@ High-accuracy, **GPU-side, non-real-time** gaze processing for the eye-tracker.
 For the end-to-end offline-mode test checklist and visual QA workflow, see
 [`../docs/OFFLINE_MODE_TESTING.md`](../docs/OFFLINE_MODE_TESTING.md).
 
+## Facial drooping and speech analysis
+
+The `/facial-speech` browser route automatically sends its final continuous
+capture to `POST /facial-speech/process` and polls
+`GET /facial-speech/jobs/{job_id}`. The UI visibly reports upload, facial
+quality/movement, speech-acoustics and summary phases before it renders the
+quality gates and measurements.
+
+Only the `tasks[].startedAtMs` / `endedAtMs` windows in the metadata are
+analysed. Guide and countdown material in the continuous source video is
+excluded. The backend uses MediaPipe FaceMesh for IPD-normalised facial movement
+geometry, FFmpeg for audio extraction, and Praat/Parselmouth for F0, HNR,
+jitter/shimmer when the signal permits, plus DDK energy-peak timing. The report
+is measurement-and-clinical-review only, not a diagnosis or NIHSS score.
+
+Rebuild after pulling this feature because the image adds MediaPipe,
+Parselmouth and FFmpeg:
+
+```bash
+cd backend
+docker compose up -d --build
+```
+
 The browser uses MediaPipe for the live cursor during a test. After the session
 the **recorded video** is sent here. This service runs a deep gaze model per
 frame, re-fits the calibration mapping from the recorded calibration dots, maps

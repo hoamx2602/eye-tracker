@@ -11,6 +11,12 @@ scikit-learn==1.5.*            # Ridge + PolynomialFeatures for calibration mapp
 scipy==1.13.*                  # Savitzky-Golay non-causal smoothing (video.py)
 pydantic==2.*
 
+# Facial movement + acoustic speech analysis for /facial-speech/process.
+# Both run offline inside the existing Docker backend; no recording leaves the
+# user's machine during local development.
+mediapipe==0.10.14
+praat-parselmouth==0.4.4
+
 # OpenFace 3.0 — multitask gaze/AU/landmark/emotion model.
 # Achieves 2.56° angular error on MPIIGaze (vs L2CS-Net's 3.92°).
 # Weights downloaded separately via `openface download` (HuggingFace nutPace/openface_weights).

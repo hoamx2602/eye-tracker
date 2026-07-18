@@ -22,9 +22,11 @@ import json
 import logging
 import os
 import tempfile
+import threading
+import uuid
 
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .calibration import CalibrationDot, fit_mapper
@@ -34,6 +36,7 @@ from .head_comp import build_compensator
 from .schemas import BiomarkersOut, GazeSampleOut, ProcessRequest, ProcessResponse, ValidationOut
 from .validation import evaluate_mapper
 from .video import process_video
+from .facial_speech import analyze_facial_speech, parse_payload
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,6 +59,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 _model: GazeModel | None = None
+_facial_speech_jobs: dict[str, dict] = {}
+_facial_speech_jobs_lock = threading.Lock()
 
 
 def get_model() -> GazeModel:
@@ -69,6 +74,64 @@ def get_model() -> GazeModel:
 def health() -> dict:
     import torch
     return {"status": "ok", "cuda": torch.cuda.is_available(), "weights_dir": WEIGHTS_DIR}
+
+
+def _facial_speech_job_view(job: dict) -> dict:
+    return {key: value for key, value in job.items() if key not in {"tmp_path"}}
+
+
+def _run_facial_speech_job(job_id: str, tmp_path: str, payload: dict) -> None:
+    def update(phase: str, progress: int, message: str) -> None:
+        with _facial_speech_jobs_lock:
+            _facial_speech_jobs[job_id].update({"status": "processing", "phase": phase, "progress": progress, "message": message})
+
+    try:
+        update("queued", 5, "Capture uploaded; starting offline analysis")
+        report = analyze_facial_speech(tmp_path, payload, update)
+        with _facial_speech_jobs_lock:
+            _facial_speech_jobs[job_id].update({"status": "complete", "phase": "complete", "progress": 100, "message": "Analysis complete", "report": report})
+    except Exception as exc:  # Return a visible job error rather than leaving the UI waiting forever.
+        logger.exception("facial-speech job %s failed", job_id)
+        with _facial_speech_jobs_lock:
+            _facial_speech_jobs[job_id].update({"status": "failed", "phase": "failed", "message": str(exc), "error": str(exc)})
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+@app.post("/facial-speech/process")
+async def start_facial_speech_process(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    payload: str = Form(...),
+) -> dict:
+    try:
+        meta = parse_payload(payload)
+        if not meta.get("tasks"):
+            raise ValueError("No completed task windows were supplied.")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    suffix = os.path.splitext(file.filename or "")[1] or ".webm"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+    job_id = uuid.uuid4().hex
+    with _facial_speech_jobs_lock:
+        _facial_speech_jobs[job_id] = {"id": job_id, "status": "queued", "phase": "queued", "progress": 0, "message": "Waiting for the analysis worker"}
+    background_tasks.add_task(_run_facial_speech_job, job_id, tmp_path, meta)
+    return _facial_speech_job_view(_facial_speech_jobs[job_id])
+
+
+@app.get("/facial-speech/jobs/{job_id}")
+def get_facial_speech_job(job_id: str) -> dict:
+    with _facial_speech_jobs_lock:
+        job = _facial_speech_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Facial-speech analysis job not found.")
+        return _facial_speech_job_view(job)
 
 
 @app.post("/process", response_model=ProcessResponse)
