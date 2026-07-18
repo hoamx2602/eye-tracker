@@ -164,6 +164,12 @@ export default function NeurologicalFlowSection({
   // Self-assessment config: read from testParameters._selfAssessment; fall back to defaults.
   const selfAssessmentConfig = extractSelfAssessmentConfig(neuroConfigSnapshot?.testParameters);
 
+  // Quick test mode (NEURO_QUICK_MODE env, surfaced via config): skip the practice
+  // phase of every test so the battery can be walked through fast for pipeline
+  // testing. head_orientation already has no practice.
+  const quickMode =
+    (neuroConfigSnapshot?.testParameters?.['_quickMode'] as { enabled?: boolean } | undefined)?.enabled === true;
+
   return (
     <>
       {status === 'NEURO_FLOW' && neuroRunStatus === 'creating' && (
@@ -207,7 +213,7 @@ export default function NeurologicalFlowSection({
             testId="visual_search"
             testLabel={TEST_LABELS.visual_search}
             guideSteps={VISUAL_SEARCH_GUIDE_STEPS}
-            enablePractice={true}
+            enablePractice={!quickMode}
             practiceContent={<VisualSearchPractice />}
             practiceTitle="Practice: Visual Search"
             testContent={<VisualSearchTest />}
@@ -232,7 +238,7 @@ export default function NeurologicalFlowSection({
             testId="memory_cards"
             testLabel={TEST_LABELS.memory_cards}
             guideSteps={MEMORY_CARDS_GUIDE_STEPS}
-            enablePractice={true}
+            enablePractice={!quickMode}
             practiceContent={<MemoryCardsPractice />}
             practiceTitle="Practice: Memory Cards (2x2)"
             testContent={<MemoryCardsTest />}
@@ -256,7 +262,7 @@ export default function NeurologicalFlowSection({
             testId="anti_saccade"
             testLabel={TEST_LABELS.anti_saccade}
             guideSteps={getAntiSaccadeGuideSteps(true)}
-            enablePractice={true}
+            enablePractice={!quickMode}
             practiceContent={(config) => <AntiSaccadePractice config={config} />}
             practiceTitle="Practice: Anti-Saccade"
             testContent={<AntiSaccadeTest />}
@@ -284,7 +290,7 @@ export default function NeurologicalFlowSection({
             testId="saccadic"
             testLabel={TEST_LABELS.saccadic}
             guideSteps={SACCADIC_GUIDE_STEPS}
-            enablePractice={true}
+            enablePractice={!quickMode}
             practiceContent={<SaccadicPractice />}
             practiceTitle="Practice: Saccadic"
             testContent={<SaccadicTest />}
@@ -300,7 +306,7 @@ export default function NeurologicalFlowSection({
             testId="fixation_stability"
             testLabel={TEST_LABELS.fixation_stability}
             guideSteps={FIXATION_STABILITY_GUIDE_STEPS}
-            enablePractice={true}
+            enablePractice={!quickMode}
             practiceContent={<FixationStabilityPractice />}
             practiceTitle="Practice: Fixation Stability"
             testContent={<FixationStabilityTest />}
@@ -316,7 +322,7 @@ export default function NeurologicalFlowSection({
             testId="peripheral_vision"
             testLabel={TEST_LABELS.peripheral_vision}
             guideSteps={PERIPHERAL_VISION_GUIDE_STEPS}
-            enablePractice={true}
+            enablePractice={!quickMode}
             practiceContent={<PeripheralVisionPractice />}
             practiceTitle="Practice: Peripheral Vision"
             testContent={<PeripheralVisionTest />}

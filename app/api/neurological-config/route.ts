@@ -3,35 +3,41 @@
  */
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getDefaultConfigSnapshot } from '@/lib/neurologicalConfig';
+import { applyQuickMode, getDefaultConfigSnapshot, isQuickModeEnv } from '@/lib/neurologicalConfig';
 
 export async function GET() {
   try {
+    const quick = isQuickModeEnv();
     const row = await prisma.neurologicalTestConfig.findUnique({
       where: { name: 'default' },
     });
 
     if (!row) {
       const defaultSnap = getDefaultConfigSnapshot();
-      console.log('[api/neurological-config GET] source=default memory_cards=', (defaultSnap.testParameters as any)?.memory_cards);
+      const testParameters = quick
+        ? applyQuickMode(defaultSnap.testParameters as Record<string, Record<string, unknown>>)
+        : defaultSnap.testParameters;
+      console.log('[api/neurological-config GET] source=default quickMode=%s memory_cards=', quick, (testParameters as any)?.memory_cards);
       return NextResponse.json(
         {
           testOrder: defaultSnap.testOrder,
-          testParameters: defaultSnap.testParameters,
+          testParameters,
           testEnabled: defaultSnap.testEnabled,
-          _source: 'default',
+          _source: quick ? 'default+quick' : 'default',
+          _quickMode: quick,
         },
         { headers: { 'Cache-Control': 'no-store' } }
       );
     }
 
     const testOrder = Array.isArray(row.testOrder) ? row.testOrder : (row.testOrder as unknown) as string[];
-    const testParameters = (row.testParameters as Record<string, unknown>) ?? {};
+    let testParameters = (row.testParameters as Record<string, unknown>) ?? {};
     const testEnabled = (row.testEnabled as Record<string, boolean>) ?? {};
-    console.log('[api/neurological-config GET] source=db updatedAt=', row.updatedAt?.toISOString?.(), 'memory_cards=', (testParameters as any)?.memory_cards);
+    if (quick) testParameters = applyQuickMode(testParameters as Record<string, Record<string, unknown>>);
+    console.log('[api/neurological-config GET] source=db quickMode=%s updatedAt=', quick, row.updatedAt?.toISOString?.(), 'memory_cards=', (testParameters as any)?.memory_cards);
 
     return NextResponse.json(
-      { testOrder, testParameters, testEnabled, _source: 'db' },
+      { testOrder, testParameters, testEnabled, _source: quick ? 'db+quick' : 'db', _quickMode: quick },
       {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate',

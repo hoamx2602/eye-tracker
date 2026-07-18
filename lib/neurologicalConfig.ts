@@ -96,6 +96,54 @@ export const DEFAULT_TEST_ENABLED: Record<string, boolean> = {
   peripheral_vision: true,
 };
 
+/**
+ * Quick test mode (env: NEURO_QUICK_MODE) — collapses every test to the smallest
+ * run each still allows, so a full 7-test battery can be walked end-to-end in a
+ * couple of minutes when what you're actually validating is the pipeline (offline
+ * export/reprocess, saving, results), not clinical data.
+ *
+ * Values are set intentionally low; each test component already clamps its own
+ * param to a safe floor (anti-saccade/saccadic ≥ 2 trials, peripheral ≥ 8 trials,
+ * fixation ≥ 5 s, head ≥ 1 s), so we don't have to track those floors here — we
+ * just ask for the minimum and let the clamps land. `_selfAssessment.enabled`
+ * false and `_quickMode` true are read by the flow (skip questions, skip practice).
+ *
+ * NOT for real assessments: results from a 1–2 trial run are not clinically
+ * meaningful. Leave the env unset in any real session.
+ */
+export const QUICK_MODE_TEST_PARAMETERS: Record<string, Record<string, unknown>> = {
+  head_orientation: { durationPerDirectionSec: 1, order: ['left'] },
+  visual_search: { numberCount: 6, practiceCount: 0 },
+  memory_cards: { cardCount: 2, dwellMs: 300 },
+  anti_saccade: { trialCount: 1, intervalBetweenTrialsMs: 200, fixationPauseMs: 200 },
+  saccadic: { totalCycles: 1, targetDurationMs: 400 },
+  fixation_stability: { durationSec: 1 },       // clamps up to the 5 s floor
+  peripheral_vision: { trialCount: 1, minDelayMs: 300, maxDelayMs: 600 },  // clamps up to 8 trials
+};
+
+/**
+ * Merge the quick-mode overrides into a resolved testParameters map (default or
+ * DB). Per-test params are shallow-merged so unrelated settings (colors, sizes)
+ * are preserved; `_selfAssessment` is disabled and `_quickMode` flagged.
+ */
+export function applyQuickMode(
+  testParameters: Record<string, Record<string, unknown>>
+): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = { ...testParameters };
+  for (const [testId, overrides] of Object.entries(QUICK_MODE_TEST_PARAMETERS)) {
+    out[testId] = { ...(out[testId] ?? {}), ...overrides };
+  }
+  out._selfAssessment = { ...(out._selfAssessment ?? {}), enabled: false };
+  out._quickMode = { enabled: true };
+  return out;
+}
+
+/** True when the NEURO_QUICK_MODE env var is set to a truthy token (server-side). */
+export function isQuickModeEnv(): boolean {
+  const v = (process.env.NEURO_QUICK_MODE ?? '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
 /** Build config snapshot for a run (testOrder + testParameters + testEnabled). */
 export function getDefaultConfigSnapshot() {
   return {
