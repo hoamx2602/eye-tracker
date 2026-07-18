@@ -57,8 +57,9 @@ import { useNeuroFlowHandlers } from '@/components/neurological/useNeuroFlowHand
 import AppMainOverlays from '@/components/AppMainOverlays';
 import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, QUICK_CALIBRATION_POINTS, roundedRect } from '@/lib/appHelpers';
-import { CalibrationMetaRecorder } from '@/lib/calibrationMeta';
+import { CalibrationMetaRecorder, type SessionMeta } from '@/lib/calibrationMeta';
 import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
+import { offlineBackendUrl, offlineHandlingEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
 
@@ -1775,6 +1776,27 @@ function App() {
       try {
         const videoBlob = await stopVideoRecordingAndGetBlob();
         maybeExportOfflineMeta(videoBlob);   // ?exportMeta=1 → local video+meta.json for offline reprocess
+        let offlineGazeReport: OfflineGazeProcessResponse | null = null;
+        if (offlineHandlingEnabled()) {
+          if (!videoBlob || videoBlob.size === 0) {
+            throw new Error('Offline handling is enabled, but no calibration video was recorded.');
+          }
+          const offlineMeta = buildOfflineSessionMeta();
+          setLoadingMsg(`Processing gaze offline on ${offlineBackendUrl()}…`);
+          console.log('[offline] sending calibration video + metadata to gaze backend', {
+            backend: offlineBackendUrl(),
+            videoBytes: videoBlob.size,
+            calibrationDots: offlineMeta.calibration_dots.length,
+            validationDots: offlineMeta.validation_dots.length,
+          });
+          offlineGazeReport = await processOfflineGaze(videoBlob, offlineMeta);
+          const offlineValidation = offlineGazeReport.validation;
+          const offlineMsg = offlineValidation
+            ? `Offline processing complete: ${offlineValidation.overall_deg.toFixed(2)}° validation error`
+            : `Offline processing complete: ${Math.round(offlineGazeReport.calibration_loocv_px)}px LOOCV`;
+          setLoadingMsg(offlineMsg);
+          console.log('[offline] gaze backend report', offlineGazeReport);
+        }
         const gridImageCount = calibrationImagesRef.current.length;
         const samples = trainingSamplesRef.current;
         const timestamp = Date.now();
@@ -1844,6 +1866,19 @@ function App() {
           config: {
             ...(configRef.current as unknown as Record<string, unknown>),
             ...(demographicsRef.current ? { demographics: demographicsRef.current } : {}),
+            ...(offlineGazeReport ? {
+              offlineGaze: {
+                status: 'completed',
+                processedAt: new Date().toISOString(),
+                backendUrl: offlineBackendUrl(),
+                report: offlineGazeReport,
+              },
+            } : offlineHandlingEnabled() ? {
+              offlineGaze: {
+                status: 'not_run',
+                reason: 'offline handling enabled but no report was produced',
+              },
+            } : {}),
             ...(testTrajectories && testTrajectories.length > 0 ? { testTrajectories, isTestSession: true } : {}),
           } as unknown as Record<string, unknown>,
           demographics: demographicsRef.current
@@ -2635,6 +2670,16 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  const buildOfflineSessionMeta = (): SessionMeta => {
+    return metaRecorderRef.current.build({
+      widthPx: window.innerWidth,
+      heightPx: window.innerHeight,
+      widthCm: 34.5,   // TODO: set to your monitor's real physical width (cm) for accurate degree units
+      viewingDistanceCm: configRef.current.faceDistance,
+      glasses: !!demographicsRef.current?.wearsGlasses,
+    });
+  };
+
   // Offline reprocessing export. With ?exportMeta=1 in the URL, downloads the
   // recorded calibration video + its meta.json (per-dot windows on the video
   // clock) so they can be dropped into backend/data and run through
@@ -2646,13 +2691,7 @@ function App() {
       const rec = metaRecorderRef.current;
       if (rec.counts.calibration === 0) return;
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
-      const metaBlob = rec.toBlob({
-        widthPx: window.innerWidth,
-        heightPx: window.innerHeight,
-        widthCm: 34.5,   // TODO: set to your monitor's real physical width (cm) for accurate degree units
-        viewingDistanceCm: configRef.current.faceDistance,
-        glasses: !!demographicsRef.current?.wearsGlasses,
-      });
+      const metaBlob = new Blob([JSON.stringify(buildOfflineSessionMeta(), null, 2)], { type: 'application/json' });
       downloadBlob(metaBlob, `session-${ts}.meta.json`);
       if (videoBlob && videoBlob.size > 0) downloadBlob(videoBlob, `session-${ts}.webm`);
       console.log(`[offline] exported meta (${rec.counts.calibration} calib / ${rec.counts.validation} valid dots) + video`);

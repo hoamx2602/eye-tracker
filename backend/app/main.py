@@ -25,12 +25,14 @@ import tempfile
 
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
 from .calibration import CalibrationDot, fit_mapper
 from .events import ScreenGeometry, detect_events
 from .gaze_model import GazeModel, _WEIGHTS_DIR as WEIGHTS_DIR
 from .head_comp import build_compensator
-from .schemas import BiomarkersOut, GazeSampleOut, ProcessRequest, ProcessResponse
+from .schemas import BiomarkersOut, GazeSampleOut, ProcessRequest, ProcessResponse, ValidationOut
+from .validation import evaluate_mapper
 from .video import process_video
 
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +45,16 @@ logger = logging.getLogger(__name__)
 _TRACE_QUALITY_GATE = 0.4
 
 app = FastAPI(title="Eye-Tracker Offline Gaze Backend", version="0.2.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.environ.get(
+        "OFFLINE_BACKEND_CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(","),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 _model: GazeModel | None = None
 
 
@@ -135,6 +147,31 @@ async def process(
         width_cm=req.screen.width_cm,
         viewing_distance_cm=req.screen.viewing_distance_cm,
     )
+
+    validation = None
+    if req.validation_dots:
+        val_dots = [
+            CalibrationDot(d.screen_x, d.screen_y, d.t_start_ms, d.t_end_ms)
+            for d in req.validation_dots
+        ]
+        rep = evaluate_mapper(
+            mapper, val_dots,
+            frames["t_ms"], frames["yaw"], frames["pitch"], geo,
+            frame_quality=quality,
+            compensator=compensator,
+            frame_head=head if compensator is not None else None,
+        )
+        validation = ValidationOut(
+            n_points=rep.n_points,
+            overall_px=rep.overall_px,
+            overall_deg=rep.overall_deg,
+            overall_px_raw=rep.overall_px_raw,
+            overall_deg_raw=rep.overall_deg_raw,
+            region_px=rep.region_px,
+            region_deg=rep.region_deg,
+            by_quality=rep.by_quality,
+        )
+
     bm = detect_events(
         frames["t_ms"], x_px, y_px, geo,
         saccade_velocity_threshold_deg_s=req.saccade_velocity_threshold_deg_s,
@@ -155,6 +192,7 @@ async def process(
         calibration_dots_total=mapper.n_dots_total,
         head_compensation_applied=compensator is not None,
         head_motion=head_motion,
+        validation=validation,
         biomarkers=BiomarkersOut(
             n_samples=bm.n_samples,
             valid_ratio=bm.valid_ratio,

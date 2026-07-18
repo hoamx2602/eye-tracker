@@ -21,6 +21,10 @@ class ScreenGeometryIn(BaseModel):
 class ProcessRequest(BaseModel):
     """Sent as a JSON form field alongside the uploaded video file."""
     calibration_dots: list[CalibrationDotIn]
+    validation_dots: list[CalibrationDotIn] = Field(
+        default_factory=list,
+        description="Held-out dots used only for reporting true offline accuracy.",
+    )
     screen: ScreenGeometryIn
     frame_stride: int = 1
     saccade_velocity_threshold_deg_s: float = 30.0
@@ -66,6 +70,17 @@ class GazeSampleOut(BaseModel):
     y: float
 
 
+class ValidationOut(BaseModel):
+    n_points: int
+    overall_px: float
+    overall_deg: float
+    overall_px_raw: float = float("nan")
+    overall_deg_raw: float = float("nan")
+    region_px: dict[str, float] = Field(default_factory=dict)
+    region_deg: dict[str, float] = Field(default_factory=dict)
+    by_quality: dict[str, dict[str, float]] = Field(default_factory=dict)
+
+
 class ProcessResponse(BaseModel):
     calibration_train_rmse_px: float = Field(
         description="In-sample calibration fit error (optimistic; sanity check only)."
@@ -97,6 +112,10 @@ class ProcessResponse(BaseModel):
             "Head displacement since calibration over the trace (cm): "
             "lateral_median/p95/max, moved_frames_frac, distance_ratio_median."
         ),
+    )
+    validation: ValidationOut | None = Field(
+        default=None,
+        description="Held-out validation-dot accuracy report, if validation_dots were supplied.",
     )
     biomarkers: BiomarkersOut
     gaze_trace: list[GazeSampleOut] = Field(
