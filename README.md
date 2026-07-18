@@ -4,6 +4,10 @@
 
 # Precision Eye Tracker
 
+## Related assessment modules
+
+- [Facial drooping & speech screening protocol](docs/FACIAL_SPEECH_SCREENING.md) — capture route: `/facial-speech`.
+
 Web-based eye tracking (MediaPipe Face Mesh, calibration, TPS/hybrid regression). **Next.js** app deployable on Vercel with API routes + PostgreSQL.
 
 ## Run locally

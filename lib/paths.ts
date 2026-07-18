@@ -26,6 +26,8 @@ export const PATHS = {
   NEURO_POST: '/neuro/post',
   /** Neuro run complete */
   NEURO_DONE: '/neuro/done',
+  /** Standalone offline facial-movement and motor-speech capture protocol */
+  FACIAL_SPEECH: '/facial-speech',
 } as const;
 
 const NEURO_TEST_IDS = [
