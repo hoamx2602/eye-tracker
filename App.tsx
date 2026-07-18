@@ -56,7 +56,7 @@ import NeurologicalFlowSection from '@/components/neurological/NeurologicalFlowS
 import { useNeuroFlowHandlers } from '@/components/neurological/useNeuroFlowHandlers';
 import AppMainOverlays from '@/components/AppMainOverlays';
 import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
-import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, roundedRect } from '@/lib/appHelpers';
+import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, QUICK_CALIBRATION_POINTS, roundedRect } from '@/lib/appHelpers';
 import { CalibrationMetaRecorder } from '@/lib/calibrationMeta';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
@@ -64,6 +64,20 @@ import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracti
 /** When true (NEXT_PUBLIC_CALIBRATION_TEST_MODE=1): after first calibration phase (grid) only, save session and show choice screen (Real-time vs Neurological). Choice is always required. */
 const CALIBRATION_TEST_MODE =
   typeof process !== 'undefined' && process.env.NEXT_PUBLIC_CALIBRATION_TEST_MODE === '1';
+
+/**
+ * Quick test mode (NEXT_PUBLIC_NEURO_QUICK_MODE=1/true/yes/on). Shrinks the
+ * one-time calibration to the smallest run the offline pipeline still accepts —
+ * a 6-dot grid (backend minimum) at FAST speed, glasses-16 bump bypassed — so
+ * the calibration + validation video + meta.json can be produced in ~10s to
+ * smoke-test the offline reprocess. The same flag (read server-side) also
+ * collapses the 7 neuro tests. Off for real sessions. See lib/neurologicalConfig.
+ */
+const NEURO_QUICK_MODE =
+  typeof process !== 'undefined' &&
+  ['1', 'true', 'yes', 'on'].includes(
+    (process.env.NEXT_PUBLIC_NEURO_QUICK_MODE ?? '').trim().toLowerCase(),
+  );
 
 function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -1313,8 +1327,11 @@ function App() {
     timerRef.current.forEach(clearTimeout);
     timerRef.current = [];
 
-    // Speed configuration logic
-    const speedMultiplier = config.calibrationSpeed === 'FAST' ? 0.5 : config.calibrationSpeed === 'SLOW' ? 1.5 : 1.0;
+    // Speed configuration logic. Quick mode forces FAST (halves prep+capture) so a
+    // calibration dot takes ~1s instead of ~2s during offline smoke testing.
+    const speedMultiplier = NEURO_QUICK_MODE
+      ? 0.5
+      : config.calibrationSpeed === 'FAST' ? 0.5 : config.calibrationSpeed === 'SLOW' ? 1.5 : 1.0;
     const prepTime = 800 * speedMultiplier;
     const captureTime = 1200 * speedMultiplier;
 
@@ -2554,13 +2571,16 @@ function App() {
     testTrajectoryRef.current = [];
 
     setCalibPhase(CalibrationPhase.INITIAL_MAPPING);
-    
+
     // Generate points based on config (denser grid for glasses wearers — see appHelpers).
+    // Quick mode overrides both with the backend-minimum 6-dot grid for fast offline testing.
     const points = generateCalibrationPoints(
-      effectiveCalibrationPointCount(
-        configRef.current.calibrationPointsCount,
-        !!demographicsRef.current?.wearsGlasses,
-      ),
+      NEURO_QUICK_MODE
+        ? QUICK_CALIBRATION_POINTS
+        : effectiveCalibrationPointCount(
+            configRef.current.calibrationPointsCount,
+            !!demographicsRef.current?.wearsGlasses,
+          ),
     );
     setCalibPoints(points);
     
@@ -2830,10 +2850,12 @@ function App() {
             setAssessmentPending(null);
             if (currentPending?.type === 'grid') {
                 setCalibPoints(generateCalibrationPoints(
-                  effectiveCalibrationPointCount(
-                    configRef.current.calibrationPointsCount,
-                    !!demographicsRef.current?.wearsGlasses,
-                  ),
+                  NEURO_QUICK_MODE
+                    ? QUICK_CALIBRATION_POINTS
+                    : effectiveCalibrationPointCount(
+                        configRef.current.calibrationPointsCount,
+                        !!demographicsRef.current?.wearsGlasses,
+                      ),
                 ));
                 setCurrentCalibIndex(0);
                 trainingSamplesRef.current = [];

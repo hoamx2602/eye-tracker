@@ -37,6 +37,15 @@ export const effectiveCalibrationPointCount = (
 ): number =>
   wearsGlasses ? Math.max(configuredCount, GLASSES_MIN_CALIBRATION_POINTS) : configuredCount;
 
+/**
+ * Quick-mode calibration grid size (NEXT_PUBLIC_NEURO_QUICK_MODE). This is the
+ * backend's minimum for a degree-2 mapping fit (backend/app/calibration.py
+ * _MIN_DOTS = 6) plus the 5 validation dots for the offline accuracy A/B — the
+ * smallest run that still lets the offline reprocess both fit AND validate.
+ * Trades accuracy for speed; smoke-testing the pipeline only, never a real run.
+ */
+export const QUICK_CALIBRATION_POINTS = 6;
+
 export const generateCalibrationPoints = (count: number): CalibrationPoint[] => {
   const points: CalibrationPoint[] = [];
   let rows = Math.round(Math.sqrt(count));

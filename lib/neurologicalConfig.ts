@@ -138,9 +138,16 @@ export function applyQuickMode(
   return out;
 }
 
-/** True when the NEURO_QUICK_MODE env var is set to a truthy token (server-side). */
+/**
+ * True when quick test mode is enabled via env. Reads NEXT_PUBLIC_NEURO_QUICK_MODE
+ * (client-visible, so the same flag also shrinks calibration in App.tsx) and
+ * falls back to the legacy server-only NEURO_QUICK_MODE. Works server-side (API
+ * route) and client-side.
+ */
 export function isQuickModeEnv(): boolean {
-  const v = (process.env.NEURO_QUICK_MODE ?? '').trim().toLowerCase();
+  const v = (process.env.NEXT_PUBLIC_NEURO_QUICK_MODE ?? process.env.NEURO_QUICK_MODE ?? '')
+    .trim()
+    .toLowerCase();
   return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 
