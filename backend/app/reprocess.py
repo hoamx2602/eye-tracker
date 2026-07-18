@@ -53,7 +53,13 @@ def _dots(raw: list[dict]) -> list[CalibrationDot]:
     return [CalibrationDot(d["screen_x"], d["screen_y"], d["t_start_ms"], d["t_end_ms"]) for d in raw]
 
 
-def reprocess(video_path: str, meta: dict, weights_dir: str | None = None, model=None) -> dict:
+def reprocess(
+    video_path: str,
+    meta: dict,
+    weights_dir: str | None = None,
+    model=None,
+    include_trace: bool = False,
+) -> dict:
     """
     Full offline pipeline for one session. `model` may be injected (anything with
     an `infer_batch(frames) -> list[FrameGaze | None]`) so the pipeline is
@@ -100,7 +106,7 @@ def reprocess(video_path: str, meta: dict, weights_dir: str | None = None, model
     )
 
     mapper = analysis["mapper"]
-    return {
+    report = {
         "glasses": meta.get("glasses"),
         "head": {
             "compensation_applied": analysis["compensator"] is not None,
@@ -121,6 +127,38 @@ def reprocess(video_path: str, meta: dict, weights_dir: str | None = None, model
         "personalization": personalization,
         "biomarkers": asdict(bm),
     }
+    if include_trace:
+        report["debug_trace"] = _debug_trace(analysis["frames"], x_px, y_px)
+    return report
+
+
+def _finite_or_none(v: float) -> float | None:
+    return float(v) if np.isfinite(v) else None
+
+
+def _debug_trace(frames: dict, x_px: np.ndarray, y_px: np.ndarray) -> list[dict]:
+    """Compact per-frame trace for visual replay/debugging."""
+    t_ms = frames["t_ms"]
+    yaw = frames["yaw"]
+    pitch = frames["pitch"]
+    quality = frames.get("quality")
+    head_u = frames.get("head_u")
+    head_v = frames.get("head_v")
+    head_w = frames.get("head_w")
+    out: list[dict] = []
+    for i, t in enumerate(t_ms):
+        out.append({
+            "t": round(float(t), 1),
+            "x": _finite_or_none(x_px[i]),
+            "y": _finite_or_none(y_px[i]),
+            "yaw": _finite_or_none(yaw[i]),
+            "pitch": _finite_or_none(pitch[i]),
+            "q": _finite_or_none(quality[i]) if quality is not None else None,
+            "hu": _finite_or_none(head_u[i]) if head_u is not None else None,
+            "hv": _finite_or_none(head_v[i]) if head_v is not None else None,
+            "hw": _finite_or_none(head_w[i]) if head_w is not None else None,
+        })
+    return out
 
 
 def _analyze(frames: dict, meta: dict, geo: ScreenGeometry, cal_dots: list[CalibrationDot]) -> dict:
@@ -265,6 +303,8 @@ def main() -> None:
     ap.add_argument("--personalize", action="store_true",
                     help="experimental per-subject gaze-head fine-tuning "
                          "(kept only if it beats the baseline on held-out dots)")
+    ap.add_argument("--include-trace", action="store_true",
+                    help="include per-frame debug_trace for app.replay visualization")
     args = ap.parse_args()
 
     with open(args.meta) as f:
@@ -272,7 +312,7 @@ def main() -> None:
     if args.personalize:
         meta["personalize"] = True
 
-    report = reprocess(args.video, meta, weights_dir=args.weights)
+    report = reprocess(args.video, meta, weights_dir=args.weights, include_trace=args.include_trace)
     out = json.dumps(report, indent=2)
     if args.out:
         with open(args.out, "w") as f:

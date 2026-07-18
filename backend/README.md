@@ -290,6 +290,49 @@ startup latency does not shift the calibration center.
 
 ---
 
+## Offline replay / visual QA
+
+Numbers are necessary but not enough. For debugging a real session, generate a
+side-by-side replay: webcam video on the left, backend screen-space gaze on the
+right, synchronized by timestamp.
+
+```bash
+# 1) Reprocess with per-frame debug trace included.
+python -m app.reprocess --video ./data/session-<ts>.webm \
+                        --meta  ./data/session-<ts>.meta.json \
+                        --out   ./data/report.json \
+                        --include-trace
+
+# 2) Generate a self-contained HTML viewer next to the video.
+python -m app.replay --video  ./data/session-<ts>.webm \
+                     --meta   ./data/session-<ts>.meta.json \
+                     --report ./data/report.json \
+                     --out    ./data/offline-replay.html
+```
+
+Open `data/offline-replay.html` in a browser. Use it to verify:
+
+- active calibration/validation dots line up with the subject's fixation in the
+  video;
+- the gaze dot lands near the expected target after the settling phase;
+- missing/glare frames are visibly gated instead of creating fake saccades;
+- head-compensation improves validation (`raw no-comp` vs `validation error`) and
+  does not overcorrect.
+
+Inside Docker:
+
+```bash
+docker compose exec gaze-backend python3 -m app.reprocess \
+  --video /data/session-<ts>.webm --meta /data/session-<ts>.meta.json \
+  --out /data/report.json --include-trace
+
+docker compose exec gaze-backend python3 -m app.replay \
+  --video /data/session-<ts>.webm --meta /data/session-<ts>.meta.json \
+  --report /data/report.json --out /data/offline-replay.html
+```
+
+---
+
 ## Environment variables
 
 | Variable | Default | Description |
