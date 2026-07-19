@@ -10,7 +10,9 @@ import {
 import {
   facialSpeechHandlingEnabled,
   getFacialSpeechJob,
+  isSideMeasure,
   startFacialSpeechProcessing,
+  type FaceMetricValue,
   type FacialSpeechJob,
 } from '@/lib/facialSpeechBackend';
 
@@ -443,10 +445,7 @@ function AnalysisPanel({ job }: { job: FacialSpeechJob | null }) {
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Facial movement measurements</p>
             <div className="mt-2 space-y-2">
               {metricEntries.map(([name, value]) => (
-                <div key={name} className="flex items-center justify-between gap-3 rounded bg-gray-800 px-3 py-2 text-xs">
-                  <span className="text-gray-400">{name.replace(/_/g, ' ')}</span>
-                  <span className="font-mono text-gray-100">{typeof value === 'number' ? value.toFixed(4) : 'unavailable'}</span>
-                </div>
+                <FaceMetricRow key={name} name={name} value={value} />
               ))}
             </div>
           </div>
@@ -460,6 +459,33 @@ function AnalysisPanel({ job }: { job: FacialSpeechJob | null }) {
         </div>
       ) : null}
     </aside>
+  );
+}
+
+function FaceMetricRow({ name, value }: { name: string; value: FaceMetricValue }) {
+  const label = name.replace(/_/g, ' ');
+  if (isSideMeasure(value)) {
+    const ratio = value.ratio_weaker_over_stronger;
+    return (
+      <div className="rounded bg-gray-800 px-3 py-2 text-xs">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-gray-400">{label}</span>
+          <span className="font-mono text-gray-100">{ratio === null ? 'unavailable' : ratio.toFixed(4)}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-gray-500">
+          <span className="font-mono">L {value.left === null ? '—' : value.left.toFixed(4)} · R {value.right === null ? '—' : value.right.toFixed(4)}</span>
+          {value.weaker_side ? <span className="text-amber-300">reduced on the {value.weaker_side}</span> : null}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between gap-3 rounded bg-gray-800 px-3 py-2 text-xs">
+      <span className="text-gray-400">{label}</span>
+      <span className="font-mono text-gray-100">
+        {typeof value === 'number' ? value.toFixed(4) : typeof value === 'string' ? value : 'unavailable'}
+      </span>
+    </div>
   );
 }
 

@@ -1,5 +1,23 @@
 import { offlineBackendUrl } from '@/lib/offlineGazeBackend';
 
+/**
+ * A left/right facial measurement. `left`/`right` are the subject's anatomical
+ * sides. `weaker_side` is reported separately because a bare ratio cannot say
+ * which side is affected, which is the clinically decisive part.
+ */
+export interface SideMeasure {
+  left: number | null;
+  right: number | null;
+  ratio_weaker_over_stronger: number | null;
+  weaker_side: 'left' | 'right' | null;
+}
+
+export type FaceMetricValue = number | string | SideMeasure | null;
+
+export function isSideMeasure(value: FaceMetricValue): value is SideMeasure {
+  return typeof value === 'object' && value !== null && 'ratio_weaker_over_stronger' in value;
+}
+
 export interface FacialSpeechReport {
   version: string;
   interpretation: string;
@@ -9,7 +27,7 @@ export interface FacialSpeechReport {
     face: Record<string, number | null>;
     speech: Record<string, { duration_s?: number; rms_dbfs?: number; clipping_ratio?: number } | undefined>;
   };
-  face: { metrics: Record<string, number | null>; task_frame_counts: Record<string, number> };
+  face: { metrics: Record<string, FaceMetricValue>; task_frame_counts: Record<string, number> };
   speech: {
     tasks: Record<string, Record<string, unknown>>;
     asr: { available: boolean; reason?: string };

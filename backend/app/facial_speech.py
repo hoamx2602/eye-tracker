@@ -14,9 +14,12 @@ import wave
 from pathlib import Path
 from typing import Any, Callable
 
-import cv2
 import numpy as np
 from scipy.signal import find_peaks
+
+# cv2 and mediapipe are imported inside analyze_facial_speech: they are only
+# needed for video decoding, and keeping them out of module import lets the
+# feature/geometry logic be unit-tested without the full vision stack.
 
 Progress = Callable[[str, int, str], None]
 
@@ -26,35 +29,73 @@ def _median(values: list[float]) -> float | None:
     return float(np.median(valid)) if valid else None
 
 
-def _ratio(a: float | None, b: float | None) -> float | None:
-    if a is None or b is None or min(a, b) <= 1e-8:
+def _side_ratio(left: float | None, right: float | None) -> dict[str, Any]:
+    """Left/right comparison that preserves *which* side is reduced.
+
+    A bare min/max ratio is symmetric and therefore throws away the single most
+    clinically relevant fact about facial weakness: the affected side. Callers
+    get both raw sides, the weaker-over-stronger ratio, and an explicit side
+    label. `left`/`right` are always the *subject's* anatomical sides.
+    """
+    if left is None or right is None or not math.isfinite(left) or not math.isfinite(right):
+        return {"left": left, "right": right, "ratio_weaker_over_stronger": None, "weaker_side": None}
+    if max(left, right) <= 1e-8:
+        return {"left": float(left), "right": float(right), "ratio_weaker_over_stronger": None, "weaker_side": None}
+    return {
+        "left": float(left),
+        "right": float(right),
+        "ratio_weaker_over_stronger": float(min(left, right) / max(left, right)),
+        "weaker_side": "left" if left < right else "right" if right < left else None,
+    }
+
+
+# MediaPipe FaceMesh landmark indices. MediaPipe names sides anatomically, from
+# the *subject's* perspective, and the captured stream is never mirrored (the
+# CSS preview mirror does not reach MediaRecorder), so image space and anatomy
+# agree. Getting this backwards would report facial weakness on the wrong side,
+# so the constants are named explicitly rather than inlined.
+EYE_OUTER_R, EYE_OUTER_L = 33, 263
+MOUTH_CORNER_R, MOUTH_CORNER_L = 61, 291
+BROW_R, BROW_L = 105, 334
+LID_UPPER_R, LID_LOWER_R = 159, 145
+LID_UPPER_L, LID_LOWER_L = 386, 374
+NOSE_BRIDGE, NOSE_TIP = 168, 4
+SIDE_CONVENTION = "subject-anatomical"
+
+
+def _pixel_points(points: list[Any], width: int, height: int) -> np.ndarray:
+    """MediaPipe normalises x by frame width and y by frame height separately.
+
+    Mixing those two scales in a Euclidean distance silently stretches the
+    horizontal axis by the frame aspect ratio (1.78x at 16:9), which corrupts
+    IPD and therefore every IPD-normalised measure, and makes results
+    incomparable across capture resolutions. Convert to pixels first.
+    """
+    return np.array([[p.x * width, p.y * height] for p in points], dtype=np.float64)
+
+
+def _distance(points: np.ndarray, first: int, second: int) -> float:
+    return float(np.linalg.norm(points[first] - points[second]))
+
+
+def _face_features(points: np.ndarray) -> dict[str, float] | None:
+    # Every measure is normalised by IPD so it stays comparable when the subject
+    # moves closer to the webcam. Sides follow SIDE_CONVENTION.
+    ipd = _distance(points, EYE_OUTER_R, EYE_OUTER_L)
+    if ipd < 1.0:  # pixels; a face this small cannot support landmark geometry
         return None
-    return float(min(a, b) / max(a, b))
-
-
-def _distance(points: list[Any], first: int, second: int) -> float:
-    a, b = points[first], points[second]
-    return math.hypot(a.x - b.x, a.y - b.y)
-
-
-def _face_features(points: list[Any]) -> dict[str, float] | None:
-    # MediaPipe FaceMesh semantic indices. Each measure is normalised by IPD so
-    # it remains comparable despite a subject moving closer to the webcam.
-    ipd = _distance(points, 33, 263)
-    if ipd < 1e-5:
-        return None
-    mouth_left, mouth_right = points[61], points[291]
+    mouth_r, mouth_l = points[MOUTH_CORNER_R], points[MOUTH_CORNER_L]
     return {
         "ipd": ipd,
-        "mouth_corner_vertical_asymmetry": abs(mouth_left.y - mouth_right.y) / ipd,
-        "mouth_left_x": mouth_left.x,
-        "mouth_left_y": mouth_left.y,
-        "mouth_right_x": mouth_right.x,
-        "mouth_right_y": mouth_right.y,
-        "brow_left": _distance(points, 105, 159) / ipd,
-        "brow_right": _distance(points, 334, 386) / ipd,
-        "eye_left": _distance(points, 159, 145) / ipd,
-        "eye_right": _distance(points, 386, 374) / ipd,
+        "mouth_corner_vertical_asymmetry": abs(mouth_l[1] - mouth_r[1]) / ipd,
+        "mouth_left_x": float(mouth_l[0]),
+        "mouth_left_y": float(mouth_l[1]),
+        "mouth_right_x": float(mouth_r[0]),
+        "mouth_right_y": float(mouth_r[1]),
+        "brow_left": _distance(points, BROW_L, LID_UPPER_L) / ipd,
+        "brow_right": _distance(points, BROW_R, LID_UPPER_R) / ipd,
+        "eye_left": _distance(points, LID_UPPER_L, LID_LOWER_L) / ipd,
+        "eye_right": _distance(points, LID_UPPER_R, LID_LOWER_R) / ipd,
     }
 
 
@@ -157,9 +198,10 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
 
     progress("face_quality", 20, "Checking face visibility, framing, and facial movement windows")
     try:
+        import cv2
         import mediapipe as mp
     except ImportError as exc:
-        raise RuntimeError("MediaPipe is not installed. Rebuild the Docker backend after updating requirements.") from exc
+        raise RuntimeError("MediaPipe/OpenCV are not installed. Rebuild the Docker backend after updating requirements.") from exc
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -194,7 +236,8 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
             detected = face_mesh.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).multi_face_landmarks
             if not detected:
                 continue
-            features = _face_features(detected[0].landmark)
+            height, width = frame.shape[:2]
+            features = _face_features(_pixel_points(detected[0].landmark, width, height))
             if features is None:
                 continue
             valid_frames += 1
@@ -236,13 +279,14 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
         "brightness_median_0_255": _median(brightness),
         "blur_variance_median": _median(blur),
     }
+    smile_left_peak = float(np.percentile(left_excursion, 90)) if left_excursion else None
+    smile_right_peak = float(np.percentile(right_excursion, 90)) if right_excursion else None
     face_metrics = {
+        "side_convention": SIDE_CONVENTION,
         "resting_mouth_corner_vertical_asymmetry_ipd": _median([item["mouth_corner_vertical_asymmetry"] for item in rest]),
-        "smile_left_excursion_ipd": float(np.percentile(left_excursion, 90)) if left_excursion else None,
-        "smile_right_excursion_ipd": float(np.percentile(right_excursion, 90)) if right_excursion else None,
-        "smile_excursion_ratio": _ratio(float(np.percentile(left_excursion, 90)) if left_excursion else None, float(np.percentile(right_excursion, 90)) if right_excursion else None),
-        "brow_excursion_ratio": _ratio(brow_left_peak, brow_right_peak),
-        "eye_closure_residual_ratio": _ratio(closure_left, closure_right),
+        "smile_excursion_ipd": _side_ratio(smile_left_peak, smile_right_peak),
+        "brow_excursion_ipd": _side_ratio(brow_left_peak, brow_right_peak),
+        "eye_closure_residual_ratio": _side_ratio(closure_left, closure_right),
     }
 
     progress("speech", 58, "Extracting audio windows and acoustic speech features")
