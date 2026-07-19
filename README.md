@@ -6,7 +6,8 @@
 
 ## Related assessment modules
 
-- [Facial drooping & speech screening protocol](docs/FACIAL_SPEECH_SCREENING.md) — capture route: `/facial-speech`.
+- [Facial drooping & speech screening protocol](docs/FACIAL_SPEECH_SCREENING.md) — capture route: `/facial-speech`. Design rationale, validation plan and release gates.
+- [Facial/speech assessments & implemented metrics](docs/FACIAL_SPEECH_ASSESSMENTS_AND_METRICS.md) — reference: the established clinical instruments, the task battery, every quality gate and every metric the report emits.
 
 Web-based eye tracking (MediaPipe Face Mesh, calibration, TPS/hybrid regression). **Next.js** app deployable on Vercel with API routes + PostgreSQL.
 

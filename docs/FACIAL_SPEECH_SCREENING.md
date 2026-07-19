@@ -1,5 +1,10 @@
 # Facial drooping & speech analysis — clinical-screening design
 
+This file covers the **design rationale, the validation plan and the release
+gates**. For a reference of the established clinical instruments, the task
+battery, and every quality gate and metric the report currently emits, see
+[FACIAL_SPEECH_ASSESSMENTS_AND_METRICS.md](FACIAL_SPEECH_ASSESSMENTS_AND_METRICS.md).
+
 ## Scope and safety
 
 This module is an **offline, video-and-audio screening/measurement tool**. It must
