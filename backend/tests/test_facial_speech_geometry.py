@@ -23,6 +23,9 @@ from app.facial_speech import (  # noqa: E402
     LID_UPPER_R,
     MOUTH_CORNER_L,
     MOUTH_CORNER_R,
+    NOSE_BRIDGE,
+    NOSE_TIP,
+    PHILTRUM,
     BROW_L,
     BROW_R,
     _face_features,
@@ -47,6 +50,7 @@ def _synthetic_face(
     *,
     mouth_drop_px_left: float = 0.0,
     brow_raise_px_left: float = 0.0,
+    philtrum_shift_px: float = 0.0,
 ) -> list[_Landmark]:
     """A synthetic face in pixel space, converted back to MediaPipe normals.
 
@@ -80,6 +84,11 @@ def _synthetic_face(
     # Mouth corners level, except for a left-side droop (y grows downward).
     place(MOUTH_CORNER_R, centre_x - mouth_half, centre_y + mouth_drop)
     place(MOUTH_CORNER_L, centre_x + mouth_half, centre_y + mouth_drop + mouth_drop_px_left)
+    # Midline landmarks. Placed off the frame centre so a test that expects a
+    # zero deviation is testing the projection rather than a coincidence.
+    place(NOSE_BRIDGE, centre_x, centre_y - width * (10.0 / 1280.0))
+    place(NOSE_TIP, centre_x, centre_y + width * (35.0 / 1280.0))
+    place(PHILTRUM, centre_x + philtrum_shift_px, centre_y + mouth_drop * 0.8)
     return points
 
 
@@ -151,6 +160,33 @@ def test_side_ratio_refuses_missing_or_degenerate_input() -> None:
         assert measure["ratio_weaker_over_stronger"] is None
         assert measure["weaker_side"] is None
     assert _side_ratio(float("nan"), 4.0)["ratio_weaker_over_stronger"] is None
+
+
+def test_philtrum_deviation_is_zero_on_a_symmetric_face() -> None:
+    assert _features(1280, 720)["philtrum_deviation"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_a_deviated_philtrum_is_measured_and_signed() -> None:
+    shifted = _features(1280, 720, philtrum_shift_px=12.0)
+    # u points toward the subject's left, normalised by an IPD of 0.2 * width.
+    assert shifted["philtrum_deviation"] == pytest.approx(12.0 / (0.2 * 1280))
+    assert _features(1280, 720, philtrum_shift_px=-12.0)["philtrum_deviation"] < 0
+
+
+def test_philtrum_deviation_follows_the_face_axis_not_the_image_axis() -> None:
+    """A tilted head must not read as a deviated philtrum."""
+    landmarks = _synthetic_face(1280, 720)
+    rolled = _rigid_transform(landmarks, 1280, 720, roll_deg=14.0, shift_px=(50.0, -30.0))
+    features = _face_features(_pixel_points(rolled, 1280, 720))
+    assert features is not None
+    assert features["philtrum_deviation"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_mouth_corner_spread_is_measured_per_side() -> None:
+    features = _features(1280, 720)
+    # 6% of frame width either side of the midline, over a 20%-width IPD.
+    assert features["mouth_left_spread"] == pytest.approx(0.3, abs=1e-6)
+    assert features["mouth_right_spread"] == pytest.approx(0.3, abs=1e-6)
 
 
 def test_peak_reads_the_movement_not_the_rest_around_it() -> None:

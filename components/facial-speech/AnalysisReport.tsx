@@ -198,15 +198,20 @@ function ConnectedSpeechPanel({ task }: { task: Record<string, unknown> }) {
   const series = asSpeechSeries(task.series);
   return (
     <>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <Stat label="Speech rate" value={fmt(num(task.speech_rate_syllables_per_s), 2, '/s')} hint="includes pauses" />
+        <Stat label="Articulation rate" value={fmt(num(task.articulation_rate_syllables_per_s), 2, '/s')} hint="excludes pauses" />
         <Stat label="Speaking-time ratio" value={fmt(num(task.speaking_time_ratio) !== null ? num(task.speaking_time_ratio)! * 100 : null, 0, '%')} />
         <Stat label="Pauses" value={String(num(task.pause_count) ?? '—')} />
         <Stat label="Median pause" value={fmt(num(task.pause_duration_s_median), 2, 's')} />
         <Stat label="F0 median" value={fmt(num(task.f0_hz_median), 1, 'Hz')} />
       </div>
       <p className="mt-3 text-[11px] leading-4 text-gray-500">
-        Separates slow speech caused by pausing from slow articulation. Articulation rate itself needs syllable-level alignment and
-        arrives with the language-specific ASR stage.
+        Two subjects can share a speech rate while one pauses heavily and the other articulates slowly; only the second is a
+        motor-speech finding.{' '}
+        {task.rate_basis
+          ? 'Rates use the syllable count declared with the prompt and assume it was read as given — a misread or skipped word shifts them.'
+          : 'No rate is shown because the prompt declares no syllable count.'}
       </p>
       {series ? (
         <div className="mt-4">

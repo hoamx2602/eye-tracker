@@ -188,8 +188,10 @@ All geometric features are normalised by interpupillary distance (IPD) and use
 the subject's neutral frame as the origin. Report a median and 95% bootstrap CI
 over valid frames, not one selected frame.
 
-- Resting facial-asymmetry index: brow, palpebral fissure, philtrum, and
-  mouth-corner displacement relative to the facial midline.
+- Resting facial-asymmetry panel: brow height, palpebral fissure, mouth-corner
+  spread and vertical drop, and philtrum deviation, all relative to the facial
+  midline. This needs no voluntary movement, so it survives a movement window
+  that fails its gates.
 - Smile/show-teeth: left and right mouth-corner excursion, excursion ratio,
   vertical corner difference, onset/peak latency, and within-trial repeatability.
 - Brow raise and eye closure: left/right excursion ratio, residual eye aperture,
@@ -216,9 +218,14 @@ over valid frames, not one selected frame.
   permits.
 - DDK: syllables/s, `pa-ta-ka` cycle timing median/IQR/CV, pause count/duration,
   and repeated-trial reliability.
-- Connected speech: speech and articulation rate, pause ratio, mean/SD pause
-  duration, F0 and intensity range, voiced/unvoiced balance, and speaking-time
-  ratio.
+- Connected speech: speech rate, articulation rate, pause count and duration,
+  F0 and intensity, and speaking-time ratio. Speech rate counts pauses and
+  articulation rate does not — a subject can be slow because they pause or
+  because each syllable takes longer, and only the second is a motor-speech
+  finding. Both are derived from the syllable count **declared alongside the
+  prompt**, not hardcoded in the processor, so a Vietnamese word list brings its
+  own count instead of being scored against English syllables. They assume the
+  prompt was read as given; forced alignment replaces that assumption later.
 - Fixed utterance: ASR text, word error rate, phoneme error rate, forced-alignment
   confidence, and an intelligibility proxy. Store the reference prompt/version;
   never treat ASR error as a diagnosis because accent and language affect it.

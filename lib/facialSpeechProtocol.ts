@@ -10,6 +10,13 @@ export interface FacialSpeechTask {
   captureNotes: string;
   /** Only used during a speech task; placed immediately below the webcam preview. */
   nearLensPrompt?: string;
+  /**
+   * Syllables the task asks the subject to produce, counted for the prompt as
+   * written. Articulation rate is derived from this, so the count belongs with
+   * the prompt: a Vietnamese word list must bring its own rather than being
+   * scored against English syllables. Omit when the count is not fixed.
+   */
+  expectedSyllables?: number;
 }
 
 export interface MetricDefinition {
@@ -116,6 +123,8 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     captureNotes:
       'This is the actual NIHSS list, chosen to stress different articulators, so the recording is directly comparable with a clinician-graded NIHSS dysarthria item. Vietnamese cohorts need a tone-balanced list of their own; do not read English error rates against Vietnamese speech.',
     nearLensPrompt: 'MAMA · TIP-TOP · FIFTY-FIFTY · THANKS · HUCKLEBERRY · BASEBALL PLAYER',
+    // 17 syllables per pass (2+2+4+1+4+4), read twice.
+    expectedSyllables: 34,
   },
   {
     id: 'speech_counting',
@@ -125,6 +134,8 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     durationSec: 18,
     clinicalAnchor: 'Connected-speech rate, pausing, intelligibility',
     captureNotes: 'Do not rush; keep a consistent distance from the microphone.',
+    // English "one" through "twenty": 11 syllables for 1-10, 21 for 11-20.
+    expectedSyllables: 32,
   },
 ];
 
@@ -138,16 +149,26 @@ export const FACIAL_SPEECH_METRICS: MetricDefinition[] = [
   { id: 'eye_closure_asymmetry', domain: 'face', label: 'Eye-closure residual asymmetry', unit: 'ratio', purpose: 'Compares residual palpebral aperture at maximum closure.', status: 'implemented' },
   { id: 'upper_versus_lower_face', domain: 'face', label: 'Upper- versus lower-face symmetry gap', unit: 'ratio difference', purpose: 'Whether the forehead is involved. Reported raw, with no cut-off applied.', status: 'implemented' },
   { id: 'ocular_narrowing_during_smile', domain: 'face', label: 'Ocular narrowing during smile', unit: 'ratio', purpose: 'Synkinesis proxy: involuntary eye narrowing accompanying a voluntary smile.', status: 'implemented' },
-  { id: 'resting_asymmetry_full', domain: 'face', label: 'Full resting asymmetry panel', unit: 'ratio', purpose: 'Adds brow, palpebral-fissure and philtrum displacement to the resting measure.', status: 'planned' },
-  { id: 'au_left_right_delta', domain: 'face', label: 'Left/right Facial Action Unit delta', unit: 'score', purpose: 'AU12/AU6, brow, blink and lip-corner activation.', status: 'planned' },
+  { id: 'resting_asymmetry_full', domain: 'face', label: 'Resting brow, palpebral fissure and philtrum', unit: 'ratio, IPD', purpose: 'The resting panel a clinician reads first. Needs no voluntary movement, so it survives an unusable movement window.', status: 'implemented' },
   { id: 'sustained_f0', domain: 'speech', label: 'F0 and F0 variation', unit: 'Hz', purpose: 'Pitch stability, measured per phonation and reported as a median across trials.', status: 'implemented' },
   { id: 'jitter_shimmer_hnr', domain: 'speech', label: 'Jitter, shimmer, HNR', unit: '% / % / dB', purpose: 'Periodicity and voice quality, measured on the steady middle of each sustained vowel.', status: 'implemented' },
   { id: 'maximum_phonation_time', domain: 'speech', label: 'Maximum phonation time', unit: 's', purpose: 'Longest single sustained /a/; never used alone for diagnosis.', status: 'implemented' },
   { id: 'ddk_rate_regularity', domain: 'speech', label: 'Pa-ta-ka energy-peak rate and regularity', unit: 'peaks/s, CV', purpose: 'Timing and regularity of sequential speech movement, measured per run. A proxy for syllable rate, not a syllable count.', status: 'implemented' },
   { id: 'connected_speech_timing', domain: 'speech', label: 'Pause count, pause duration, speaking-time ratio', unit: 'count, s, %', purpose: 'Separates slow speech caused by pausing from slow articulation.', status: 'implemented' },
   { id: 'prosody', domain: 'speech', label: 'Pitch and intensity variation', unit: 'Hz / dB', purpose: 'Monotonicity and breath-control measurements over connected speech.', status: 'implemented' },
-  { id: 'articulation_rate', domain: 'speech', label: 'Speech and articulation rate', unit: 'syllables/s', purpose: 'Needs syllable-level alignment, so it arrives with the language-specific ASR stage.', status: 'planned' },
-  { id: 'asr_alignment', domain: 'speech', label: 'Reading alignment / word-phoneme error', unit: 'WER, PER, confidence', purpose: 'Fixed-utterance intelligibility proxy, always paired with audio quality.', status: 'planned' },
+  { id: 'articulation_rate', domain: 'speech', label: 'Speech and articulation rate', unit: 'syllables/s', purpose: 'Separates slow speech caused by pausing from slow articulation, using the syllable count declared with the prompt.', status: 'implemented' },
+];
+
+/**
+ * Measurements the design calls for that the processor does not yet produce.
+ * Deliberately kept out of FACIAL_SPEECH_METRICS: that list is rendered to the
+ * subject as what the report will contain, and listing work-in-progress there
+ * makes the product promise measurements it will not deliver. Tracked in
+ * docs/FACIAL_SPEECH_SCREENING.md.
+ */
+export const FACIAL_SPEECH_ROADMAP_METRICS: MetricDefinition[] = [
+  { id: 'au_left_right_delta', domain: 'face', label: 'Left/right Facial Action Unit delta', unit: 'score', purpose: 'AU12/AU6, brow, blink and lip-corner activation. Needs the OpenFace 3.0 AU head output order pinned against the published mapping first.', status: 'planned' },
+  { id: 'asr_alignment', domain: 'speech', label: 'Reading alignment / word-phoneme error', unit: 'WER, PER, confidence', purpose: 'Fixed-utterance intelligibility proxy. Needs a language-matched ASR and forced aligner; English error rates must not be applied to Vietnamese speech.', status: 'planned' },
 ];
 
 export const FACIAL_SPEECH_PROTOCOL_VERSION = '1.0.0';

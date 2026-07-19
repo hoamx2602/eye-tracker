@@ -115,8 +115,15 @@ export default function FacialSpeechPage() {
         videoIncludesUntimedGuidance: true,
       },
       tasks: completedTasksRef.current,
-      expectedTaskOrder: FACIAL_SPEECH_TASKS.map((task) => ({ id: task.id, domain: task.domain, durationSec: task.durationSec })),
-      metricsRequested: FACIAL_SPEECH_METRICS.map((metric) => metric.id),
+      expectedTaskOrder: FACIAL_SPEECH_TASKS.map((task) => ({
+        id: task.id,
+        domain: task.domain,
+        durationSec: task.durationSec,
+        expectedSyllables: task.expectedSyllables ?? null,
+      })),
+      // Only what the processor actually computes. Listing planned metrics here
+      // would make the manifest claim measurements the report will not contain.
+      metricsRequested: FACIAL_SPEECH_METRICS.filter((metric) => metric.status === 'implemented').map((metric) => metric.id),
       // What the offline processor actually enforces. Keep this in step with
       // the backend gates: a manifest that claims a gate the processor does not
       // run is a false provenance record.
@@ -584,9 +591,6 @@ function MetricPanel({ title, metrics }: { title: string; metrics: MetricDefinit
               <span className="shrink-0 text-xs text-blue-300">{metric.unit}</span>
             </div>
             <p className="mt-1 text-xs leading-5 text-gray-500">{metric.purpose}</p>
-            {metric.status === 'planned' ? (
-              <p className="mt-1.5 inline-block rounded bg-gray-700 px-1.5 py-0.5 text-[11px] text-gray-300">Not yet in the report</p>
-            ) : null}
           </div>
         ))}
       </div>

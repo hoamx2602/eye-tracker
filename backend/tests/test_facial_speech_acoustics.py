@@ -156,6 +156,31 @@ def test_connected_speech_reports_pause_structure() -> None:
     assert report["pause_ratio"] == pytest.approx(1.0 - report["speaking_time_ratio"])
 
 
+def test_speech_and_articulation_rate_are_reported_separately() -> None:
+    """The point of the task: slow because of pauses, or slow per syllable.
+
+    Two subjects can share a speech rate while one pauses heavily and the other
+    articulates slowly, and only the second is a motor-speech finding.
+    """
+    # 6 s of speech spread over 8 s of window, for a declared 24 syllables.
+    samples = np.concatenate([_vowel(2.0), _silence(1.0), _vowel(2.0), _silence(1.0), _vowel(2.0)])
+    report, issues = _speech_features(samples, SAMPLE_RATE, "speech_counting", expected_syllables=24)
+    assert report["available"] is True, issues
+    assert report["speech_rate_syllables_per_s"] == pytest.approx(24 / 8.0, rel=0.1)
+    assert report["articulation_rate_syllables_per_s"] == pytest.approx(24 / 6.0, rel=0.1)
+    assert report["articulation_rate_syllables_per_s"] > report["speech_rate_syllables_per_s"]
+    assert report["rate_basis"] == "assumes-prompt-read-as-given"
+
+
+def test_no_rate_is_invented_when_the_prompt_declares_no_syllable_count() -> None:
+    """A hardcoded English count applied to a Vietnamese prompt would be wrong
+    in a way nothing downstream could detect."""
+    samples = np.concatenate([_vowel(2.0), _silence(1.0), _vowel(2.0)])
+    report, _ = _speech_features(samples, SAMPLE_RATE, "speech_counting")
+    assert "articulation_rate_syllables_per_s" not in report
+    assert report["speaking_time_ratio"] is not None
+
+
 def test_across_trials_reports_spread_as_repeatability_evidence() -> None:
     aggregate = _across_trials([10.0, 12.0, 14.0])
     assert aggregate["median"] == 12.0

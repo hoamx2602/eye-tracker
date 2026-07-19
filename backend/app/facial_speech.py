@@ -124,6 +124,7 @@ BROW_R, BROW_L = 105, 334
 LID_UPPER_R, LID_LOWER_R = 159, 145
 LID_UPPER_L, LID_LOWER_L = 386, 374
 NOSE_BRIDGE, NOSE_TIP = 168, 4
+PHILTRUM = 164
 SIDE_CONVENTION = "subject-anatomical"
 
 
@@ -191,8 +192,18 @@ def _face_features(points: np.ndarray) -> dict[str, float] | None:
     # exactly what a rest-relative comparison answers.
     bridge_u, _ = _local(points[NOSE_BRIDGE], origin, u, v, ipd)
     _, tip_v = _local(points[NOSE_TIP], origin, u, v, ipd)
+    philtrum_u, _ = _local(points[PHILTRUM], origin, u, v, ipd)
     return {
         "ipd": ipd,
+        # Horizontal deviation of the philtrum from the facial midline, which is
+        # part of the resting-asymmetry picture a clinician reads and needs no
+        # movement task to observe.
+        "philtrum_deviation": philtrum_u,
+        # Signed horizontal spread of each mouth corner from the midline. Taken
+        # separately from the vertical drop, because a corner can be pulled
+        # across without dropping and vice versa.
+        "mouth_left_spread": abs(mouth_l_u),
+        "mouth_right_spread": abs(mouth_r_u),
         "roll_deg": float(math.degrees(math.atan2(u[1], u[0]))),
         "yaw_proxy": bridge_u,
         "pitch_proxy": tip_v,
@@ -279,6 +290,7 @@ def _speech_features(
     task_id: str,
     include_ddk: bool = False,
     session_noise_floor: float | None = None,
+    expected_syllables: float | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     """Acoustic features for one task window, gated before anything is computed.
 
@@ -379,7 +391,7 @@ def _speech_features(
     elif include_ddk:
         result.update(_ddk_metrics(envelope, sample_rate, trials, peak))
     else:
-        result.update(_connected_speech_metrics(samples, sample_rate, trials))
+        result.update(_connected_speech_metrics(samples, sample_rate, trials, expected_syllables))
     return result, issues
 
 
@@ -624,6 +636,7 @@ def _connected_speech_metrics(
     samples: np.ndarray,
     sample_rate: int,
     trials: list[tuple[int, int]],
+    expected_syllables: float | None = None,
 ) -> dict[str, Any]:
     """Timing structure of connected speech: phonation versus pausing."""
     total_s = samples.size / sample_rate
@@ -633,7 +646,22 @@ def _connected_speech_metrics(
         for index in range(len(trials) - 1)
     ]
     voice = _voice_quality(samples[trials[0][0]:trials[-1][1]], sample_rate) or {}
+    # Speech rate counts the pauses; articulation rate does not. Separating them
+    # is the point of the task: a subject can be slow because they pause a lot
+    # or because each syllable takes longer, and those are different findings.
+    # The syllable count travels with the prompt rather than being hardcoded
+    # here, so a Vietnamese prompt carries its own count. It assumes the prompt
+    # was read as given, which is why it is reported as a proxy.
+    rates: dict[str, Any] = {}
+    if expected_syllables and total_s > 0 and speaking_s > 0:
+        rates = {
+            "expected_syllables": float(expected_syllables),
+            "speech_rate_syllables_per_s": float(expected_syllables / total_s),
+            "articulation_rate_syllables_per_s": float(expected_syllables / speaking_s),
+            "rate_basis": "assumes-prompt-read-as-given",
+        }
     return {
+        **rates,
         "speaking_time_ratio": float(speaking_s / total_s) if total_s > 0 else None,
         "pause_ratio": float(1.0 - speaking_s / total_s) if total_s > 0 else None,
         "pause_count": len(pauses),
@@ -736,6 +764,10 @@ def _blank_face_metrics() -> dict[str, Any]:
     return {
         "side_convention": SIDE_CONVENTION,
         "resting_mouth_corner_vertical_asymmetry_ipd": None,
+        "resting_brow_height": _side_ratio(None, None),
+        "resting_palpebral_fissure": _side_ratio(None, None),
+        "resting_mouth_corner_spread": _side_ratio(None, None),
+        "resting_philtrum_deviation_ipd": None,
         "smile_excursion_ipd": _side_ratio(None, None),
         "brow_excursion_ipd": _side_ratio(None, None),
         "eye_closure_residual_ratio": _side_ratio(None, None),
@@ -794,6 +826,20 @@ def _face_metrics(
     metrics["resting_mouth_corner_vertical_asymmetry_ipd"] = _median(
         [item["mouth_corner_vertical_asymmetry"] for item in rest]
     )
+    # The full resting panel. Resting asymmetry needs no voluntary movement, so
+    # it survives when a movement window is unusable, and it is the part a
+    # clinician reads first from a still.
+    metrics["resting_brow_height"] = _side_ratio(
+        _median([item["brow_left"] for item in rest]), _median([item["brow_right"] for item in rest])
+    )
+    metrics["resting_palpebral_fissure"] = _side_ratio(
+        _median([item["eye_left"] for item in rest]), _median([item["eye_right"] for item in rest])
+    )
+    metrics["resting_mouth_corner_spread"] = _side_ratio(
+        _median([item["mouth_left_spread"] for item in rest]),
+        _median([item["mouth_right_spread"] for item in rest]),
+    )
+    metrics["resting_philtrum_deviation_ipd"] = _median([item["philtrum_deviation"] for item in rest])
     rest_mouth_left = np.median(np.array([[item["mouth_left_u"], item["mouth_left_v"]] for item in rest]), axis=0)
     rest_mouth_right = np.median(np.array([[item["mouth_right_u"], item["mouth_right_v"]] for item in rest]), axis=0)
     rest_brow_left = _median([item["brow_left"] for item in rest])
@@ -998,10 +1044,26 @@ def _render_key_frames(
     return rendered
 
 
+def _expected_syllables(payload: dict[str, Any]) -> dict[str, float]:
+    """Syllable counts declared by the capture protocol, per task.
+
+    These live with the prompt rather than in this module, so swapping in a
+    Vietnamese word list brings its own count instead of silently being scored
+    against English syllables.
+    """
+    counts: dict[str, float] = {}
+    for task in payload.get("expectedTaskOrder") or []:
+        value = task.get("expectedSyllables") if isinstance(task, dict) else None
+        if isinstance(value, (int, float)) and value > 0 and task.get("id"):
+            counts[str(task["id"])] = float(value)
+    return counts
+
+
 def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Progress) -> dict[str, Any]:
     tasks = payload.get("tasks") or []
     if not tasks:
         raise ValueError("Metadata has no completed task windows. Complete every task before processing.")
+    expected_syllables = _expected_syllables(payload)
 
     progress("face_quality", 20, "Checking face visibility, framing, and facial movement windows")
     try:
@@ -1150,6 +1212,7 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
                 task_id,
                 include_ddk=task_id == "speech_ddk_patka",
                 session_noise_floor=session_noise_floor,
+                expected_syllables=expected_syllables.get(task_id),
             )
             speech_tasks[task_id] = report
             speech_issues.extend(issues)
