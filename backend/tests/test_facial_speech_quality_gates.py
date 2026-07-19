@@ -28,14 +28,14 @@ SAMPLE_RATE = 16000
 FACE_TASKS = ("face_rest", "face_brow_raise", "face_eye_closure", "face_smile_show_teeth")
 
 
-def _frame(*, brow: float = 0.5, eye: float = 0.1, mouth_y: float = 100.0) -> dict[str, float]:
+def _frame(*, brow: float = 0.5, eye: float = 0.1, mouth_v: float = 0.4) -> dict[str, float]:
     return {
         "ipd": 256.0,
         "mouth_corner_vertical_asymmetry": 0.0,
-        "mouth_left_x": 140.0,
-        "mouth_left_y": mouth_y,
-        "mouth_right_x": 100.0,
-        "mouth_right_y": mouth_y,
+        "mouth_left_u": 0.2,
+        "mouth_left_v": mouth_v,
+        "mouth_right_u": -0.2,
+        "mouth_right_v": mouth_v,
         "brow_left": brow,
         "brow_right": brow,
         "eye_left": eye,

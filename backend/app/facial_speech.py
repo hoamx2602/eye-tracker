@@ -65,6 +65,22 @@ def _median(values: list[float]) -> float | None:
     return float(np.median(valid)) if valid else None
 
 
+def _peak(values: list[float]) -> float | None:
+    """Excursion at its maximum, robust to a few mistracked frames.
+
+    A movement window contains the movement *and* the relaxed periods around
+    it, so a central statistic measures mostly rest.
+    """
+    valid = [value for value in values if math.isfinite(value)]
+    return float(np.percentile(valid, 90)) if valid else None
+
+
+def _trough(values: list[float]) -> float | None:
+    """The counterpart of _peak for measures where closure is the extreme."""
+    valid = [value for value in values if math.isfinite(value)]
+    return float(np.percentile(valid, 10)) if valid else None
+
+
 def _side_ratio(left: float | None, right: float | None) -> dict[str, Any]:
     """Left/right comparison that preserves *which* side is reduced.
 
@@ -114,20 +130,55 @@ def _distance(points: np.ndarray, first: int, second: int) -> float:
     return float(np.linalg.norm(points[first] - points[second]))
 
 
+def _face_frame(points: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, float] | None:
+    """A coordinate system carried by the face itself.
+
+    Landmark positions in image space move whenever the head does. Measuring a
+    smile as displacement from a rest position recorded ~30 s earlier therefore
+    charged any head translation to both mouth corners at once, which pushed the
+    left/right ratio toward 1.0 and masked real asymmetry - the failure
+    direction that matters for a screening tool. Head roll separately faked
+    vertical mouth-corner asymmetry.
+
+    The basis is built from the outer eye corners, which barely move during
+    facial expression: origin at their midpoint, u pointing toward the subject's
+    left, v downward, both scaled by IPD. That removes translation, in-plane
+    rotation and scale. Out-of-plane rotation is left to the head-pose gate.
+    """
+    eye_r, eye_l = points[EYE_OUTER_R], points[EYE_OUTER_L]
+    origin = (eye_r + eye_l) / 2.0
+    axis = eye_l - eye_r
+    ipd = float(np.linalg.norm(axis))
+    if ipd < 1.0:  # pixels; a face this small cannot support landmark geometry
+        return None
+    u = axis / ipd
+    v = np.array([-u[1], u[0]])  # image y grows downward, so this points down
+    return origin, u, v, ipd
+
+
+def _local(point: np.ndarray, origin: np.ndarray, u: np.ndarray, v: np.ndarray, ipd: float) -> tuple[float, float]:
+    offset = point - origin
+    return float(np.dot(offset, u) / ipd), float(np.dot(offset, v) / ipd)
+
+
 def _face_features(points: np.ndarray) -> dict[str, float] | None:
     # Every measure is normalised by IPD so it stays comparable when the subject
     # moves closer to the webcam. Sides follow SIDE_CONVENTION.
-    ipd = _distance(points, EYE_OUTER_R, EYE_OUTER_L)
-    if ipd < 1.0:  # pixels; a face this small cannot support landmark geometry
+    frame = _face_frame(points)
+    if frame is None:
         return None
-    mouth_r, mouth_l = points[MOUTH_CORNER_R], points[MOUTH_CORNER_L]
+    origin, u, v, ipd = frame
+    mouth_l_u, mouth_l_v = _local(points[MOUTH_CORNER_L], origin, u, v, ipd)
+    mouth_r_u, mouth_r_v = _local(points[MOUTH_CORNER_R], origin, u, v, ipd)
     return {
         "ipd": ipd,
-        "mouth_corner_vertical_asymmetry": abs(mouth_l[1] - mouth_r[1]) / ipd,
-        "mouth_left_x": float(mouth_l[0]),
-        "mouth_left_y": float(mouth_l[1]),
-        "mouth_right_x": float(mouth_r[0]),
-        "mouth_right_y": float(mouth_r[1]),
+        # Taken along the face's own vertical axis, so head roll no longer
+        # registers as a dropped mouth corner.
+        "mouth_corner_vertical_asymmetry": abs(mouth_l_v - mouth_r_v),
+        "mouth_left_u": mouth_l_u,
+        "mouth_left_v": mouth_l_v,
+        "mouth_right_u": mouth_r_u,
+        "mouth_right_v": mouth_r_v,
         "brow_left": _distance(points, BROW_L, LID_UPPER_L) / ipd,
         "brow_right": _distance(points, BROW_R, LID_UPPER_R) / ipd,
         "eye_left": _distance(points, LID_UPPER_L, LID_LOWER_L) / ipd,
@@ -544,8 +595,8 @@ def _face_metrics(
     metrics["resting_mouth_corner_vertical_asymmetry_ipd"] = _median(
         [item["mouth_corner_vertical_asymmetry"] for item in rest]
     )
-    rest_mouth_left = np.median(np.array([[item["mouth_left_x"], item["mouth_left_y"]] for item in rest]), axis=0)
-    rest_mouth_right = np.median(np.array([[item["mouth_right_x"], item["mouth_right_y"]] for item in rest]), axis=0)
+    rest_mouth_left = np.median(np.array([[item["mouth_left_u"], item["mouth_left_v"]] for item in rest]), axis=0)
+    rest_mouth_right = np.median(np.array([[item["mouth_right_u"], item["mouth_right_v"]] for item in rest]), axis=0)
     rest_brow_left = _median([item["brow_left"] for item in rest])
     rest_brow_right = _median([item["brow_right"] for item in rest])
     rest_eye_left = _median([item["eye_left"] for item in rest])
@@ -564,30 +615,35 @@ def _face_metrics(
 
     smile = movement_frames("face_smile_show_teeth")
     if smile is not None:
+        # Coordinates are already IPD-normalised and head-motion compensated.
         left = [
-            float(math.hypot(item["mouth_left_x"] - rest_mouth_left[0], item["mouth_left_y"] - rest_mouth_left[1]) / item["ipd"])
+            float(math.hypot(item["mouth_left_u"] - rest_mouth_left[0], item["mouth_left_v"] - rest_mouth_left[1]))
             for item in smile
         ]
         right = [
-            float(math.hypot(item["mouth_right_x"] - rest_mouth_right[0], item["mouth_right_y"] - rest_mouth_right[1]) / item["ipd"])
+            float(math.hypot(item["mouth_right_u"] - rest_mouth_right[0], item["mouth_right_v"] - rest_mouth_right[1]))
             for item in smile
         ]
-        metrics["smile_excursion_ipd"] = _side_ratio(
-            float(np.percentile(left, 90)), float(np.percentile(right, 90))
-        )
+        metrics["smile_excursion_ipd"] = _side_ratio(_peak(left), _peak(right))
 
     brow = movement_frames("face_brow_raise")
     if brow is not None and rest_brow_left is not None and rest_brow_right is not None:
+        # The window holds two raises separated by relaxed periods, so its
+        # median is dominated by rest and lands near zero; dividing two
+        # near-zero medians produced noise. Take the excursion at its peak, as
+        # the smile measure already did.
         metrics["brow_excursion_ipd"] = _side_ratio(
-            _median([max(0.0, item["brow_left"] - rest_brow_left) for item in brow]),
-            _median([max(0.0, item["brow_right"] - rest_brow_right) for item in brow]),
+            _peak([max(0.0, item["brow_left"] - rest_brow_left) for item in brow]),
+            _peak([max(0.0, item["brow_right"] - rest_brow_right) for item in brow]),
         )
 
     closure = movement_frames("face_eye_closure")
     if closure is not None and rest_eye_left and rest_eye_right:
+        # Residual aperture at maximum closure. A low percentile rather than the
+        # outright minimum, so one mistracked frame cannot define the result.
         metrics["eye_closure_residual_ratio"] = _side_ratio(
-            min(item["eye_left"] / rest_eye_left for item in closure),
-            min(item["eye_right"] / rest_eye_right for item in closure),
+            _trough([item["eye_left"] / rest_eye_left for item in closure]),
+            _trough([item["eye_right"] / rest_eye_right for item in closure]),
         )
 
     return metrics, issues

@@ -26,8 +26,10 @@ from app.facial_speech import (  # noqa: E402
     BROW_L,
     BROW_R,
     _face_features,
+    _peak,
     _pixel_points,
     _side_ratio,
+    _trough,
 )
 
 
@@ -123,8 +125,8 @@ def test_left_sided_droop_is_attributed_to_the_left_side() -> None:
     unmirrored frame. Swapping these would report weakness on the wrong side.
     """
     features = _features(1280, 720, mouth_drop_px_left=10.0)
-    # y grows downward, so the dropped corner has the larger y.
-    assert features["mouth_left_y"] > features["mouth_right_y"]
+    # v points down the face's own vertical axis, so the dropped corner is larger.
+    assert features["mouth_left_v"] > features["mouth_right_v"]
     assert features["mouth_corner_vertical_asymmetry"] == pytest.approx(10.0 / (0.2 * 1280))
 
 
@@ -151,9 +153,77 @@ def test_side_ratio_refuses_missing_or_degenerate_input() -> None:
     assert _side_ratio(float("nan"), 4.0)["ratio_weaker_over_stronger"] is None
 
 
+def test_peak_reads_the_movement_not_the_rest_around_it() -> None:
+    """A movement window is mostly rest, so a central statistic misses it."""
+    window = [0.0] * 80 + [0.30] * 20  # two brief raises inside a relaxed window
+    assert _peak(window) == pytest.approx(0.30)
+    assert float(np.median(window)) == pytest.approx(0.0)
+
+
+def test_trough_ignores_a_single_mistracked_frame() -> None:
+    closure = [0.20] * 40 + [0.0]  # one frame where the landmark collapsed
+    assert _trough(closure) == pytest.approx(0.20, abs=0.02)
+
+
+def test_peak_and_trough_refuse_an_empty_window() -> None:
+    assert _peak([]) is None
+    assert _trough([]) is None
+
+
 def test_a_face_too_small_for_geometry_is_rejected() -> None:
     landmarks = [_Landmark(0.5, 0.5) for _ in range(478)]
     assert _face_features(_pixel_points(landmarks, 1280, 720)) is None
+
+
+def _rigid_transform(
+    landmarks: list[_Landmark],
+    width: int,
+    height: int,
+    *,
+    shift_px: tuple[float, float] = (0.0, 0.0),
+    roll_deg: float = 0.0,
+    scale: float = 1.0,
+) -> list[_Landmark]:
+    """Move the whole head without changing a single facial expression."""
+    pixels = _pixel_points(landmarks, width, height)
+    centre = pixels.mean(axis=0)
+    theta = np.radians(roll_deg)
+    rotation = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+    moved = (pixels - centre) @ rotation.T * scale + centre + np.array(shift_px)
+    return [_Landmark(point[0] / width, point[1] / height) for point in moved]
+
+
+@pytest.mark.parametrize(
+    "transform",
+    [
+        {"shift_px": (90.0, -45.0)},
+        {"roll_deg": 12.0},
+        {"scale": 1.25},
+        {"shift_px": (-60.0, 30.0), "roll_deg": -8.0, "scale": 0.85},
+    ],
+)
+def test_measurements_are_invariant_to_rigid_head_motion(transform: dict) -> None:
+    """Head movement between the rest and movement windows must not register.
+
+    The subject leans in or tilts between tasks as a matter of course. Charging
+    that motion to the facial measurement inflated both mouth corners equally,
+    pulling the left/right ratio toward 1.0 and hiding real asymmetry, while
+    head roll faked a dropped mouth corner outright.
+    """
+    landmarks = _synthetic_face(1280, 720, mouth_drop_px_left=10.0)
+    baseline = _face_features(_pixel_points(landmarks, 1280, 720))
+    moved = _face_features(_pixel_points(_rigid_transform(landmarks, 1280, 720, **transform), 1280, 720))
+    assert baseline is not None and moved is not None
+    for key in ("mouth_corner_vertical_asymmetry", "mouth_left_u", "mouth_left_v", "mouth_right_u", "mouth_right_v"):
+        assert moved[key] == pytest.approx(baseline[key], abs=1e-6), key
+
+
+def test_head_roll_alone_does_not_create_mouth_corner_asymmetry() -> None:
+    landmarks = _synthetic_face(1280, 720)  # a perfectly symmetric face
+    rolled = _rigid_transform(landmarks, 1280, 720, roll_deg=15.0)
+    features = _face_features(_pixel_points(rolled, 1280, 720))
+    assert features is not None
+    assert features["mouth_corner_vertical_asymmetry"] == pytest.approx(0.0, abs=1e-6)
 
 
 def test_pixel_points_applies_each_axis_scale() -> None:
