@@ -6,7 +6,9 @@ validation study described in docs/FACIAL_SPEECH_SCREENING.md.
 """
 from __future__ import annotations
 
+import base64
 import json
+import logging
 import math
 import subprocess
 import tempfile
@@ -20,6 +22,8 @@ from scipy.signal import find_peaks
 # cv2 and mediapipe are imported inside analyze_facial_speech: they are only
 # needed for video decoding, and keeping them out of module import lets the
 # feature/geometry logic be unit-tested without the full vision stack.
+
+logger = logging.getLogger(__name__)
 
 Progress = Callable[[str, int, str], None]
 
@@ -359,13 +363,57 @@ def _speech_features(
         result["available"] = False
         return result, issues
 
+    # The trace behind the numbers: which stretches were treated as speech, and
+    # where the gate sat. Without it, "2 trials detected" from a 3-repetition
+    # task is an assertion a reviewer has no way to check.
+    result["series"] = {
+        "duration_s": float(samples.size / sample_rate),
+        "envelope": _downsample(envelope),
+        "gate": speech_gate,
+        "trials_s": [[start / sample_rate, end / sample_rate] for start, end in trials],
+    }
+
     if task_id == "speech_sustained_a":
         result.update(_sustained_vowel_metrics(samples, sample_rate, trials, task_id, issues))
+        result["series"]["f0"] = _f0_contour(samples, sample_rate, trials)
     elif include_ddk:
         result.update(_ddk_metrics(envelope, sample_rate, trials, peak))
     else:
         result.update(_connected_speech_metrics(samples, sample_rate, trials))
     return result, issues
+
+
+def _f0_contour(samples: np.ndarray, sample_rate: int, trials: list[tuple[int, int]]) -> list[dict[str, Any]]:
+    """Pitch track per phonation, so pitch instability is visible as a shape.
+
+    A median and an SD cannot distinguish a steady voice from one that drifts or
+    breaks; the contour can, and voice breaks show up as gaps.
+    """
+    contours: list[dict[str, Any]] = []
+    try:
+        import parselmouth
+    except Exception:
+        return contours
+    for index, (start, end) in enumerate(trials):
+        segment = samples[start:end]
+        if segment.size < sample_rate:
+            continue
+        try:
+            sound = parselmouth.Sound(segment, sampling_frequency=sample_rate)
+            floor, ceiling = _pitch_range(sound)
+            pitch = sound.to_pitch(time_step=0.01, pitch_floor=floor, pitch_ceiling=ceiling)
+            values = pitch.selected_array["frequency"]
+        except Exception:
+            continue
+        contours.append({
+            "trial": index + 1,
+            "start_s": start / sample_rate,
+            "step_s": 0.01,
+            # Unvoiced frames come back as 0; null keeps them as breaks in the
+            # line rather than a plunge to the axis.
+            "hz": [float(value) if value > 0 else None for value in _downsample(values, 400)],
+        })
+    return contours
 
 
 def _active_segments(
@@ -674,6 +722,16 @@ def _upper_versus_lower(brow: dict[str, Any], smile: dict[str, Any]) -> dict[str
     }
 
 
+def _downsample(values: list[float] | np.ndarray, target: int = 600) -> list[float]:
+    """Thin a series for transport. Charts cannot resolve more than a few
+    hundred points across a panel, and the raw arrays are per-sample."""
+    array = np.asarray(values, dtype=np.float64)
+    if array.size <= target:
+        return [float(value) for value in array]
+    step = int(np.ceil(array.size / target))
+    return [float(value) for value in array[::step]]
+
+
 def _blank_face_metrics() -> dict[str, Any]:
     return {
         "side_convention": SIDE_CONVENTION,
@@ -731,7 +789,7 @@ def _face_metrics(
         ))
 
     if _blocking(issues):
-        return metrics, issues
+        return metrics, issues, {"series": {}, "key_frame_t_ms": {}}
 
     metrics["resting_mouth_corner_vertical_asymmetry_ipd"] = _median(
         [item["mouth_corner_vertical_asymmetry"] for item in rest]
@@ -759,6 +817,30 @@ def _face_metrics(
             return None
         return frames
 
+    series: dict[str, Any] = {}
+    key_frames: dict[str, float] = {"rest": _median([item["t_ms"] for item in rest]) or 0.0}
+
+    def record_series(task_id: str, frames: list[dict[str, float]], label: str, unit: str,
+                      left: list[float], right: list[float], peak_key: str, use_trough: bool = False) -> None:
+        """Keep the per-frame trace behind each summary number.
+
+        A single ratio cannot show whether the subject performed the movement
+        twice as asked, whether the two sides peaked together, or whether the
+        window caught a mistrack - all of which a reviewer needs before
+        trusting the summary.
+        """
+        combined = [(a + b) / 2 for a, b in zip(left, right)]
+        index = int(np.argmin(combined) if use_trough else np.argmax(combined))
+        key_frames[peak_key] = frames[index]["t_ms"]
+        series[task_id] = {
+            "label": label,
+            "unit": unit,
+            "t_ms": [item["t_ms"] for item in frames],
+            "left": left,
+            "right": right,
+            "peak_t_ms": frames[index]["t_ms"],
+        }
+
     smile = movement_frames("face_smile_show_teeth")
     if smile is not None:
         # Coordinates are already IPD-normalised and head-motion compensated.
@@ -771,6 +853,7 @@ def _face_metrics(
             for item in smile
         ]
         metrics["smile_excursion_ipd"] = _side_ratio(_peak(left), _peak(right))
+        record_series("face_smile_show_teeth", smile, "Mouth-corner excursion from rest", "IPD", left, right, "smile_peak")
 
     brow = movement_frames("face_brow_raise")
     if brow is not None and rest_brow_left is not None and rest_brow_right is not None:
@@ -778,10 +861,10 @@ def _face_metrics(
         # median is dominated by rest and lands near zero; dividing two
         # near-zero medians produced noise. Take the excursion at its peak, as
         # the smile measure already did.
-        metrics["brow_excursion_ipd"] = _side_ratio(
-            _peak([max(0.0, item["brow_left"] - rest_brow_left) for item in brow]),
-            _peak([max(0.0, item["brow_right"] - rest_brow_right) for item in brow]),
-        )
+        left = [max(0.0, item["brow_left"] - rest_brow_left) for item in brow]
+        right = [max(0.0, item["brow_right"] - rest_brow_right) for item in brow]
+        metrics["brow_excursion_ipd"] = _side_ratio(_peak(left), _peak(right))
+        record_series("face_brow_raise", brow, "Brow elevation from rest", "IPD", left, right, "brow_peak")
 
     if smile is not None and rest_eye_left and rest_eye_right:
         # Synkinesis proxy: involuntary eye narrowing while smiling, which is a
@@ -800,12 +883,119 @@ def _face_metrics(
     if closure is not None and rest_eye_left and rest_eye_right:
         # Residual aperture at maximum closure. A low percentile rather than the
         # outright minimum, so one mistracked frame cannot define the result.
-        metrics["eye_closure_residual_ratio"] = _side_ratio(
-            _trough([item["eye_left"] / rest_eye_left for item in closure]),
-            _trough([item["eye_right"] / rest_eye_right for item in closure]),
+        left = [item["eye_left"] / rest_eye_left for item in closure]
+        right = [item["eye_right"] / rest_eye_right for item in closure]
+        metrics["eye_closure_residual_ratio"] = _side_ratio(_trough(left), _trough(right))
+        record_series(
+            "face_eye_closure", closure, "Eye aperture relative to rest", "ratio",
+            left, right, "eye_closed", use_trough=True,
         )
 
-    return metrics, issues
+    return metrics, issues, {"series": series, "key_frame_t_ms": key_frames}
+
+
+# Series colours, matched to the frontend charts so a landmark drawn on a face
+# and a line on a plot mean the same side. Left is blue, right is green; both
+# are also labelled, so identity never rests on colour alone.
+_SIDE_BGR = {"left": (229, 135, 57), "right": (0, 131, 0)}
+
+
+def _annotate_frame(
+    cv2: Any,
+    frame: np.ndarray,
+    points: np.ndarray,
+    caption: str,
+    rest_mouth: dict[str, tuple[float, float]] | None = None,
+) -> np.ndarray:
+    """Draw the measurement onto the frame it was taken from.
+
+    A reviewer cannot judge a landmark-derived number without seeing where the
+    landmarks landed. This renders the face-local axes the measurement uses, the
+    two mouth corners in their series colours, and - when a rest reference is
+    available - the displacement vector that the excursion figure is the length
+    of.
+    """
+    canvas = frame.copy()
+    geometry = _face_frame(points)
+    if geometry is not None:
+        origin, u, v, ipd = geometry
+        # The facial midline: the axis every symmetry measure is taken across.
+        top = origin - v * ipd * 0.9
+        bottom = origin + v * ipd * 1.6
+        cv2.line(canvas, tuple(top.astype(int)), tuple(bottom.astype(int)), (120, 120, 120), 1, cv2.LINE_AA)
+        # The interocular line, which sets scale and in-plane rotation.
+        cv2.line(
+            canvas,
+            tuple(points[EYE_OUTER_R].astype(int)),
+            tuple(points[EYE_OUTER_L].astype(int)),
+            (120, 120, 120), 1, cv2.LINE_AA,
+        )
+        for side, index in (("left", MOUTH_CORNER_L), ("right", MOUTH_CORNER_R)):
+            point = points[index].astype(int)
+            colour = _SIDE_BGR[side]
+            if rest_mouth and side in rest_mouth:
+                anchor = origin + u * (rest_mouth[side][0] * ipd) + v * (rest_mouth[side][1] * ipd)
+                cv2.arrowedLine(canvas, tuple(anchor.astype(int)), tuple(point), colour, 2, cv2.LINE_AA, tipLength=0.25)
+            cv2.circle(canvas, tuple(point), 5, colour, -1, cv2.LINE_AA)
+            cv2.circle(canvas, tuple(point), 5, (255, 255, 255), 1, cv2.LINE_AA)
+            label_x = point[0] + (12 if side == "left" else -28)
+            cv2.putText(canvas, side[0].upper(), (label_x, point[1] + 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+        for index in (BROW_L, BROW_R, LID_UPPER_L, LID_UPPER_R, LID_LOWER_L, LID_LOWER_R):
+            cv2.circle(canvas, tuple(points[index].astype(int)), 3, (200, 200, 200), -1, cv2.LINE_AA)
+
+    cv2.rectangle(canvas, (0, 0), (canvas.shape[1], 28), (20, 20, 20), -1)
+    cv2.putText(canvas, caption, (10, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (240, 240, 240), 1, cv2.LINE_AA)
+    return canvas
+
+
+def _render_key_frames(
+    cv2: Any,
+    mp: Any,
+    video_path: str,
+    targets: dict[str, float],
+    rest_mouth: dict[str, tuple[float, float]] | None,
+    width: int = 480,
+) -> dict[str, str]:
+    """Re-decode only the handful of frames worth showing.
+
+    A second pass is cheaper than it looks and far cheaper than holding every
+    sampled frame in memory against the chance it turns out to be the peak.
+    """
+    if not targets:
+        return {}
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return {}
+    wanted = sorted(targets.items(), key=lambda item: item[1])
+    rendered: dict[str, str] = {}
+    face_mesh = mp.solutions.face_mesh.FaceMesh(
+        static_image_mode=True, max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5
+    )
+    try:
+        for name, t_ms in wanted:
+            cap.set(cv2.CAP_PROP_POS_MSEC, float(t_ms))
+            ok, frame = cap.read()
+            if not ok:
+                continue
+            height, frame_width = frame.shape[:2]
+            detected = face_mesh.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).multi_face_landmarks
+            if not detected:
+                continue
+            points = _pixel_points(detected[0].landmark, frame_width, height)
+            caption = f"{name.replace('_', ' ')}  ·  t = {t_ms / 1000.0:.1f}s"
+            annotated = _annotate_frame(
+                cv2, frame, points, caption, rest_mouth if name != "rest" else None
+            )
+            scale = width / annotated.shape[1]
+            annotated = cv2.resize(annotated, (width, int(annotated.shape[0] * scale)), interpolation=cv2.INTER_AREA)
+            ok, buffer = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 78])
+            if ok:
+                rendered[name] = "data:image/jpeg;base64," + base64.b64encode(buffer.tobytes()).decode("ascii")
+    finally:
+        face_mesh.close()
+        cap.release()
+    return rendered
 
 
 def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Progress) -> dict[str, Any]:
@@ -872,6 +1062,7 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
             if features is None:
                 continue
             valid_frames += 1
+            features["t_ms"] = t_ms
             for task_id, window in task_windows.items():
                 if window and window[0] <= t_ms <= window[1]:
                     task_frames[task_id].append(features)
@@ -887,7 +1078,25 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
         "blur_variance_median": _median(blur),
         "frame_timestamps_from_container": timestamps_usable,
     }
-    face_metrics, face_issues = _face_metrics(task_frames, face_quality)
+    face_metrics, face_issues, face_visuals = _face_metrics(task_frames, face_quality)
+
+    progress("key_frames", 42, "Rendering annotated frames at rest and at each movement peak")
+    rest_frames = task_frames.get("face_rest") or []
+    rest_mouth = (
+        {
+            "left": (float(np.median([item["mouth_left_u"] for item in rest_frames])),
+                     float(np.median([item["mouth_left_v"] for item in rest_frames]))),
+            "right": (float(np.median([item["mouth_right_u"] for item in rest_frames])),
+                      float(np.median([item["mouth_right_v"] for item in rest_frames]))),
+        }
+        if rest_frames
+        else None
+    )
+    try:
+        key_frame_images = _render_key_frames(cv2, mp, video_path, face_visuals["key_frame_t_ms"], rest_mouth)
+    except Exception:  # illustration must never take the measurement down with it
+        logger.exception("failed to render facial-speech key frames")
+        key_frame_images = {}
 
     progress("speech", 58, "Extracting audio windows and acoustic speech features")
     with tempfile.TemporaryDirectory(prefix="facial-speech-") as temp_dir:
@@ -977,6 +1186,8 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
             "available": not _blocking(face_issues),
             "metrics": face_metrics,
             "task_frame_counts": {key: len(value) for key, value in task_frames.items()},
+            "series": face_visuals["series"],
+            "key_frames": key_frame_images,
         },
         "speech": {"tasks": speech_tasks, "asr": {"available": False, "reason": "ASR/phoneme alignment is a later language-specific validation stage."}},
     }
