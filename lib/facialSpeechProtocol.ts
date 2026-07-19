@@ -5,7 +5,16 @@ export interface FacialSpeechTask {
   domain: FacialSpeechDomain;
   title: string;
   instruction: string;
+  /** How long the task is meant to run. The Finish control appears at this point. */
   durationSec: number;
+  /**
+   * Shortest window the offline processor will still measure, mirroring its
+   * gates. Below this the capture is guaranteed to be rejected, so there is no
+   * point letting a subject end there. Between this and durationSec the subject
+   * can stop early — some of the intended population cannot sustain a full
+   * window, and trapping them is worse than a flagged short capture.
+   */
+  minimumSec: number;
   clinicalAnchor: string;
   captureNotes: string;
   /** Only used during a speech task; placed immediately below the webcam preview. */
@@ -46,6 +55,7 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     title: 'Face at rest',
     instruction: 'Look directly into the camera lens. Relax your face and remain silent.',
     durationSec: 5,
+    minimumSec: 3,
     clinicalAnchor: 'Sunnybrook: resting symmetry',
     captureNotes: 'Keep your head level, with both ears and your chin visible in the frame.',
   },
@@ -55,6 +65,7 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     title: 'Raise your eyebrows',
     instruction: 'Raise both eyebrows evenly, hold for 2 seconds, then relax. Repeat twice.',
     durationSec: 8,
+    minimumSec: 4,
     clinicalAnchor: 'NIHSS facial-palsy cue; Sunnybrook voluntary movement',
     captureNotes: 'Do not tilt or lift your head to compensate.',
   },
@@ -64,6 +75,7 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     title: 'Close your eyes',
     instruction: 'Close both eyes firmly, hold for 2 seconds, then open them. Repeat twice.',
     durationSec: 8,
+    minimumSec: 4,
     clinicalAnchor: 'NIHSS facial-palsy cue; eye-closure function',
     captureNotes: 'Do not cover your face; keep it facing the camera.',
   },
@@ -73,6 +85,7 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     title: 'Smile and show your teeth',
     instruction: 'Smile broadly and show your teeth, hold for 2 seconds, then relax. Repeat twice.',
     durationSec: 8,
+    minimumSec: 4,
     clinicalAnchor: 'NIHSS: show teeth; Sunnybrook: open-mouth smile',
     captureNotes: 'This is the primary window for lower-face droop and left/right smile excursion.',
   },
@@ -82,6 +95,7 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     title: 'Pucker your lips',
     instruction: 'Pucker your lips forward, hold for 2 seconds, then relax. Repeat twice.',
     durationSec: 8,
+    minimumSec: 4,
     clinicalAnchor: 'Sunnybrook: lip pucker',
     captureNotes: 'Keep your head and shoulders still.',
   },
@@ -91,6 +105,7 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     title: 'Room silence',
     instruction: 'Stay silent and still for 5 seconds. Do not speak, move, or touch the microphone.',
     durationSec: 5,
+    minimumSec: 3,
     clinicalAnchor: 'Acoustic quality control',
     captureNotes:
       'Measures the room noise floor. Without it, SNR has to be guessed from the speech itself, and every acoustic measure is interpreted without knowing how noisy the recording was.',
@@ -101,6 +116,7 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     title: 'Sustained vowel /a/',
     instruction: 'Breathe in, then say “ah” steadily and comfortably for about 5 seconds. Rest briefly and repeat three times.',
     durationSec: 22,
+    minimumSec: 6,
     clinicalAnchor: 'Maximum phonation / acoustic voice quality',
     captureNotes: 'Keep a steady distance from the microphone and do not intentionally change loudness.',
   },
@@ -110,6 +126,7 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     title: 'Diadochokinesis: pa-ta-ka',
     instruction: 'Say “pa-ta-ka” clearly, evenly, and at a comfortable brisk pace for 10 seconds. Rest briefly and repeat once.',
     durationSec: 24,
+    minimumSec: 8,
     clinicalAnchor: 'Sequential motion rate / dysarthria motor-speech assessment',
     captureNotes: 'Do not chant or sing. A steady natural rate matters more than maximum speed.',
   },
@@ -119,6 +136,7 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     title: 'Read the word list aloud',
     instruction: 'Read each word clearly, pausing briefly between them. Read the whole list twice.',
     durationSec: 24,
+    minimumSec: 8,
     clinicalAnchor: 'NIHSS dysarthria item word list',
     captureNotes:
       'This is the actual NIHSS list, chosen to stress different articulators, so the recording is directly comparable with a clinician-graded NIHSS dysarthria item. Vietnamese cohorts need a tone-balanced list of their own; do not read English error rates against Vietnamese speech.',
@@ -132,6 +150,7 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     title: 'Count aloud',
     instruction: 'Count from 1 to 20 at a natural, clear speaking pace.',
     durationSec: 18,
+    minimumSec: 8,
     clinicalAnchor: 'Connected-speech rate, pausing, intelligibility',
     captureNotes: 'Do not rush; keep a consistent distance from the microphone.',
     // English "one" through "twenty": 11 syllables for 1-10, 21 for 11-20.

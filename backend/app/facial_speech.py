@@ -1218,7 +1218,22 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
             speech_issues.extend(issues)
 
     progress("summary", 88, "Summarising measurement quality and clinical-review flags")
-    issues = face_issues + speech_issues
+    # The capture UI holds the finish control back until a task has run its
+    # intended duration, so a short window means the subject could not complete
+    # it. That is worth surfacing on the report: it is a fact about the subject,
+    # not only about the recording.
+    early_issues = [
+        _issue(
+            "task-ended-early", ADVISORY, str(task.get("id")),
+            f"The subject ended {task.get('id')} after "
+            f"{float(task.get('recordedDurationMs', 0)) / 1000:.1f}s of an intended "
+            f"{float(task.get('expectedDurationSec', 0)):.0f}s. Measurements from a short window are noisier, "
+            "and the inability to sustain the task may itself be a finding.",
+        )
+        for task in tasks
+        if isinstance(task, dict) and task.get("endedEarly") and task.get("id")
+    ]
+    issues = face_issues + speech_issues + early_issues
     passed = not _blocking(issues)
     speech_quality = {task_id: report.get("quality") for task_id, report in speech_tasks.items()}
 

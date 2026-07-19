@@ -28,6 +28,7 @@ interface CompletedTask {
   endedAtMs: number;
   recordedDurationMs: number;
   expectedDurationSec: number;
+  endedEarly: boolean;
 }
 
 function chooseMimeType() {
@@ -66,6 +67,7 @@ export default function FacialSpeechPage() {
   const [captureState, setCaptureState] = useState<CaptureState>('ready');
   const [taskPhase, setTaskPhase] = useState<TaskPhase>('instruction');
   const [countdown, setCountdown] = useState(3);
+  const [taskElapsedMs, setTaskElapsedMs] = useState(0);
   const [taskIndex, setTaskIndex] = useState(0);
   const [completedTasks, setCompletedTasks] = useState<CompletedTask[]>([]);
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
@@ -77,6 +79,20 @@ export default function FacialSpeechPage() {
 
   const currentTask = FACIAL_SPEECH_TASKS[taskIndex];
   const isTaskActive = captureState === 'recording' && taskPhase === 'active';
+
+  // Elapsed time drives when the Finish controls appear, so a subject cannot
+  // end a window so short the offline processor is certain to reject it - which
+  // previously only surfaced after upload and analysis, wasting the capture.
+  useEffect(() => {
+    if (!isTaskActive) {
+      setTaskElapsedMs(0);
+      return;
+    }
+    const tick = () => setTaskElapsedMs(performance.now() - taskStartRef.current);
+    tick();
+    const id = window.setInterval(tick, 100);
+    return () => window.clearInterval(id);
+  }, [isTaskActive, taskIndex]);
 
   useEffect(() => {
     const previousOverflow = document.documentElement.style.overflow;
@@ -262,12 +278,20 @@ export default function FacialSpeechPage() {
   const completeCurrentTask = useCallback(() => {
     if (!isTaskActive) return;
     const now = performance.now();
+    const elapsedMs = now - taskStartRef.current;
+    // Guarded here as well as by hiding the control: a window below the
+    // processor's own minimum cannot produce a measurement, so accepting one
+    // would only defer the failure to after the upload.
+    if (elapsedMs < currentTask.minimumSec * 1000) return;
     const completed: CompletedTask = {
       id: currentTask.id,
       startedAtMs: Math.round(taskStartRef.current - sessionStartRef.current),
       endedAtMs: Math.round(now - sessionStartRef.current),
-      recordedDurationMs: Math.round(now - taskStartRef.current),
+      recordedDurationMs: Math.round(elapsedMs),
       expectedDurationSec: currentTask.durationSec,
+      // Recorded so a short window is visible in the provenance rather than
+      // being inferred from the timestamps.
+      endedEarly: elapsedMs < currentTask.durationSec * 1000,
     };
     const updatedTasks = [...completedTasksRef.current, completed];
     completedTasksRef.current = updatedTasks;
@@ -340,7 +364,12 @@ export default function FacialSpeechPage() {
               ) : null}
 
               {isTaskActive ? (
-                <ActiveTaskOverlay task={currentTask} isLast={taskIndex === FACIAL_SPEECH_TASKS.length - 1} onComplete={completeCurrentTask} />
+                <ActiveTaskOverlay
+                  task={currentTask}
+                  isLast={taskIndex === FACIAL_SPEECH_TASKS.length - 1}
+                  elapsedMs={taskElapsedMs}
+                  onComplete={completeCurrentTask}
+                />
               ) : null}
 
               {captureState === 'ready' || captureState === 'error' ? (
@@ -451,7 +480,7 @@ function GuideOverlay({
         <h2 className="mt-2 text-2xl font-semibold">{task.title}</h2>
         <p className="mt-4 text-lg leading-7 text-gray-100">{task.instruction}</p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-gray-400">
-          <span>About {task.durationSec}s</span>
+          <span>Runs for {task.durationSec}s</span>
           <span className="text-gray-600">·</span>
           <span>{task.clinicalAnchor}</span>
         </div>
@@ -462,21 +491,35 @@ function GuideOverlay({
         >
           Start this task
         </button>
-        <p className="mt-3 text-xs text-gray-500">A three-second countdown runs first. Read this now; it disappears while recording.</p>
+        <p className="mt-3 text-xs leading-5 text-gray-500">
+          A three-second countdown runs first, then the task records for {task.durationSec}s and the finish button appears. Read this now;
+          it disappears while recording.
+        </p>
       </div>
     </div>
   );
 }
 
-/** Controls during a live task. Deliberately sparse and anchored to the top of
- * the frame, next to the webcam, so the subject's gaze stays on the lens. */
+/**
+ * Controls during a live task. Deliberately sparse and anchored to the top of
+ * the frame, next to the webcam, so the subject's gaze stays on the lens.
+ *
+ * The Finish control is withheld until the task has run its intended duration:
+ * a subject who stops after a second produces a window the offline processor is
+ * certain to reject, and previously found that out only after upload and
+ * analysis. A quieter early exit unlocks at the processor's own minimum,
+ * because some of the intended population cannot sustain a full window and
+ * trapping them is worse than a capture flagged short.
+ */
 function ActiveTaskOverlay({
   task,
   isLast,
+  elapsedMs,
   onComplete,
 }: {
   task: (typeof FACIAL_SPEECH_TASKS)[number];
   isLast: boolean;
+  elapsedMs: number;
   onComplete: () => void;
 }) {
   const cue =
@@ -485,6 +528,12 @@ function ActiveTaskOverlay({
       : task.domain === 'quality'
         ? 'Stay silent and still'
         : 'Keep your face centred';
+  const elapsedS = elapsedMs / 1000;
+  const remaining = Math.max(0, Math.ceil(task.durationSec - elapsedS));
+  const complete = elapsedS >= task.durationSec;
+  const canEndEarly = elapsedS >= task.minimumSec;
+  const progress = Math.min(1, elapsedS / task.durationSec);
+
   return (
     <>
       {task.nearLensPrompt ? (
@@ -498,12 +547,39 @@ function ActiveTaskOverlay({
           Recording · {task.title}
         </div>
         <p className="rounded-full bg-black/60 px-3 py-1 text-xs text-gray-200 backdrop-blur-sm">{cue}</p>
-        <button
-          onClick={onComplete}
-          className="mt-1 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-blue-500"
-        >
-          {isLast ? 'Finish assessment' : 'Finish task'}
-        </button>
+
+        {/* A bar rather than large digits: during a facial task the subject is
+            meant to be looking at the lens, and a counting number is the most
+            attention-grabbing thing that could be put on screen. */}
+        <div className="mt-1 w-56 max-w-[70%]">
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/20">
+            <div
+              className={`h-full rounded-full transition-[width] duration-100 ease-linear ${complete ? 'bg-emerald-400' : 'bg-blue-400'}`}
+              style={{ width: `${progress * 100}%` }}
+            />
+          </div>
+          {!complete ? (
+            <p className="mt-1 text-center text-xs tabular-nums text-gray-300">
+              keep going · {remaining}s
+            </p>
+          ) : null}
+        </div>
+
+        {complete ? (
+          <button
+            onClick={onComplete}
+            className="mt-1 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-blue-500"
+          >
+            {isLast ? 'Finish assessment' : 'Finish task'}
+          </button>
+        ) : canEndEarly ? (
+          <button
+            onClick={onComplete}
+            className="mt-0.5 rounded px-3 py-1 text-[11px] text-gray-400 underline underline-offset-2 transition hover:text-gray-200"
+          >
+            {isLast ? 'Cannot continue — end here' : 'Cannot continue — end this task'}
+          </button>
+        ) : null}
       </div>
     </>
   );
