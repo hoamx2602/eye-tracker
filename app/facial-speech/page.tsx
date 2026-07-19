@@ -466,10 +466,12 @@ function AnalysisPanel({ job }: { job: FacialSpeechJob | null }) {
             )}
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <ReportMetric label="Sustained /a/ F0" value={numberFrom(sustained, 'f0_hz_median')} unit="Hz" />
-            <ReportMetric label="Sustained /a/ HNR" value={numberFrom(sustained, 'hnr_db_median')} unit="dB" />
-            <ReportMetric label="DDK peak rate" value={numberFrom(ddk, 'energy_peak_rate_hz')} unit="Hz" />
-            <ReportMetric label="DDK timing CV" value={numberFrom(ddk, 'peak_interval_cv')} unit="" />
+            <ReportMetric label="Sustained /a/ F0" measure={trialMeasure(sustained, 'f0_hz_median')} unit="Hz" />
+            <ReportMetric label="Sustained /a/ HNR" measure={trialMeasure(sustained, 'hnr_db_median')} unit="dB" />
+            <ReportMetric label="Sustained /a/ jitter" measure={trialMeasure(sustained, 'jitter_local')} unit="" />
+            <ReportMetric label="Max phonation time" measure={{ median: numberFrom(sustained, 'max_phonation_time_s'), nTrials: null }} unit="s" />
+            <ReportMetric label="DDK peak rate (per run)" measure={trialMeasure(ddk, 'energy_peak_rate_hz')} unit="Hz" />
+            <ReportMetric label="DDK timing CV" measure={trialMeasure(ddk, 'peak_interval_cv')} unit="" />
           </div>
           <p className="rounded-lg bg-gray-800 p-3 text-xs leading-5 text-gray-400">{report.interpretation}</p>
         </div>
@@ -510,11 +512,34 @@ function numberFrom(values: Record<string, unknown> | undefined, key: string) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function ReportMetric({ label, value, unit }: { label: string; value: number | null; unit: string }) {
+/** Reads a per-trial aggregate, which the backend reports as a median plus the
+ * spread across repetitions rather than a single pooled number. */
+function trialMeasure(values: Record<string, unknown> | undefined, key: string) {
+  const aggregate = values?.[key];
+  if (typeof aggregate !== 'object' || aggregate === null) return { median: null, nTrials: null };
+  const record = aggregate as Record<string, unknown>;
+  return {
+    median: typeof record.median === 'number' && Number.isFinite(record.median) ? record.median : null,
+    nTrials: typeof record.n_trials === 'number' ? record.n_trials : null,
+  };
+}
+
+function ReportMetric({
+  label,
+  measure,
+  unit,
+}: {
+  label: string;
+  measure: { median: number | null; nTrials: number | null };
+  unit: string;
+}) {
   return (
     <div className="rounded-lg bg-gray-800 p-3">
       <p className="text-gray-500">{label}</p>
-      <p className="mt-1 font-mono text-sm text-gray-100">{value === null ? 'unavailable' : `${value.toFixed(2)}${unit ? ` ${unit}` : ''}`}</p>
+      <p className="mt-1 font-mono text-sm text-gray-100">
+        {measure.median === null ? 'unavailable' : `${measure.median.toFixed(2)}${unit ? ` ${unit}` : ''}`}
+      </p>
+      {measure.nTrials !== null ? <p className="mt-0.5 text-[11px] text-gray-500">median of {measure.nTrials} trial(s)</p> : null}
     </div>
   );
 }

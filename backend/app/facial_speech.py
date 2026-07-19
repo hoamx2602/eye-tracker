@@ -40,6 +40,10 @@ MIN_SPEECH_ACTIVITY_RATIO = 0.20
 # Shortest window that can still carry the task's measurement. Below this the
 # subject did not perform the task for long enough to measure, whatever the
 # audio quality.
+# Onset scoop and offset decay are discarded before perturbation measures, and
+# what remains must still be long enough for a stable estimate.
+STEADY_TRIM_S = 0.5
+MIN_STEADY_PHONATION_S = 1.5
 MIN_SPEECH_DURATION_S = {
     "speech_sustained_a": 3.0,
     "speech_ddk_patka": 5.0,
@@ -227,49 +231,257 @@ def _speech_features(
     if _blocking(issues):
         return {"quality": quality, "available": False}, issues
 
-    result: dict[str, Any] = {"quality": quality, "available": True, "speech_activity_ratio": activity}
+    trials = _active_segments(envelope, speech_gate, sample_rate)
+    result: dict[str, Any] = {
+        "quality": quality,
+        "available": True,
+        "speech_activity_ratio": activity,
+        "trials_detected": len(trials),
+    }
+    if not trials:
+        issues.append(_issue(
+            "no-speech-trial-detected", BLOCKING, task_id,
+            f"No continuous speech segment could be isolated in {task_id}. Repeat the task.",
+        ))
+        result["available"] = False
+        return result, issues
 
+    if task_id == "speech_sustained_a":
+        result.update(_sustained_vowel_metrics(samples, sample_rate, trials, task_id, issues))
+    elif include_ddk:
+        result.update(_ddk_metrics(envelope, sample_rate, trials, peak))
+    else:
+        result.update(_connected_speech_metrics(samples, sample_rate, trials))
+    return result, issues
+
+
+def _active_segments(
+    envelope: np.ndarray,
+    gate: float,
+    sample_rate: int,
+    min_duration_s: float = 0.4,
+    merge_gap_s: float = 0.2,
+) -> list[tuple[int, int]]:
+    """Split a task window into the individual trials the subject performed.
+
+    Every task in the battery asks for repetitions inside one window - three
+    sustained vowels, two DDK runs - so the window is not a single utterance.
+    Measuring across it treats the silences between repetitions as part of the
+    signal, which is why segmentation has to happen before any acoustic
+    feature is computed.
+    """
+    if not envelope.size:
+        return []
+    active = envelope > gate
+    edges = np.diff(active.astype(np.int8))
+    starts = list(np.flatnonzero(edges == 1) + 1)
+    ends = list(np.flatnonzero(edges == -1) + 1)
+    if active[0]:
+        starts.insert(0, 0)
+    if active[-1]:
+        ends.append(active.size)
+
+    merge_gap = int(merge_gap_s * sample_rate)
+    merged: list[list[int]] = []
+    for start, end in zip(starts, ends):
+        if merged and start - merged[-1][1] <= merge_gap:
+            merged[-1][1] = end
+        else:
+            merged.append([start, end])
+
+    minimum = int(min_duration_s * sample_rate)
+    return [(start, end) for start, end in merged if end - start >= minimum]
+
+
+def _pitch_range(sound: Any) -> tuple[float, float]:
+    """Two-pass pitch floor/ceiling.
+
+    A fixed 60-500 Hz range spans well over an octave for any single speaker,
+    which invites octave errors - and an octave error corrupts jitter and
+    shimmer far more than it moves F0. The first pass finds the speaker's own
+    range and the second pass brackets it.
+    """
+    try:
+        rough = sound.to_pitch(time_step=0.01, pitch_floor=60, pitch_ceiling=600)
+        values = rough.selected_array["frequency"]
+        values = values[values > 0]
+        if not len(values):
+            return 60.0, 500.0
+        centre = float(np.median(values))
+        return max(50.0, min(centre * 0.6, 200.0)), min(800.0, max(centre * 1.8, 300.0))
+    except Exception:
+        return 60.0, 500.0
+
+
+def _voice_quality(segment: np.ndarray, sample_rate: int) -> dict[str, Any] | None:
+    """Perturbation and harmonicity measures for ONE steady phonation.
+
+    Jitter and shimmer are cycle-to-cycle measures, so they are only defined on
+    a continuously voiced stretch. Running them across a window containing three
+    separate vowels plus the pauses between them measures the gaps as if they
+    were glottal cycles and returns a meaningless number - one that would then
+    be compared against thresholds (jitter < 1.04%, shimmer < 3.81%, HNR > 20 dB)
+    defined only on a single steady vowel.
+    """
     try:
         import parselmouth
-
-        sound = parselmouth.Sound(samples, sampling_frequency=sample_rate)
-        pitch = sound.to_pitch(time_step=0.01, pitch_floor=60, pitch_ceiling=500)
+    except Exception:
+        return None
+    try:
+        sound = parselmouth.Sound(segment, sampling_frequency=sample_rate)
+        floor, ceiling = _pitch_range(sound)
+        pitch = sound.to_pitch(time_step=0.01, pitch_floor=floor, pitch_ceiling=ceiling)
         f0 = pitch.selected_array["frequency"]
         f0 = f0[f0 > 0]
-        result["f0_hz_median"] = float(np.median(f0)) if len(f0) else None
-        result["f0_hz_sd"] = float(np.std(f0)) if len(f0) else None
-        intensity = sound.to_intensity(time_step=0.01)
-        values = intensity.values[0]
-        result["intensity_db_median"] = float(np.median(values)) if len(values) else None
-        harmonicity = sound.to_harmonicity_cc(time_step=0.01, minimum_pitch=60)
-        hnr = harmonicity.values[0]
-        hnr = hnr[np.isfinite(hnr)]
-        result["hnr_db_median"] = float(np.median(hnr)) if len(hnr) else None
+        if not len(f0):
+            return None
+        intensity = sound.to_intensity(time_step=0.01).values[0]
+        harmonicity = sound.to_harmonicity_cc(time_step=0.01, minimum_pitch=floor).values[0]
+        harmonicity = harmonicity[np.isfinite(harmonicity)]
+        measures: dict[str, Any] = {
+            "f0_hz_median": float(np.median(f0)),
+            "f0_hz_sd": float(np.std(f0)),
+            "pitch_floor_hz": floor,
+            "pitch_ceiling_hz": ceiling,
+            "intensity_db_median": float(np.median(intensity)) if len(intensity) else None,
+            "hnr_db_median": float(np.median(harmonicity)) if len(harmonicity) else None,
+        }
         try:
             point_process = parselmouth.praat.call([sound, pitch], "To PointProcess (cc)")
-            result["jitter_local"] = float(parselmouth.praat.call(
+            measures["jitter_local"] = float(parselmouth.praat.call(
                 point_process, "Get jitter (local)", 0, 0, 0.0001, 0.02, 1.3
             ))
-            result["shimmer_local"] = float(parselmouth.praat.call(
+            measures["shimmer_local"] = float(parselmouth.praat.call(
                 [sound, point_process], "Get shimmer (local)", 0, 0, 0.0001, 0.02, 1.3, 1.6
             ))
-        except Exception:  # jitter/shimmer require a sufficiently periodic signal
-            result["jitter_local"] = None
-            result["shimmer_local"] = None
-    except Exception as exc:  # Keep quality/result reporting alive if Praat rejects a clip.
-        result["acoustic_warning"] = f"Praat feature extraction unavailable: {exc}"
+        except Exception:  # requires a sufficiently periodic signal
+            measures["jitter_local"] = None
+            measures["shimmer_local"] = None
+        return measures
+    except Exception:
+        return None
 
-    if include_ddk:
-        min_distance = max(1, int(sample_rate * 0.09))
-        peaks, _ = find_peaks(envelope, distance=min_distance, prominence=max(noise_floor, 0.003))
-        duration = max(samples.size / sample_rate, 1e-6)
-        result["energy_peak_rate_hz"] = float(len(peaks) / duration)
+
+def _across_trials(values: list[float | None]) -> dict[str, Any]:
+    """Median across repetitions plus the spread between them.
+
+    The spread is the within-session test-retest evidence the validation plan
+    asks for, and it comes free once trials are measured separately.
+    """
+    valid = [float(value) for value in values if value is not None and math.isfinite(value)]
+    if not valid:
+        return {"median": None, "iqr": None, "n_trials": 0, "per_trial": []}
+    return {
+        "median": float(np.median(valid)),
+        "iqr": float(np.percentile(valid, 75) - np.percentile(valid, 25)) if len(valid) > 1 else 0.0,
+        "n_trials": len(valid),
+        "per_trial": valid,
+    }
+
+
+def _sustained_vowel_metrics(
+    samples: np.ndarray,
+    sample_rate: int,
+    trials: list[tuple[int, int]],
+    task_id: str,
+    issues: list[dict[str, str]],
+) -> dict[str, Any]:
+    trim = int(STEADY_TRIM_S * sample_rate)
+    minimum = int(MIN_STEADY_PHONATION_S * sample_rate)
+    per_trial: list[dict[str, Any]] = []
+    for start, end in trials:
+        # Onset and offset carry the pitch scoop and decay, which are not part
+        # of steady phonation; the standard practice is to measure the middle.
+        steady = samples[start + trim:end - trim]
+        if steady.size < minimum:
+            continue
+        measures = _voice_quality(steady, sample_rate)
+        if measures:
+            measures["steady_duration_s"] = float(steady.size / sample_rate)
+            per_trial.append(measures)
+
+    if not per_trial:
+        issues.append(_issue(
+            "no-steady-phonation", BLOCKING, task_id,
+            f"No sustained phonation of at least {MIN_STEADY_PHONATION_S:.0f} s (after trimming onset and offset) "
+            "was found. Take a breath and hold each vowel steadily.",
+        ))
+        return {"available": False}
+
+    keys = ("f0_hz_median", "f0_hz_sd", "intensity_db_median", "hnr_db_median", "jitter_local", "shimmer_local")
+    metrics: dict[str, Any] = {key: _across_trials([trial.get(key) for trial in per_trial]) for key in keys}
+    # Maximum phonation time: the longest single trial, not the sum, and read
+    # off the untrimmed segment because it is a duration, not a quality measure.
+    metrics["max_phonation_time_s"] = float(max((end - start) / sample_rate for start, end in trials))
+    metrics["usable_trials"] = len(per_trial)
+    return metrics
+
+
+def _ddk_metrics(
+    envelope: np.ndarray,
+    sample_rate: int,
+    trials: list[tuple[int, int]],
+    peak_level: float,
+) -> dict[str, Any]:
+    """Syllable-timing proxy, computed per DDK run.
+
+    Rate must be divided by the duration of the run, not of the whole task
+    window: the window holds two runs plus the rest between them, so dividing by
+    it understated every subject's rate by roughly half. Peak prominence is
+    scaled to the recording level rather than fixed in absolute amplitude, so
+    the same speaker does not score differently on a quieter microphone.
+    """
+    rates: list[float | None] = []
+    cvs: list[float | None] = []
+    for start, end in trials:
+        run = envelope[start:end]
+        duration = (end - start) / sample_rate
+        if duration < 1.0:
+            continue
+        peaks, _ = find_peaks(
+            run,
+            distance=max(1, int(sample_rate * 0.09)),  # caps the rate at ~11 syll/s
+            prominence=max(peak_level * 0.15, 1e-4),
+        )
+        rates.append(float(len(peaks) / duration))
         if len(peaks) >= 3:
             intervals = np.diff(peaks) / sample_rate
-            result["peak_interval_cv"] = float(np.std(intervals) / max(np.mean(intervals), 1e-6))
+            cvs.append(float(np.std(intervals) / max(float(np.mean(intervals)), 1e-6)))
         else:
-            result["peak_interval_cv"] = None
-    return result, issues
+            cvs.append(None)
+    return {
+        # Deliberately not called a syllable rate: unvoiced stop closures in
+        # pa-ta-ka do not always produce a separate energy peak, so this is a
+        # proxy and must not be read against published DDK norms.
+        "energy_peak_rate_hz": _across_trials(rates),
+        "peak_interval_cv": _across_trials(cvs),
+        "usable_runs": len([rate for rate in rates if rate is not None]),
+    }
+
+
+def _connected_speech_metrics(
+    samples: np.ndarray,
+    sample_rate: int,
+    trials: list[tuple[int, int]],
+) -> dict[str, Any]:
+    """Timing structure of connected speech: phonation versus pausing."""
+    total_s = samples.size / sample_rate
+    speaking_s = sum((end - start) for start, end in trials) / sample_rate
+    pauses = [
+        (trials[index + 1][0] - trials[index][1]) / sample_rate
+        for index in range(len(trials) - 1)
+    ]
+    voice = _voice_quality(samples[trials[0][0]:trials[-1][1]], sample_rate) or {}
+    return {
+        "speaking_time_ratio": float(speaking_s / total_s) if total_s > 0 else None,
+        "pause_ratio": float(1.0 - speaking_s / total_s) if total_s > 0 else None,
+        "pause_count": len(pauses),
+        "pause_duration_s_median": _median(pauses),
+        "phonation_segments": len(trials),
+        "f0_hz_median": voice.get("f0_hz_median"),
+        "f0_hz_sd": voice.get("f0_hz_sd"),
+        "intensity_db_median": voice.get("intensity_db_median"),
+    }
 
 
 def _blank_face_metrics() -> dict[str, Any]:
