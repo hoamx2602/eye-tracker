@@ -17,6 +17,10 @@ import {
   type FacialSpeechJob,
 } from '@/lib/facialSpeechBackend';
 
+/** Bump when the wording of the consent notice changes materially, so a stored
+ * capture records which notice the subject actually agreed to. */
+const CONSENT_NOTICE_VERSION = '1.0.0';
+
 type CaptureState = 'ready' | 'recording' | 'processing' | 'complete' | 'error';
 type TaskPhase = 'instruction' | 'countdown' | 'active';
 
@@ -68,7 +72,10 @@ export default function FacialSpeechPage() {
   const [completedTasks, setCompletedTasks] = useState<CompletedTask[]>([]);
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   const [processingJob, setProcessingJob] = useState<FacialSpeechJob | null>(null);
-  const [message, setMessage] = useState('Allow camera and microphone access, then begin the assessment.');
+  const [consentAt, setConsentAt] = useState<string | null>(null);
+  const consentAtRef = useRef<string | null>(null);
+  consentAtRef.current = consentAt;
+  const [message, setMessage] = useState('Read the consent notice below, then allow camera and microphone access.');
 
   const currentTask = FACIAL_SPEECH_TASKS[taskIndex];
   const isTaskActive = captureState === 'recording' && taskPhase === 'active';
@@ -92,6 +99,9 @@ export default function FacialSpeechPage() {
       protocolVersion: FACIAL_SPEECH_PROTOCOL_VERSION,
       sessionId,
       captureStartedAt: captureStartedAtRef.current,
+      // Part of the provenance record: a capture without recorded consent is
+      // not usable as study data, whatever else it contains.
+      consent: { acknowledgedAt: consentAtRef.current, noticeVersion: CONSENT_NOTICE_VERSION },
       media: {
         container: video.type || 'video/webm',
         video: getTrackSettings(stream?.getVideoTracks()[0]),
@@ -169,6 +179,12 @@ export default function FacialSpeechPage() {
   }, []);
 
   const beginProtocol = useCallback(async () => {
+    // Guarded here as well as on the button: recording a face and a voice
+    // without recorded consent is not something to leave to a disabled prop.
+    if (!consentAtRef.current) {
+      setMessage('Acknowledge the consent notice before recording.');
+      return;
+    }
     const stream = await prepareCapture();
     if (!stream) return;
 
@@ -330,7 +346,11 @@ export default function FacialSpeechPage() {
                   </button>
                 ) : null}
                 {captureState === 'ready' ? (
-                  <button onClick={() => void beginProtocol()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500">
+                  <button
+                    onClick={() => void beginProtocol()}
+                    disabled={!consentAt}
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition enabled:hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-400"
+                  >
                     Begin assessment
                   </button>
                 ) : null}
@@ -358,6 +378,10 @@ export default function FacialSpeechPage() {
           )}
         </section>
 
+        {captureState === 'ready' || captureState === 'error' ? (
+          <ConsentPanel consentAt={consentAt} onChange={setConsentAt} />
+        ) : null}
+
         <section className="mt-6 rounded-2xl border border-gray-800 bg-gray-900 p-5">
           <h2 className="text-lg font-semibold">How the offline processor identifies each task</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-gray-400">
@@ -371,6 +395,30 @@ export default function FacialSpeechPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function ConsentPanel({ consentAt, onChange }: { consentAt: string | null; onChange: (value: string | null) => void }) {
+  return (
+    <section className="mt-6 rounded-2xl border border-gray-800 bg-gray-900 p-5">
+      <h2 className="text-lg font-semibold">Before you start</h2>
+      <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-6 text-gray-400">
+        <li>This records your face and your voice. Both identify you personally, and in the EU they are special-category biometric data.</li>
+        <li>The recording is sent to the analysis backend configured for this deployment. In local development that is your own machine; confirm where it points before using real subject data.</li>
+        <li>The video is deleted as soon as analysis finishes. The derived measurements are discarded after the backend retention window, and you can discard them sooner.</li>
+        <li>This is a measurement tool for clinician review. It does not diagnose anything, and it is not a NIHSS score.</li>
+        <li>Sudden facial droop or new speech difficulty is an emergency. Seek urgent medical help now rather than completing this assessment.</li>
+      </ul>
+      <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm text-gray-200">
+        <input
+          type="checkbox"
+          checked={consentAt !== null}
+          onChange={(event) => onChange(event.target.checked ? new Date().toISOString() : null)}
+          className="mt-1 h-4 w-4 shrink-0 accent-blue-500"
+        />
+        <span>I understand the above and consent to this recording being made and analysed.</span>
+      </label>
+    </section>
   );
 }
 

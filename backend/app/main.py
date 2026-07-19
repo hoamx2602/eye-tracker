@@ -23,6 +23,7 @@ import logging
 import os
 import tempfile
 import threading
+import time
 import uuid
 
 import numpy as np
@@ -77,7 +78,23 @@ def health() -> dict:
 
 
 def _facial_speech_job_view(job: dict) -> dict:
-    return {key: value for key, value in job.items() if key not in {"tmp_path"}}
+    return {key: value for key, value in job.items() if key not in {"tmp_path", "created_at"}}
+
+
+# A completed job holds derived measurements of a face and a voice, which is
+# biometric data. Keeping it in memory until the process restarts is an
+# unbounded retention window; expire it instead. The upload itself is already
+# deleted as soon as analysis finishes.
+FACIAL_SPEECH_JOB_TTL_S = float(os.environ.get("FACIAL_SPEECH_JOB_TTL_SECONDS", "3600"))
+
+
+def _purge_expired_facial_speech_jobs() -> None:
+    cutoff = time.monotonic() - FACIAL_SPEECH_JOB_TTL_S
+    with _facial_speech_jobs_lock:
+        for job_id in [
+            job_id for job_id, job in _facial_speech_jobs.items() if job.get("created_at", 0) < cutoff
+        ]:
+            _facial_speech_jobs.pop(job_id, None)
 
 
 def _run_facial_speech_job(job_id: str, tmp_path: str, payload: dict) -> None:
@@ -114,24 +131,45 @@ async def start_facial_speech_process(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
+    _purge_expired_facial_speech_jobs()
     suffix = os.path.splitext(file.filename or "")[1] or ".webm"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(await file.read())
         tmp_path = tmp.name
     job_id = uuid.uuid4().hex
     with _facial_speech_jobs_lock:
-        _facial_speech_jobs[job_id] = {"id": job_id, "status": "queued", "phase": "queued", "progress": 0, "message": "Waiting for the analysis worker"}
+        _facial_speech_jobs[job_id] = {
+            "id": job_id,
+            "status": "queued",
+            "phase": "queued",
+            "progress": 0,
+            "message": "Waiting for the analysis worker",
+            "created_at": time.monotonic(),
+        }
     background_tasks.add_task(_run_facial_speech_job, job_id, tmp_path, meta)
     return _facial_speech_job_view(_facial_speech_jobs[job_id])
 
 
 @app.get("/facial-speech/jobs/{job_id}")
 def get_facial_speech_job(job_id: str) -> dict:
+    _purge_expired_facial_speech_jobs()
     with _facial_speech_jobs_lock:
         job = _facial_speech_jobs.get(job_id)
         if job is None:
-            raise HTTPException(status_code=404, detail="Facial-speech analysis job not found.")
+            raise HTTPException(
+                status_code=404,
+                detail="Facial-speech analysis job not found. Results are discarded after "
+                       f"{FACIAL_SPEECH_JOB_TTL_S / 3600:.0f} h; re-run the capture if it has expired.",
+            )
         return _facial_speech_job_view(job)
+
+
+@app.delete("/facial-speech/jobs/{job_id}")
+def delete_facial_speech_job(job_id: str) -> dict:
+    """Let the subject discard their results before the TTL expires."""
+    with _facial_speech_jobs_lock:
+        removed = _facial_speech_jobs.pop(job_id, None)
+    return {"deleted": removed is not None}
 
 
 @app.post("/process", response_model=ProcessResponse)
