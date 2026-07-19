@@ -302,81 +302,76 @@ export default function FacialSpeechPage() {
           </div>
         </header>
 
-        <section className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+        {/* The camera is the whole stage. Guidance and controls sit on top of
+            it rather than beside it, so the subject's gaze stays within a few
+            degrees of the lens instead of tracking to a side panel and back -
+            head and eye movement away from the camera is exactly what biases
+            the landmark geometry these tasks are measured on. */}
+        <section className="mx-auto max-w-4xl">
           <div className="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900 shadow-2xl shadow-black/20">
             <div className="relative aspect-video bg-black">
               <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
-              <div className="absolute left-4 top-4 rounded-full bg-black/70 px-3 py-1 text-xs font-medium text-white">
+              <div className="absolute left-4 top-4 z-10 rounded-full bg-black/70 px-3 py-1 text-xs font-medium text-white">
                 {captureState === 'recording' ? '● SESSION RECORDING' : captureState === 'processing' ? '● OFFLINE ANALYSIS' : captureState === 'complete' ? 'CAPTURE COMPLETE' : 'CAMERA PREVIEW'}
               </div>
+              {captureState === 'recording' ? (
+                <div className="absolute right-4 top-4 z-10 rounded-full bg-black/70 px-3 py-1 text-xs font-medium tabular-nums text-white">
+                  Task {taskIndex + 1} / {FACIAL_SPEECH_TASKS.length}
+                </div>
+              ) : null}
+
+              {captureState === 'recording' && taskPhase === 'instruction' ? (
+                <GuideOverlay task={currentTask} taskIndex={taskIndex} onStart={startCurrentTask} />
+              ) : null}
+
               {captureState === 'recording' && taskPhase === 'countdown' ? (
-                <div className="absolute inset-0 grid place-items-center bg-black/55 text-center">
+                <div className="absolute inset-0 z-20 grid place-items-center bg-black/60 text-center">
                   <div>
-                    <p className="text-sm font-medium uppercase tracking-[0.18em] text-blue-300">Position your face and look at the camera lens</p>
-                    <p className="mt-2 text-7xl font-semibold tabular-nums">{countdown}</p>
+                    <p className="text-sm font-medium uppercase tracking-[0.18em] text-blue-300">Look at the camera lens</p>
+                    <p className="mt-2 text-8xl font-semibold tabular-nums">{countdown}</p>
+                    <p className="mt-2 text-sm text-gray-400">{currentTask.title}</p>
                   </div>
                 </div>
               ) : null}
+
               {isTaskActive ? (
-                <div className="absolute inset-x-0 top-12 flex justify-center px-4 text-center">
-                  <div className="max-w-lg rounded-xl border border-blue-400/30 bg-gray-950/80 px-4 py-3 backdrop-blur-sm">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-300">Task recording in progress</p>
-                    <p className="mt-1 text-sm font-medium text-white">
-                      {currentTask.domain === 'face'
-                        ? 'Keep your eyes on the camera lens. Do not read the screen.'
-                        : currentTask.domain === 'quality'
-                          ? 'Stay silent and still until the task ends.'
-                          : 'Keep your face centred and complete the speech task.'}
-                    </p>
-                  </div>
-                </div>
+                <ActiveTaskOverlay task={currentTask} isLast={taskIndex === FACIAL_SPEECH_TASKS.length - 1} onComplete={completeCurrentTask} />
               ) : null}
-              {isTaskActive && currentTask.nearLensPrompt ? (
-                <div className="absolute left-1/2 top-2 -translate-x-1/2 rounded-lg bg-white px-3 py-1.5 text-center text-xs font-semibold text-gray-950 shadow-lg">
-                  {currentTask.nearLensPrompt}
-                </div>
-              ) : null}
-            </div>
-            <div className="p-5">
-              <p className="text-sm text-gray-300">{message}</p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                {captureState === 'ready' || captureState === 'error' ? (
-                  <button onClick={() => void prepareCapture()} className="rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium text-gray-100 transition hover:border-blue-400 hover:text-blue-300">
+
+              {captureState === 'ready' || captureState === 'error' ? (
+                <div className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-center gap-3 bg-gradient-to-t from-black/85 to-transparent px-4 pb-5 pt-12">
+                  <button onClick={() => void prepareCapture()} className="rounded-lg border border-gray-500 bg-black/40 px-4 py-2 text-sm font-medium text-gray-100 backdrop-blur-sm transition hover:border-blue-400 hover:text-blue-300">
                     Check camera &amp; microphone
                   </button>
-                ) : null}
-                {captureState === 'ready' ? (
                   <button
                     onClick={() => void beginProtocol()}
-                    disabled={!consentAt}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition enabled:hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-400"
+                    disabled={!consentAt || captureState === 'error'}
+                    className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition enabled:hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-400"
                   >
-                    Begin assessment
+                    {consentAt ? 'Begin assessment' : 'Consent required to begin'}
                   </button>
-                ) : null}
-                {captureState === 'complete' ? (
-                  <button onClick={exportArtifacts} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500">
-                    Download video + metadata
-                  </button>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
+            </div>
+
+            <TaskProgressStrip taskIndex={taskIndex} completedCount={completedTasks.length} captureState={captureState} />
+
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+              <p className="text-sm text-gray-300">{message}</p>
+              {captureState === 'complete' ? (
+                <button onClick={exportArtifacts} className="shrink-0 rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium text-gray-100 transition hover:border-blue-400 hover:text-blue-300">
+                  Download video + metadata
+                </button>
+              ) : null}
             </div>
           </div>
-
-          {captureState === 'processing' || processingJob ? (
-            <AnalysisPanel job={processingJob} />
-          ) : (
-            <TaskGuide
-              captureState={captureState}
-              taskPhase={taskPhase}
-              currentTask={currentTask}
-              taskIndex={taskIndex}
-              completedCount={completedTasks.length}
-              onStart={startCurrentTask}
-              onComplete={completeCurrentTask}
-            />
-          )}
         </section>
+
+        {captureState === 'processing' || processingJob ? (
+          <section className="mx-auto mt-6 max-w-4xl">
+            <AnalysisPanel job={processingJob} />
+          </section>
+        ) : null}
 
         {captureState === 'ready' || captureState === 'error' ? (
           <ConsentPanel consentAt={consentAt} onChange={setConsentAt} />
@@ -422,64 +417,118 @@ function ConsentPanel({ consentAt, onChange }: { consentAt: string | null; onCha
   );
 }
 
-function TaskGuide({
-  captureState,
-  taskPhase,
-  currentTask,
+function domainLabel(domain: (typeof FACIAL_SPEECH_TASKS)[number]['domain']) {
+  return domain === 'face' ? 'Facial movement' : domain === 'quality' ? 'Recording quality' : 'Motor speech';
+}
+
+/** The between-tasks guide, laid over the camera so reading it does not move
+ * the subject's head or eyes away from the lens. */
+function GuideOverlay({
+  task,
   taskIndex,
-  completedCount,
   onStart,
+}: {
+  task: (typeof FACIAL_SPEECH_TASKS)[number];
+  taskIndex: number;
+  onStart: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 z-20 grid place-items-center overflow-y-auto bg-gray-950/85 px-6 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-xl text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-400">
+          Step {taskIndex + 1} · {domainLabel(task.domain)}
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold">{task.title}</h2>
+        <p className="mt-4 text-lg leading-7 text-gray-100">{task.instruction}</p>
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-gray-400">
+          <span>About {task.durationSec}s</span>
+          <span className="text-gray-600">·</span>
+          <span>{task.clinicalAnchor}</span>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-gray-500">{task.captureNotes}</p>
+        <button
+          onClick={onStart}
+          className="mt-6 rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
+        >
+          Start this task
+        </button>
+        <p className="mt-3 text-xs text-gray-500">A three-second countdown runs first. Read this now; it disappears while recording.</p>
+      </div>
+    </div>
+  );
+}
+
+/** Controls during a live task. Deliberately sparse and anchored to the top of
+ * the frame, next to the webcam, so the subject's gaze stays on the lens. */
+function ActiveTaskOverlay({
+  task,
+  isLast,
   onComplete,
 }: {
-  captureState: CaptureState;
-  taskPhase: TaskPhase;
-  currentTask: (typeof FACIAL_SPEECH_TASKS)[number];
-  taskIndex: number;
-  completedCount: number;
-  onStart: () => void;
+  task: (typeof FACIAL_SPEECH_TASKS)[number];
+  isLast: boolean;
   onComplete: () => void;
 }) {
-  const active = captureState === 'recording' && taskPhase === 'active';
-  const instructional = captureState === 'recording' && taskPhase === 'instruction';
-
+  const cue =
+    task.domain === 'face'
+      ? 'Look at the camera lens'
+      : task.domain === 'quality'
+        ? 'Stay silent and still'
+        : 'Keep your face centred';
   return (
-    <aside className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-400">Task {Math.min(taskIndex + 1, FACIAL_SPEECH_TASKS.length)} / {FACIAL_SPEECH_TASKS.length}</p>
-      {active ? (
-        <div className="mt-8 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-400">Recording this task</p>
-          <h2 className="mt-3 text-xl font-semibold">{currentTask.title}</h2>
-          <p className="mt-5 text-sm leading-6 text-gray-400">
-            {currentTask.domain === 'face'
-              ? 'The instruction panel is intentionally hidden during facial capture. Look at the camera lens, not this panel.'
-              : 'Complete the speech task. The fixed reading prompt, when required, is placed immediately below the camera preview.'}
-          </p>
-          <button onClick={onComplete} className="mt-8 w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500">
-            {taskIndex === FACIAL_SPEECH_TASKS.length - 1 ? 'Finish assessment' : 'Finish task'}
-          </button>
+    <>
+      {task.nearLensPrompt ? (
+        <div className="absolute left-1/2 top-2 z-20 max-w-[90%] -translate-x-1/2 rounded-lg bg-white px-4 py-2 text-center text-sm font-semibold leading-6 text-gray-950 shadow-lg">
+          {task.nearLensPrompt}
         </div>
-      ) : (
-        <>
-          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-gray-500">
-            {currentTask.domain === 'face' ? 'Facial movement' : currentTask.domain === 'quality' ? 'Recording quality' : 'Motor speech'}
-          </p>
-          <h2 className="mt-1 text-xl font-semibold">{currentTask.title}</h2>
-          <p className="mt-4 min-h-24 text-base leading-7 text-gray-200">{currentTask.instruction}</p>
-          <div className="mt-4 rounded-lg bg-gray-800 p-3 text-sm text-gray-400">
-            <p><span className="text-gray-500">Suggested duration:</span> {currentTask.durationSec}s</p>
-            <p className="mt-1"><span className="text-gray-500">Clinical anchor:</span> {currentTask.clinicalAnchor}</p>
-            <p className="mt-1"><span className="text-gray-500">Capture note:</span> {currentTask.captureNotes}</p>
-          </div>
-          <p className="mt-4 text-xs leading-5 text-gray-500">
-            Read and memorise the instructions first. A three-second camera-facing countdown begins only after you press Start task recording.
-          </p>
-          <button disabled={!instructional} onClick={onStart} className="mt-6 w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition enabled:hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-400">
-            {captureState === 'recording' && taskPhase === 'countdown' ? 'Starting…' : 'Start task recording'}
-          </button>
-        </>
-      )}
-      <p className="mt-5 border-t border-gray-800 pt-4 text-xs text-gray-500">Completed task windows: {completedCount} / {FACIAL_SPEECH_TASKS.length}</p>
-    </aside>
+      ) : null}
+      <div className={`absolute inset-x-0 z-20 flex flex-col items-center gap-2 px-4 ${task.nearLensPrompt ? 'top-16' : 'top-14'}`}>
+        <div className="flex items-center gap-2 rounded-full bg-red-950/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-red-200 backdrop-blur-sm">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />
+          Recording · {task.title}
+        </div>
+        <p className="rounded-full bg-black/60 px-3 py-1 text-xs text-gray-200 backdrop-blur-sm">{cue}</p>
+        <button
+          onClick={onComplete}
+          className="mt-1 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-blue-500"
+        >
+          {isLast ? 'Finish assessment' : 'Finish task'}
+        </button>
+      </div>
+    </>
+  );
+}
+
+function TaskProgressStrip({
+  taskIndex,
+  completedCount,
+  captureState,
+}: {
+  taskIndex: number;
+  completedCount: number;
+  captureState: CaptureState;
+}) {
+  return (
+    <div className="flex items-center gap-3 border-t border-gray-800 bg-gray-900/60 px-5 py-3">
+      <div className="flex flex-1 gap-1">
+        {FACIAL_SPEECH_TASKS.map((task, index) => (
+          <div
+            key={task.id}
+            title={task.title}
+            className={`h-1.5 flex-1 rounded-full ${
+              index < completedCount
+                ? 'bg-emerald-500'
+                : index === taskIndex && captureState === 'recording'
+                  ? 'bg-blue-500'
+                  : 'bg-gray-700'
+            }`}
+          />
+        ))}
+      </div>
+      <span className="shrink-0 text-xs tabular-nums text-gray-500">
+        {completedCount} / {FACIAL_SPEECH_TASKS.length} captured
+      </span>
+    </div>
   );
 }
 
