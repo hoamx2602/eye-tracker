@@ -95,14 +95,81 @@ are weaker for those expressions in a 4-D validation study.
 
 | Task | Repetitions | Offline measurement |
 | --- | ---: | --- |
+| Room silence | 5 s | Noise floor for the SNR gate. Must precede the voice tasks. |
 | Sustained /a/ | 3 x 5 s | F0, F0 variation, jitter, shimmer, HNR/CPP, intensity, maximum usable phonation duration, voice breaks. |
 | `pa-ta-ka` | 2 x 10 s | Sequential-motion rate, syllable timing CV, pauses, consonant/vowel stability. |
-| Fixed sentence | 2 | ASR alignment, word/phoneme error, articulation rate, pause ratio, pitch/intensity range. |
+| NIHSS word list | 2 | ASR alignment, word/phoneme error, articulation rate, pause ratio, pitch/intensity range. |
 | Counting 1–20 | 1 | Connected-speech rate, pauses, prosody and intelligibility proxy. |
 
+The reading task uses the NIHSS dysarthria word list verbatim (MAMA, TIP-TOP,
+FIFTY-FIFTY, THANKS, HUCKLEBERRY, BASEBALL PLAYER) so the recording is directly
+comparable with a clinician-graded NIHSS item, and because the list is chosen to
+stress different articulators.
+
+The silence task is not optional. A sustained vowel is voiced from end to end,
+so there is no quiet interval inside it from which a noise floor could be
+inferred; without the dedicated segment, SNR for the most important acoustic
+task can only be guessed.
+
 Use the displayed language-specific prompt consistently within a cohort. For a
-validated Vietnamese product, create Vietnamese normative cohorts and Vietnamese
-phoneme alignment; do not apply English WER/PER norms to Vietnamese speech.
+validated Vietnamese product, create Vietnamese normative cohorts, a
+tone-balanced Vietnamese word list, and Vietnamese phoneme alignment; do not
+apply English WER/PER norms to Vietnamese speech.
+
+## Measurement conventions
+
+These are the choices that make a number mean the same thing twice. Changing any
+of them invalidates comparison with previously collected data.
+
+- **Sides are anatomical, from the subject's perspective.** The report carries
+  `side_convention: subject-anatomical`. The captured stream is never mirrored,
+  so image space and anatomy agree. MediaPipe also names sides this way, which
+  means landmark 61 is the subject's *right* mouth corner. Getting this backwards
+  reports weakness on the wrong side, which is the one output a clinician acts on.
+- **Geometry is computed in pixels, never in normalised landmark coordinates.**
+  MediaPipe normalises x by frame width and y by frame height separately, so a
+  Euclidean distance taken on those values stretches the horizontal axis by the
+  frame aspect ratio and is not comparable across capture resolutions.
+- **Landmarks are expressed in a face-local frame:** origin at the midpoint of
+  the outer eye corners, axes from the interocular line, scale from IPD. This
+  removes head translation, in-plane rotation and scale. Without it, a subject
+  who leans in between the rest and smile windows has that motion charged to both
+  mouth corners, which pulls the left/right ratio toward 1.0 and *masks* real
+  asymmetry — the failure direction that matters for a screening tool.
+- **Out-of-plane rotation is gated, not corrected.** Yaw and pitch proxies are
+  taken from bony midline landmarks that facial nerve palsy does not displace,
+  and are judged against the subject's own rest baseline. A consistently
+  off-centre head is a framing quirk and passes; a head that turns between the
+  rest and movement windows blocks that window, because it foreshortens one side
+  of the face and manufactures exactly the asymmetry being measured.
+- **Excursions are read at their peak, not their median.** A movement window
+  contains the movement and the relaxed periods around it, so a central statistic
+  measures mostly rest.
+- **Repetitions are measured separately.** Each task window holds several
+  repetitions, so features are computed per trial and reported as a median plus
+  the spread across trials. Perturbation measures (jitter, shimmer) are defined
+  only on a continuously voiced stretch and are taken from the trimmed steady
+  middle of one phonation; computed across a window containing several vowels and
+  the pauses between them, they measure the silences as glottal cycles.
+
+## Failure behaviour
+
+The gates fail closed. A blocking gate withholds the measurements it invalidates
+and the report carries `status: insufficient-quality` with a coded, scoped
+reason — a distinct outcome from a measurement that came back normal.
+
+This matters more than it sounds. Every voluntary-movement measure here is
+expressed relative to the subject's own neutral frame, so a capture with no
+usable rest window has no baseline. Substituting anything for that baseline
+makes the deltas zero and the left/right ratios exactly 1.0: a total capture
+failure rendered as a perfectly symmetric face. A withheld measurement is safe;
+a fabricated normal one is not.
+
+Blocking conditions: face visibility, illumination and blur below threshold; a
+missing or too-short rest window; a movement window with too few usable frames;
+head roll beyond tolerance or head pose drifting from the rest baseline; a
+speech window that is too short, clipped, too quiet, below the SNR floor, or
+containing no isolable phonation.
 
 ## Metrics emitted by the offline report
 
@@ -127,8 +194,17 @@ over valid frames, not one selected frame.
   vertical corner difference, onset/peak latency, and within-trial repeatability.
 - Brow raise and eye closure: left/right excursion ratio, residual eye aperture,
   onset/peak timing, and repeatability.
+- Upper- versus lower-face symmetry gap. Whether the forehead is involved is the
+  classic discriminator between an upper motor neuron lesion, which tends to
+  spare it, and a peripheral facial nerve palsy, which does not. Reported as a
+  raw difference between the upper-face and lower-face symmetry ratios and
+  labelled `uncalibrated-descriptor`: converting it into a pattern label needs
+  the labelled study, and a threshold invented here would be precisely the
+  unvalidated clinical claim this design forbids.
+- Ocular narrowing during smile, as a synkinesis proxy and Sunnybrook component.
 - Facial Action Unit deltas when the selected model supports them: AU12/AU6
   (smile), lip-corner depressor/raiser, brow raise/down, and blink/eye closure.
+  *Planned; not in the current report.*
 - Model uncertainty, quality-gate result, and an *automated facial asymmetry
   flag*; preserve raw measurements so a clinician can score Sunnybrook/eFACE
   from the video independently.
@@ -146,6 +222,7 @@ over valid frames, not one selected frame.
 - Fixed utterance: ASR text, word error rate, phoneme error rate, forced-alignment
   confidence, and an intelligibility proxy. Store the reference prompt/version;
   never treat ASR error as a diagnosis because accent and language affect it.
+  *Planned; not in the current report.*
 - A separately reported NIHSS-style *clinician-review dysarthria flag*: normal,
   possible mild–moderate, or possible severe/unintelligible. It is not a NIHSS
   score unless a trained examiner has graded the recording.
@@ -172,8 +249,8 @@ Recommended open-source components:
 
 | Component | Role | Reason / caveat |
 | --- | --- | --- |
-| [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker) | 3-D face landmarks and 52 blendshapes | Already available in the frontend dependencies; fast, deterministic landmark basis. Validate on palsy faces before using it as primary clinical landmark source. |
-| [OpenFace 2.0](https://github.com/TadasBaltrusaitis/OpenFace) | AUs, landmarks, gaze, head pose | Mature research baseline and useful independent QA/AU stream. |
+| [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker) | 3-D face landmarks and 52 blendshapes | Already available in the frontend dependencies; fast, deterministic landmark basis. **Its training distribution is dominated by symmetric faces and its mesh prior pulls toward symmetry, so it plausibly under-reports the very asymmetry being measured.** Quantifying that residual against hand annotation on palsy faces is a prerequisite, not a caveat — see the technical verification step below. |
+| OpenFace 3.0 (`openface-test`, already a backend dependency) | AUs, landmarks, gaze, head pose | Already installed and loaded for the gaze pipeline, and its multitask head emits AUs alongside gaze. Prefer it over adding OpenFace 2.0 as a second dependency; the AU head output ordering needs pinning against the published mapping before it is used. |
 | [py-feat](https://py-feat.org/) | Research facial-expression/AU toolkit | Useful comparator/ensemble, not an unvalidated medical grade. |
 | [openSMILE](https://audeering.github.io/opensmile-python/) | eGeMAPS/ComParE acoustic features | Reproducible fixed feature sets for the classical baseline. |
 | [Praat/Parselmouth](https://www.fon.hum.uva.nl/praat/) | Vowel acoustic measurements | Reference implementation for F0, perturbation and harmonicity metrics. |
@@ -196,7 +273,13 @@ glasses, lighting, microphone and language variation.
 
 1. Two blinded facial-nerve clinicians grade each standard video independently
    with Sunnybrook and eFACE; adjudicate disagreement. Retain NIHSS facial item
-   when the use case is acute stroke.
+   when the use case is acute stroke. **Report inter-rater agreement before
+   adjudication and pre-specify a floor** (ICC(2,1) >= 0.80 for the continuous
+   scales, weighted kappa >= 0.70 for ordinal items). An unreliable reference
+   standard caps the agreement the product can demonstrate: a device cannot
+   exceed its own ground truth, so an ICC target of 0.90 against a reference
+   whose raters agree at 0.75 is not achievable, and failure would be
+   misattributed to the model.
 2. Two blinded speech-language therapists grade FDA-2 and an intelligibility
    measure; retain the NIHSS dysarthria item when applicable. Capture aphasia
    separately, not as dysarthria.
@@ -222,11 +305,66 @@ These are release gates, **not published diagnostic cut-offs**:
 - No score when mandatory QC fails. Report `insufficient-quality` with the
   precise reason and permit re-capture.
 
+### Sample size
+
+Targets without a sample size are not testable. Size the locked test set from
+the precision required on the primary endpoint, not from convenience:
+
+| Endpoint | Target | Precision | Approximate requirement |
+| --- | --- | --- | --- |
+| Facial screening sensitivity | >= 0.90 | 95% CI half-width <= 0.05 | ~140 confirmed positives |
+| Facial screening specificity | >= 0.85 | 95% CI half-width <= 0.05 | ~196 confirmed negatives |
+| Facial continuous ICC(2,1) | >= 0.90 | 95% CI lower bound > 0.85 | ~120 subjects, 2 raters |
+| Speech severity Spearman rho | >= 0.75 | 95% CI lower bound > 0.60 | ~90 subjects per language |
+| Test–retest ICC | >= 0.85 | 95% CI lower bound > 0.75 | ~60 subjects with repeat sessions |
+
+Positives must be stratified across severity, not concentrated in obvious cases:
+pre-specify a minimum per severity band, because sensitivity on severe palsy says
+nothing about the mild cases where an automated screen would actually add value.
+Subgroup analyses across skin tone, age, facial hair, glasses, device and
+language are reported with their own confidence intervals and are explicitly
+underpowered unless sized for separately.
+
+### Predictive value at the intended prevalence
+
+Sensitivity and specificity are prevalence-independent; the number a user acts on
+is not. At the specificity floor of 0.85, an at-home screening population with
+low prevalence yields a positive predictive value in the single-digit percentages
+— most positive results will be false. This has to be stated in the intended-use
+description and reflected in the UI wording, and it is the argument for
+prioritising sensitivity on the urgent-review flag while presenting the result as
+a prompt to seek assessment rather than as a finding.
+
+### Reporting standards
+
+Pre-register the analysis and report against the established checklists so the
+evidence is legible to reviewers and regulators:
+
+- **STARD 2015** for the diagnostic accuracy study, with a QUADAS-2 risk-of-bias
+  assessment.
+- **TRIPOD+AI** for development and validation of the prediction models.
+- **DECIDE-AI** for the prospective usability and early live-evaluation stage.
+- **CONSORT-AI / SPIRIT-AI** if any comparative trial follows.
+
+### Regulatory position
+
+Any released claim beyond "measurement for clinician review" makes this software
+as a medical device. Under EU MDR Rule 11 software intended to inform diagnostic
+decisions falls to Class IIa or above, and the FDA equivalent is generally Class
+II requiring 510(k) with a named predicate. Identify the predicate, the intended
+use statement and the classification *before* the labelled study, because they
+determine what the study has to demonstrate. Until then the product must not
+present a diagnosis, a NIHSS score, or a severity grade.
+
 ### Test process
 
 1. **Technical verification:** synthetic landmark perturbations and annotated
    clips validate side orientation, IPD normalisation, task-window alignment,
-   mirror handling, audio timestamps, VAD and feature extraction.
+   mirror handling, audio timestamps, VAD and feature extraction. Covered by
+   `backend/tests/test_facial_speech_*.py` for the conventions above; still
+   outstanding is the landmark-fidelity study on real palsy faces, which
+   measures MediaPipe residual error against hand annotation and bounds how much
+   asymmetry the landmark model itself suppresses.
 2. **Analytic validation:** compare each raw metric with hand landmarks, AU
    labels and acoustic annotations; use Bland–Altman plots and per-task
    repeatability, not only aggregate AUC.
@@ -241,11 +379,13 @@ These are release gates, **not published diagnostic cut-offs**:
 
 ## Implementation phases
 
-1. **Current branch:** standardised capture route, versioned metadata contract,
+1. **Done:** standardised capture route, versioned metadata contract,
    documented metric schema and clinical validation plan.
-2. **Offline feature service:** Docker backend reads the paired artefacts,
-   produces QC + raw face/speech metrics and an interactive replay (video,
-   landmarks/AUs, waveform/spectrogram, task window and metric plots).
+2. **In progress:** offline feature service. The Docker backend reads the paired
+   artefacts and produces QC plus raw face/speech metrics with fail-closed gates.
+   Still outstanding in this phase: AU stream, ASR and forced alignment, and the
+   interactive replay (video, landmarks/AUs, waveform/spectrogram, task window
+   and metric plots).
 3. **Labelled-data study:** collect/consent/de-identify data; add blinded
    clinician annotation workflow and baseline models.
 4. **Calibrated classifier and report:** lock models/thresholds only after
