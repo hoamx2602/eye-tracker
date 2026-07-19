@@ -438,16 +438,32 @@ function AnalysisPanel({ job }: { job: FacialSpeechJob | null }) {
       {report ? (
         <div className="mt-5 space-y-4">
           <div className={`rounded-lg border p-3 text-sm ${report.quality.passed ? 'border-emerald-900 bg-emerald-950/30 text-emerald-100' : 'border-amber-800 bg-amber-950/30 text-amber-100'}`}>
-            <p className="font-semibold">{report.quality.passed ? 'Capture quality passed' : 'Capture quality needs review'}</p>
-            {report.quality.flags.length ? <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5">{report.quality.flags.map((flag) => <li key={flag}>{flag}</li>)}</ul> : <p className="mt-1 text-xs">Face visibility, illumination, and audio-clipping gates did not raise a re-capture flag.</p>}
+            <p className="font-semibold">{report.quality.passed ? 'Capture quality passed' : 'Insufficient capture quality — no score reported'}</p>
+            {report.quality.issues.length ? (
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5">
+                {report.quality.issues.map((issue) => (
+                  <li key={`${issue.code}:${issue.scope}`}>
+                    <span className="font-mono text-[11px] opacity-70">{issue.scope}</span> — {issue.message}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-xs">Face visibility, illumination, blur, task-window and audio gates all passed.</p>
+            )}
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Facial movement measurements</p>
-            <div className="mt-2 space-y-2">
-              {metricEntries.map(([name, value]) => (
-                <FaceMetricRow key={name} name={name} value={value} />
-              ))}
-            </div>
+            {report.face.available ? (
+              <div className="mt-2 space-y-2">
+                {metricEntries.map(([name, value]) => (
+                  <FaceMetricRow key={name} name={name} value={value} />
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 rounded bg-gray-800 px-3 py-2 text-xs leading-5 text-amber-200">
+                Withheld: the video did not meet the measurement gates above. Re-capture rather than interpreting a partial result.
+              </p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs">
             <ReportMetric label="Sustained /a/ F0" value={numberFrom(sustained, 'f0_hz_median')} unit="Hz" />

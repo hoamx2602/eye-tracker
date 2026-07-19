@@ -18,16 +18,27 @@ export function isSideMeasure(value: FaceMetricValue): value is SideMeasure {
   return typeof value === 'object' && value !== null && 'ratio_weaker_over_stronger' in value;
 }
 
+export interface QualityIssue {
+  code: string;
+  severity: 'blocking' | 'advisory';
+  scope: string;
+  message: string;
+}
+
 export interface FacialSpeechReport {
   version: string;
+  /** `insufficient-quality` means the capture could not be measured. It is a
+   * distinct outcome from a measurement that came back normal. */
+  status: 'ok' | 'insufficient-quality';
   interpretation: string;
   quality: {
     passed: boolean;
+    issues: QualityIssue[];
     flags: string[];
     face: Record<string, number | null>;
-    speech: Record<string, { duration_s?: number; rms_dbfs?: number; clipping_ratio?: number } | undefined>;
+    speech: Record<string, { duration_s?: number; rms_dbfs?: number; clipping_ratio?: number; snr_db?: number | null } | undefined>;
   };
-  face: { metrics: Record<string, FaceMetricValue>; task_frame_counts: Record<string, number> };
+  face: { available: boolean; metrics: Record<string, FaceMetricValue>; task_frame_counts: Record<string, number> };
   speech: {
     tasks: Record<string, Record<string, unknown>>;
     asr: { available: boolean; reason?: string };
