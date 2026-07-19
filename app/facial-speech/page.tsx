@@ -54,6 +54,7 @@ export default function FacialSpeechPage() {
   const sessionStartRef = useRef(0);
   const taskStartRef = useRef(0);
   const captureStartedAtRef = useRef<string | null>(null);
+  const recorderStartLatencyRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
   const completedTasksRef = useRef<CompletedTask[]>([]);
   const captureManifestRef = useRef<Record<string, unknown> | null>(null);
@@ -97,7 +98,11 @@ export default function FacialSpeechPage() {
       },
       segmentation: {
         source: 'single-continuous-video',
-        taskWindowClock: 'MediaRecorder start / performance.now()',
+        // Windows are milliseconds from the MediaRecorder onstart event, which
+        // is the first encoded moment. The processor still reconciles this
+        // against the container's own per-stream start times before slicing.
+        taskWindowClock: 'MediaRecorder onstart / performance.now()',
+        recorderStartLatencyMs: recorderStartLatencyRef.current,
         videoIncludesUntimedGuidance: true,
       },
       tasks: completedTasksRef.current,
@@ -184,8 +189,20 @@ export default function FacialSpeechPage() {
       }
     };
     recorderRef.current = recorder;
-    sessionStartRef.current = performance.now();
+    const startRequestedAt = performance.now();
+    // t0 must be the moment the encoder actually started, not the moment we
+    // asked it to. MediaRecorder.start() returns before encoding begins, and
+    // the gap - camera warm-up, encoder init - shifted every task window by an
+    // unknown amount, silently misaligning the offline analysis with the video.
+    // The requested time is only a fallback for browsers that never fire onstart.
+    sessionStartRef.current = startRequestedAt;
     captureStartedAtRef.current = new Date().toISOString();
+    recorderStartLatencyRef.current = null;
+    recorder.onstart = () => {
+      sessionStartRef.current = performance.now();
+      recorderStartLatencyRef.current = Math.round(sessionStartRef.current - startRequestedAt);
+      captureStartedAtRef.current = new Date().toISOString();
+    };
     setTaskIndex(0);
     setTaskPhase('instruction');
     setCompletedTasks([]);

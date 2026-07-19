@@ -34,7 +34,8 @@ ADVISORY = "advisory"
 MIN_VALID_FACE_FRAME_RATIO = 0.75
 MIN_BRIGHTNESS_0_255 = 55.0
 MIN_BLUR_VARIANCE = 40.0
-MIN_TASK_FACE_FRAMES = 15  # ~1 s at the 2x-decimated sampling rate
+SAMPLE_INTERVAL_MS = 1000.0 / 15.0  # analyse 15 frames per second of video
+MIN_TASK_FACE_FRAMES = 15  # ~1 s of usable video at SAMPLE_INTERVAL_MS
 MAX_CLIPPING_RATIO = 0.01
 MIN_SPEECH_ACTIVITY_RATIO = 0.20
 # Shortest window that can still carry the task's measurement. Below this the
@@ -193,6 +194,35 @@ def _window_samples(tasks: list[dict[str, Any]], task_id: str) -> tuple[float, f
             if end > start:
                 return start, end
     return None
+
+
+def _stream_start_times(video_path: str) -> dict[str, float]:
+    """First presentation timestamp of each stream, in seconds.
+
+    Task windows are recorded on the MediaRecorder clock, but the extracted WAV
+    begins at the audio stream's first sample, which in a MediaRecorder WebM is
+    not necessarily the container origin. Slicing audio with video-timeline
+    offsets therefore drifts. Reading the container's own start times lets the
+    two be reconciled instead of assumed equal.
+    """
+    command = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "stream=codec_type,start_time",
+        "-of", "json", video_path,
+    ]
+    starts: dict[str, float] = {}
+    try:
+        proc = subprocess.run(command, capture_output=True, text=True, check=False)
+        if proc.returncode != 0:
+            return starts
+        for stream in json.loads(proc.stdout).get("streams", []):
+            codec_type = stream.get("codec_type")
+            start_time = stream.get("start_time")
+            if codec_type in ("audio", "video") and start_time not in (None, "N/A"):
+                starts[codec_type] = float(start_time)
+    except Exception:  # a missing or unparseable start time is handled by the caller
+        return {}
+    return starts
 
 
 def _read_wav(path: Path) -> tuple[int, np.ndarray]:
@@ -661,12 +691,16 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
     except ImportError as exc:
         raise RuntimeError("MediaPipe/OpenCV are not installed. Rebuild the Docker backend after updating requirements.") from exc
 
+    stream_starts = _stream_start_times(video_path)
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise RuntimeError("Unable to open the uploaded capture video.")
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     frame_count = 0
+    sampled_frames = 0
     valid_frames = 0
+    next_sample_ms = 0.0
+    timestamps_usable = True
     brightness: list[float] = []
     blur: list[float] = []
     task_frames: dict[str, list[dict[str, float]]] = {task["id"]: [] for task in tasks if task.get("id")}
@@ -685,9 +719,19 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
             if not ok:
                 break
             frame_count += 1
-            if frame_count % 2:
-                continue
+            # Sample on the media clock, not on the frame index. MediaRecorder
+            # WebM is variable frame rate, so taking every other frame both
+            # sampled unevenly in time and made the valid-frame ratio a
+            # per-frame rather than per-second figure.
             t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
+            if not t_ms and frame_count > 1:
+                timestamps_usable = False
+            if not timestamps_usable:
+                t_ms = (frame_count - 1) * 1000.0 / fps
+            if t_ms < next_sample_ms:
+                continue
+            next_sample_ms = t_ms + SAMPLE_INTERVAL_MS
+            sampled_frames += 1
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             brightness.append(float(np.mean(gray)))
             blur.append(float(cv2.Laplacian(gray, cv2.CV_64F).var()))
@@ -707,10 +751,12 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
         cap.release()
 
     face_quality = {
-        "sampled_frames": frame_count // 2,
-        "valid_face_frame_ratio": float(valid_frames / max(frame_count // 2, 1)),
+        "decoded_frames": frame_count,
+        "sampled_frames": sampled_frames,
+        "valid_face_frame_ratio": float(valid_frames / max(sampled_frames, 1)),
         "brightness_median_0_255": _median(brightness),
         "blur_variance_median": _median(blur),
+        "frame_timestamps_from_container": timestamps_usable,
     }
     face_metrics, face_issues = _face_metrics(task_frames, face_quality)
 
@@ -724,6 +770,15 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
         sample_rate, audio = _read_wav(wav_path)
         speech_tasks: dict[str, Any] = {}
         speech_issues: list[dict[str, str]] = []
+        # The WAV starts at the audio stream's first sample; shift task windows
+        # onto that timeline rather than assuming both streams share an origin.
+        audio_offset_s = stream_starts.get("audio", 0.0) - stream_starts.get("video", 0.0)
+        if not stream_starts:
+            speech_issues.append(_issue(
+                "stream-timing-unknown", ADVISORY, "speech",
+                "ffprobe reported no per-stream start times, so audio and video are assumed to share an origin. "
+                "Any container-level A/V offset is uncorrected.",
+            ))
         for task_id in MIN_SPEECH_DURATION_S:
             window = _window_samples(tasks, task_id)
             if not window:
@@ -732,8 +787,8 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
                     f"The capture metadata has no completed {task_id} window; the task was not performed.",
                 ))
                 continue
-            start = max(0, int(window[0] * sample_rate / 1000))
-            end = min(len(audio), int(window[1] * sample_rate / 1000))
+            start = max(0, int((window[0] / 1000.0 - audio_offset_s) * sample_rate))
+            end = min(len(audio), int((window[1] / 1000.0 - audio_offset_s) * sample_rate))
             report, issues = _speech_features(
                 audio[start:end], sample_rate, task_id, include_ddk=task_id == "speech_ddk_patka"
             )
@@ -753,6 +808,14 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
         # normal, and no score is emitted for the affected modality.
         "status": "ok" if passed else "insufficient-quality",
         "interpretation": "measurement-and-clinical-review only; not a standalone diagnosis or NIHSS score",
+        # Recorded so a reviewer can confirm which timeline each window was cut
+        # from, rather than having to trust that the streams were aligned.
+        "timeline": {
+            "stream_start_times_s": stream_starts,
+            "audio_offset_applied_s": audio_offset_s,
+            "recorder_start_latency_ms": (payload.get("segmentation") or {}).get("recorderStartLatencyMs"),
+            "video_frame_sample_hz": 1000.0 / SAMPLE_INTERVAL_MS,
+        },
         "quality": {
             "face": face_quality,
             "speech": speech_quality,
