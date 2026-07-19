@@ -35,6 +35,11 @@ MIN_VALID_FACE_FRAME_RATIO = 0.75
 MIN_BRIGHTNESS_0_255 = 55.0
 MIN_BLUR_VARIANCE = 40.0
 SAMPLE_INTERVAL_MS = 1000.0 / 15.0  # analyse 15 frames per second of video
+MAX_HEAD_ROLL_DEG = 15.0
+# Pose proxies are IPD-normalised offsets of midline landmarks, so their
+# tolerances are in IPD units rather than degrees.
+MAX_POSE_DRIFT_FROM_REST_IPD = 0.08
+MAX_POSE_SPREAD_WITHIN_TASK_IPD = 0.10
 MIN_TASK_FACE_FRAMES = 15  # ~1 s of usable video at SAMPLE_INTERVAL_MS
 MAX_CLIPPING_RATIO = 0.01
 MIN_SPEECH_ACTIVITY_RATIO = 0.20
@@ -171,8 +176,20 @@ def _face_features(points: np.ndarray) -> dict[str, float] | None:
     origin, u, v, ipd = frame
     mouth_l_u, mouth_l_v = _local(points[MOUTH_CORNER_L], origin, u, v, ipd)
     mouth_r_u, mouth_r_v = _local(points[MOUTH_CORNER_R], origin, u, v, ipd)
+    # Head-pose proxies. Out-of-plane rotation biases every left/right
+    # comparison - a turned head shortens one side of the face - so pose has to
+    # be observable. These use bony midline landmarks (nasion, nose tip), which
+    # facial nerve palsy does not displace, rather than the mimetic-muscle
+    # landmarks being measured. They are relative, not calibrated angles: the
+    # gate needs to know the head did not move *between* windows, which is
+    # exactly what a rest-relative comparison answers.
+    bridge_u, _ = _local(points[NOSE_BRIDGE], origin, u, v, ipd)
+    _, tip_v = _local(points[NOSE_TIP], origin, u, v, ipd)
     return {
         "ipd": ipd,
+        "roll_deg": float(math.degrees(math.atan2(u[1], u[0]))),
+        "yaw_proxy": bridge_u,
+        "pitch_proxy": tip_v,
         # Taken along the face's own vertical axis, so head roll no longer
         # registers as a dropped mouth corner.
         "mouth_corner_vertical_asymmetry": abs(mouth_l_v - mouth_r_v),
@@ -565,6 +582,83 @@ def _connected_speech_metrics(
     }
 
 
+def _head_pose_stable(
+    frames: list[dict[str, float]],
+    rest_yaw: float | None,
+    rest_pitch: float | None,
+    task_id: str,
+    issues: list[dict[str, str]],
+) -> bool:
+    """Reject a movement window whose head pose differs from the baseline.
+
+    Every facial measurement here is rest-relative, so it is only valid if the
+    head is in the same pose in both windows. Turning toward one side
+    foreshortens that side of the face and produces exactly the left/right
+    difference the module is looking for, which is the worst possible confound
+    for this measurement. The capture manifest has always claimed
+    requireStableHeadPose; this is where that claim is honoured.
+    """
+    roll = _median([item["roll_deg"] for item in frames])
+    if roll is not None and abs(roll) > MAX_HEAD_ROLL_DEG:
+        issues.append(_issue(
+            "head-roll-excessive", BLOCKING, task_id,
+            f"The head is tilted {abs(roll):.0f} deg during {task_id} (maximum {MAX_HEAD_ROLL_DEG:.0f} deg). "
+            "Keep the head level and repeat the task.",
+        ))
+        return False
+
+    for name, rest_value, key in (("yaw", rest_yaw, "yaw_proxy"), ("pitch", rest_pitch, "pitch_proxy")):
+        current = _median([item[key] for item in frames])
+        if rest_value is None or current is None:
+            continue
+        if abs(current - rest_value) > MAX_POSE_DRIFT_FROM_REST_IPD:
+            issues.append(_issue(
+                f"head-{name}-drift", BLOCKING, task_id,
+                f"Head {name} during {task_id} differs from the rest baseline by "
+                f"{abs(current - rest_value):.2f} IPD (maximum {MAX_POSE_DRIFT_FROM_REST_IPD:.2f}). "
+                "Rest-relative measurement needs the same head pose in both windows; repeat the task facing the camera.",
+            ))
+            return False
+        spread = float(np.percentile([item[key] for item in frames], 90) - np.percentile([item[key] for item in frames], 10))
+        if spread > MAX_POSE_SPREAD_WITHIN_TASK_IPD:
+            issues.append(_issue(
+                f"head-{name}-unsteady", BLOCKING, task_id,
+                f"The head moved in {name} during {task_id} (spread {spread:.2f} IPD, maximum "
+                f"{MAX_POSE_SPREAD_WITHIN_TASK_IPD:.2f}). Hold the head still and repeat the task.",
+            ))
+            return False
+    return True
+
+
+def _upper_versus_lower(brow: dict[str, Any], smile: dict[str, Any]) -> dict[str, Any]:
+    """How upper-face and lower-face weakness compare on the same side.
+
+    Whether the forehead is involved is the classic discriminator between an
+    upper motor neuron lesion, which tends to spare it, and a peripheral facial
+    nerve palsy, which does not. Both halves of that comparison were already
+    being measured and never put together.
+
+    Reported as a raw measurement with no cut-off. Turning the gap into a
+    pattern label requires the labelled validation study; a threshold invented
+    here would be exactly the unvalidated clinical claim the design forbids.
+    """
+    brow_ratio = brow.get("ratio_weaker_over_stronger")
+    smile_ratio = smile.get("ratio_weaker_over_stronger")
+    if brow_ratio is None or smile_ratio is None:
+        return {"symmetry_gap": None, "same_weaker_side": None, "interpretation": "uncalibrated-descriptor"}
+    return {
+        # Positive means the upper face is more symmetric than the lower face,
+        # i.e. the direction consistent with forehead sparing.
+        "symmetry_gap": float(brow_ratio - smile_ratio),
+        "same_weaker_side": (
+            brow.get("weaker_side") == smile.get("weaker_side")
+            if brow.get("weaker_side") and smile.get("weaker_side")
+            else None
+        ),
+        "interpretation": "uncalibrated-descriptor",
+    }
+
+
 def _blank_face_metrics() -> dict[str, Any]:
     return {
         "side_convention": SIDE_CONVENTION,
@@ -572,6 +666,8 @@ def _blank_face_metrics() -> dict[str, Any]:
         "smile_excursion_ipd": _side_ratio(None, None),
         "brow_excursion_ipd": _side_ratio(None, None),
         "eye_closure_residual_ratio": _side_ratio(None, None),
+        "ocular_narrowing_during_smile": _side_ratio(None, None),
+        "upper_versus_lower_face": _upper_versus_lower({}, {}),
     }
 
 
@@ -632,6 +728,9 @@ def _face_metrics(
     rest_eye_left = _median([item["eye_left"] for item in rest])
     rest_eye_right = _median([item["eye_right"] for item in rest])
 
+    rest_yaw = _median([item["yaw_proxy"] for item in rest])
+    rest_pitch = _median([item["pitch_proxy"] for item in rest])
+
     def movement_frames(task_id: str) -> list[dict[str, float]] | None:
         frames = task_frames.get(task_id) or []
         if len(frames) < MIN_TASK_FACE_FRAMES:
@@ -640,6 +739,8 @@ def _face_metrics(
                 f"The {task_id} window yielded {len(frames)} usable frames (minimum {MIN_TASK_FACE_FRAMES}); "
                 "this measurement is withheld.",
             ))
+            return None
+        if not _head_pose_stable(frames, rest_yaw, rest_pitch, task_id, issues):
             return None
         return frames
 
@@ -666,6 +767,19 @@ def _face_metrics(
             _peak([max(0.0, item["brow_left"] - rest_brow_left) for item in brow]),
             _peak([max(0.0, item["brow_right"] - rest_brow_right) for item in brow]),
         )
+
+    if smile is not None and rest_eye_left and rest_eye_right:
+        # Synkinesis proxy: involuntary eye narrowing while smiling, which is a
+        # Sunnybrook component the battery already captures but never read. The
+        # frames are already in hand from the smile window.
+        metrics["ocular_narrowing_during_smile"] = _side_ratio(
+            _trough([item["eye_left"] / rest_eye_left for item in smile]),
+            _trough([item["eye_right"] / rest_eye_right for item in smile]),
+        )
+
+    metrics["upper_versus_lower_face"] = _upper_versus_lower(
+        metrics["brow_excursion_ipd"], metrics["smile_excursion_ipd"]
+    )
 
     closure = movement_frames("face_eye_closure")
     if closure is not None and rest_eye_left and rest_eye_right:

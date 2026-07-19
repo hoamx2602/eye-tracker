@@ -12,10 +12,26 @@ export interface SideMeasure {
   weaker_side: 'left' | 'right' | null;
 }
 
-export type FaceMetricValue = number | string | SideMeasure | null;
+/**
+ * Upper-face versus lower-face symmetry. Whether the forehead is involved is
+ * the classic discriminator between an upper motor neuron lesion and a
+ * peripheral facial nerve palsy, but the gap is reported raw: applying a
+ * cut-off would be an unvalidated clinical claim.
+ */
+export interface UpperLowerComparison {
+  symmetry_gap: number | null;
+  same_weaker_side: boolean | null;
+  interpretation: string;
+}
+
+export type FaceMetricValue = number | string | SideMeasure | UpperLowerComparison | null;
 
 export function isSideMeasure(value: FaceMetricValue): value is SideMeasure {
   return typeof value === 'object' && value !== null && 'ratio_weaker_over_stronger' in value;
+}
+
+export function isUpperLowerComparison(value: FaceMetricValue): value is UpperLowerComparison {
+  return typeof value === 'object' && value !== null && 'symmetry_gap' in value;
 }
 
 export interface QualityIssue {

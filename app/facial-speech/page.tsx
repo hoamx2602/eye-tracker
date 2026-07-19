@@ -11,6 +11,7 @@ import {
   facialSpeechHandlingEnabled,
   getFacialSpeechJob,
   isSideMeasure,
+  isUpperLowerComparison,
   startFacialSpeechProcessing,
   type FaceMetricValue,
   type FacialSpeechJob,
@@ -511,6 +512,21 @@ function FaceMetricRow({ name, value }: { name: string; value: FaceMetricValue }
           <span className="font-mono">L {value.left === null ? '—' : value.left.toFixed(4)} · R {value.right === null ? '—' : value.right.toFixed(4)}</span>
           {value.weaker_side ? <span className="text-amber-300">reduced on the {value.weaker_side}</span> : null}
         </div>
+      </div>
+    );
+  }
+  if (isUpperLowerComparison(value)) {
+    return (
+      <div className="rounded bg-gray-800 px-3 py-2 text-xs">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-gray-400">{label}</span>
+          <span className="font-mono text-gray-100">{value.symmetry_gap === null ? 'unavailable' : value.symmetry_gap.toFixed(4)}</span>
+        </div>
+        <p className="mt-1 text-[11px] leading-4 text-gray-500">
+          Upper-face symmetry minus lower-face symmetry
+          {value.same_weaker_side === null ? '' : value.same_weaker_side ? ', same side affected' : ', opposite sides affected'}. No
+          threshold is applied: turning this into a pattern label requires the validation study.
+        </p>
       </div>
     );
   }

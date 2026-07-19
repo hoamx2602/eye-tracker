@@ -28,9 +28,20 @@ SAMPLE_RATE = 16000
 FACE_TASKS = ("face_rest", "face_brow_raise", "face_eye_closure", "face_smile_show_teeth")
 
 
-def _frame(*, brow: float = 0.5, eye: float = 0.1, mouth_v: float = 0.4) -> dict[str, float]:
+def _frame(
+    *,
+    brow: float = 0.5,
+    eye: float = 0.1,
+    mouth_v: float = 0.4,
+    roll_deg: float = 0.0,
+    yaw: float = 0.0,
+    pitch: float = 0.6,
+) -> dict[str, float]:
     return {
         "ipd": 256.0,
+        "roll_deg": roll_deg,
+        "yaw_proxy": yaw,
+        "pitch_proxy": pitch,
         "mouth_corner_vertical_asymmetry": 0.0,
         "mouth_left_u": 0.2,
         "mouth_left_v": mouth_v,
@@ -44,9 +55,16 @@ def _frame(*, brow: float = 0.5, eye: float = 0.1, mouth_v: float = 0.4) -> dict
 
 
 def _task_frames(count: int = MIN_TASK_FACE_FRAMES + 5, **overrides: int) -> dict[str, list[dict[str, float]]]:
-    frames = {task: [_frame() for _ in range(count)] for task in FACE_TASKS}
+    """A well-performed capture: each movement window differs from rest."""
+    shapes = {
+        "face_rest": {},
+        "face_brow_raise": {"brow": 0.7},
+        "face_eye_closure": {"eye": 0.01},
+        "face_smile_show_teeth": {"mouth_v": 0.5},
+    }
+    frames = {task: [_frame(**shape) for _ in range(count)] for task, shape in shapes.items()}
     for task, task_count in overrides.items():
-        frames[task] = [_frame() for _ in range(task_count)]
+        frames[task] = [_frame(**shapes[task]) for _ in range(task_count)]
     return frames
 
 
@@ -64,7 +82,11 @@ def _codes(issues: list[dict[str, str]]) -> set[str]:
 
 
 def _all_side_measures(metrics: dict) -> list[dict]:
-    return [value for value in metrics.values() if isinstance(value, dict)]
+    return [
+        value
+        for value in metrics.values()
+        if isinstance(value, dict) and "ratio_weaker_over_stronger" in value
+    ]
 
 
 def test_a_clean_capture_produces_measurements_and_no_blocking_issue() -> None:
@@ -123,6 +145,74 @@ def test_one_unusable_movement_window_withholds_only_that_measurement() -> None:
 def test_an_unusable_window_still_blocks_the_overall_result() -> None:
     _, issues = _face_metrics(_task_frames(face_eye_closure=1), _good_face_quality())
     assert _blocking(issues), "an incomplete battery must not report an overall pass"
+
+
+def test_a_head_turned_away_from_the_baseline_blocks_that_window() -> None:
+    """Out-of-plane rotation foreshortens one side of the face.
+
+    That produces exactly the left/right difference the module looks for, so a
+    turned head is the worst available confound and must not be measured.
+    """
+    frames = _task_frames()
+    frames["face_smile_show_teeth"] = [_frame(yaw=0.25) for _ in range(30)]
+    metrics, issues = _face_metrics(frames, _good_face_quality())
+    assert "head-yaw-drift" in _codes(issues)
+    assert metrics["smile_excursion_ipd"]["ratio_weaker_over_stronger"] is None
+    assert metrics["brow_excursion_ipd"]["left"] is not None, "other windows are unaffected"
+
+
+def test_a_tilted_head_blocks_that_window() -> None:
+    frames = _task_frames()
+    frames["face_brow_raise"] = [_frame(roll_deg=25.0) for _ in range(30)]
+    _, issues = _face_metrics(frames, _good_face_quality())
+    assert "head-roll-excessive" in _codes(issues)
+
+
+def test_a_head_moving_during_a_task_blocks_that_window() -> None:
+    frames = _task_frames()
+    # Centred on the baseline, so only the movement - not a drift - can fire.
+    frames["face_smile_show_teeth"] = [_frame(mouth_v=0.5, yaw=-0.2 + 0.4 * index / 29) for index in range(30)]
+    _, issues = _face_metrics(frames, _good_face_quality())
+    assert "head-yaw-unsteady" in _codes(issues)
+
+
+def test_a_steady_frontal_head_passes_the_pose_gate() -> None:
+    _, issues = _face_metrics(_task_frames(), _good_face_quality())
+    assert not {code for code in _codes(issues) if code.startswith("head-")}
+
+
+def test_pose_is_judged_against_the_subject_own_baseline() -> None:
+    """A consistently off-centre head is a framing quirk, not a within-session
+    confound, so long as it is the same in the rest and movement windows."""
+    frames = {task: [_frame(yaw=0.2) for _ in range(30)] for task in FACE_TASKS}
+    _, issues = _face_metrics(frames, _good_face_quality())
+    assert not {code for code in _codes(issues) if code.startswith("head-")}
+
+
+def test_upper_versus_lower_face_is_reported_without_a_cut_off() -> None:
+    frames = _task_frames()
+    # Symmetric brow raise, reduced left smile: the forehead-sparing direction.
+    frames["face_smile_show_teeth"] = [_frame(mouth_v=0.45) for _ in range(30)]
+    metrics, _ = _face_metrics(frames, _good_face_quality())
+    comparison = metrics["upper_versus_lower_face"]
+    assert comparison["interpretation"] == "uncalibrated-descriptor"
+    assert comparison["symmetry_gap"] is not None
+
+
+def test_upper_versus_lower_face_is_null_when_either_half_is_missing() -> None:
+    metrics, _ = _face_metrics(_task_frames(face_brow_raise=0), _good_face_quality())
+    assert metrics["upper_versus_lower_face"]["symmetry_gap"] is None
+
+
+def test_synkinesis_proxy_reads_eye_narrowing_during_the_smile() -> None:
+    frames = _task_frames()
+    # The left eye narrows involuntarily while smiling; the right does not.
+    frames["face_smile_show_teeth"] = [_frame() | {"eye_left": 0.05} for _ in range(30)]
+    metrics, _ = _face_metrics(frames, _good_face_quality())
+    narrowing = metrics["ocular_narrowing_during_smile"]
+    assert narrowing["weaker_side"] == "left"
+    assert narrowing["left"] == pytest.approx(0.5, abs=0.05)
+    assert narrowing["right"] == pytest.approx(1.0, abs=0.05)
 
 
 def _tone(seconds: float, amplitude: float = 0.2, freq: float = 140.0) -> np.ndarray:
