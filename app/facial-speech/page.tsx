@@ -10,12 +10,10 @@ import {
 import {
   facialSpeechHandlingEnabled,
   getFacialSpeechJob,
-  isSideMeasure,
-  isUpperLowerComparison,
   startFacialSpeechProcessing,
-  type FaceMetricValue,
   type FacialSpeechJob,
 } from '@/lib/facialSpeechBackend';
+import { AnalysisReport } from '@/components/facial-speech/AnalysisReport';
 
 /** Bump when the wording of the consent notice changes materially, so a stored
  * capture records which notice the subject actually agreed to. */
@@ -368,8 +366,13 @@ export default function FacialSpeechPage() {
         </section>
 
         {captureState === 'processing' || processingJob ? (
-          <section className="mx-auto mt-6 max-w-4xl">
-            <AnalysisPanel job={processingJob} />
+          <section className="mt-6">
+            <ProcessingStatus job={processingJob} />
+            {processingJob?.report ? (
+              <div className="mt-5">
+                <AnalysisReport report={processingJob.report} />
+              </div>
+            ) : null}
           </section>
         ) : null}
 
@@ -532,154 +535,39 @@ function TaskProgressStrip({
   );
 }
 
-function AnalysisPanel({ job }: { job: FacialSpeechJob | null }) {
-  const report = job?.report;
-  const metricEntries = report ? Object.entries(report.face.metrics) : [];
-  const sustained = report?.speech.tasks.speech_sustained_a;
-  const ddk = report?.speech.tasks.speech_ddk_patka;
-
+/** Job progress only. Everything the report contains is rendered by
+ * AnalysisReport, which needs the full width the old side panel did not have. */
+function ProcessingStatus({ job }: { job: FacialSpeechJob | null }) {
+  const running = job?.status === 'processing' || job?.status === 'queued';
   return (
-    <aside className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-400">Offline analysis</p>
-      <h2 className="mt-2 text-xl font-semibold">{job?.status === 'complete' ? 'Measurement report' : job?.status === 'failed' ? 'Analysis unavailable' : 'Processing capture'}</h2>
-      <p className="mt-3 text-sm leading-6 text-gray-400">{job?.message ?? 'Preparing the analysis job…'}</p>
+    <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-400">Offline analysis</p>
+          <h2 className="mt-1 text-xl font-semibold">
+            {job?.status === 'complete' ? 'Measurement report' : job?.status === 'failed' ? 'Analysis unavailable' : 'Processing capture'}
+          </h2>
+        </div>
+        {running ? <span className="font-mono text-sm text-gray-400">{job.progress}%</span> : null}
+      </div>
+      <p className="mt-2 text-sm leading-6 text-gray-400">{job?.message ?? 'Preparing the analysis job…'}</p>
 
-      {job?.status === 'processing' || job?.status === 'queued' ? (
-        <div className="mt-6">
-          <div className="flex justify-between text-xs text-gray-400"><span>{job.phase.replace(/_/g, ' ')}</span><span>{job.progress}%</span></div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-800">
+      {running ? (
+        <div className="mt-4">
+          <div className="h-2 overflow-hidden rounded-full bg-gray-800">
             <div className="h-full rounded-full bg-blue-500 transition-all duration-300" style={{ width: `${job.progress}%` }} />
           </div>
-          <p className="mt-4 text-xs leading-5 text-gray-500">The backend is processing only the timestamped task windows, not the guide or countdown frames.</p>
+          <p className="mt-2 text-xs text-gray-500">
+            {job.phase.replace(/_/g, ' ')} · only the timestamped task windows are decoded, not the guide or countdown frames.
+          </p>
         </div>
       ) : null}
 
       {job?.status === 'failed' ? (
-        <div className="mt-6 rounded-lg border border-red-900/80 bg-red-950/30 p-3 text-sm text-red-200">
+        <div className="mt-4 rounded-lg border border-red-900/80 bg-red-950/30 p-3 text-sm text-red-200">
           {job.error || 'The backend did not return a report.'}
         </div>
       ) : null}
-
-      {report ? (
-        <div className="mt-5 space-y-4">
-          <div className={`rounded-lg border p-3 text-sm ${report.quality.passed ? 'border-emerald-900 bg-emerald-950/30 text-emerald-100' : 'border-amber-800 bg-amber-950/30 text-amber-100'}`}>
-            <p className="font-semibold">{report.quality.passed ? 'Capture quality passed' : 'Insufficient capture quality — no score reported'}</p>
-            {report.quality.issues.length ? (
-              <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5">
-                {report.quality.issues.map((issue) => (
-                  <li key={`${issue.code}:${issue.scope}`}>
-                    <span className="font-mono text-[11px] opacity-70">{issue.scope}</span> — {issue.message}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-1 text-xs">Face visibility, illumination, blur, task-window and audio gates all passed.</p>
-            )}
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Facial movement measurements</p>
-            {report.face.available ? (
-              <div className="mt-2 space-y-2">
-                {metricEntries.map(([name, value]) => (
-                  <FaceMetricRow key={name} name={name} value={value} />
-                ))}
-              </div>
-            ) : (
-              <p className="mt-2 rounded bg-gray-800 px-3 py-2 text-xs leading-5 text-amber-200">
-                Withheld: the video did not meet the measurement gates above. Re-capture rather than interpreting a partial result.
-              </p>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <ReportMetric label="Sustained /a/ F0" measure={trialMeasure(sustained, 'f0_hz_median')} unit="Hz" />
-            <ReportMetric label="Sustained /a/ HNR" measure={trialMeasure(sustained, 'hnr_db_median')} unit="dB" />
-            <ReportMetric label="Sustained /a/ jitter" measure={trialMeasure(sustained, 'jitter_local')} unit="" />
-            <ReportMetric label="Max phonation time" measure={{ median: numberFrom(sustained, 'max_phonation_time_s'), nTrials: null }} unit="s" />
-            <ReportMetric label="DDK peak rate (per run)" measure={trialMeasure(ddk, 'energy_peak_rate_hz')} unit="Hz" />
-            <ReportMetric label="DDK timing CV" measure={trialMeasure(ddk, 'peak_interval_cv')} unit="" />
-          </div>
-          <p className="rounded-lg bg-gray-800 p-3 text-xs leading-5 text-gray-400">{report.interpretation}</p>
-        </div>
-      ) : null}
-    </aside>
-  );
-}
-
-function FaceMetricRow({ name, value }: { name: string; value: FaceMetricValue }) {
-  const label = name.replace(/_/g, ' ');
-  if (isSideMeasure(value)) {
-    const ratio = value.ratio_weaker_over_stronger;
-    return (
-      <div className="rounded bg-gray-800 px-3 py-2 text-xs">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-gray-400">{label}</span>
-          <span className="font-mono text-gray-100">{ratio === null ? 'unavailable' : ratio.toFixed(4)}</span>
-        </div>
-        <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-gray-500">
-          <span className="font-mono">L {value.left === null ? '—' : value.left.toFixed(4)} · R {value.right === null ? '—' : value.right.toFixed(4)}</span>
-          {value.weaker_side ? <span className="text-amber-300">reduced on the {value.weaker_side}</span> : null}
-        </div>
-      </div>
-    );
-  }
-  if (isUpperLowerComparison(value)) {
-    return (
-      <div className="rounded bg-gray-800 px-3 py-2 text-xs">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-gray-400">{label}</span>
-          <span className="font-mono text-gray-100">{value.symmetry_gap === null ? 'unavailable' : value.symmetry_gap.toFixed(4)}</span>
-        </div>
-        <p className="mt-1 text-[11px] leading-4 text-gray-500">
-          Upper-face symmetry minus lower-face symmetry
-          {value.same_weaker_side === null ? '' : value.same_weaker_side ? ', same side affected' : ', opposite sides affected'}. No
-          threshold is applied: turning this into a pattern label requires the validation study.
-        </p>
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-center justify-between gap-3 rounded bg-gray-800 px-3 py-2 text-xs">
-      <span className="text-gray-400">{label}</span>
-      <span className="font-mono text-gray-100">
-        {typeof value === 'number' ? value.toFixed(4) : typeof value === 'string' ? value : 'unavailable'}
-      </span>
-    </div>
-  );
-}
-
-function numberFrom(values: Record<string, unknown> | undefined, key: string) {
-  const value = values?.[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-/** Reads a per-trial aggregate, which the backend reports as a median plus the
- * spread across repetitions rather than a single pooled number. */
-function trialMeasure(values: Record<string, unknown> | undefined, key: string) {
-  const aggregate = values?.[key];
-  if (typeof aggregate !== 'object' || aggregate === null) return { median: null, nTrials: null };
-  const record = aggregate as Record<string, unknown>;
-  return {
-    median: typeof record.median === 'number' && Number.isFinite(record.median) ? record.median : null,
-    nTrials: typeof record.n_trials === 'number' ? record.n_trials : null,
-  };
-}
-
-function ReportMetric({
-  label,
-  measure,
-  unit,
-}: {
-  label: string;
-  measure: { median: number | null; nTrials: number | null };
-  unit: string;
-}) {
-  return (
-    <div className="rounded-lg bg-gray-800 p-3">
-      <p className="text-gray-500">{label}</p>
-      <p className="mt-1 font-mono text-sm text-gray-100">
-        {measure.median === null ? 'unavailable' : `${measure.median.toFixed(2)}${unit ? ` ${unit}` : ''}`}
-      </p>
-      {measure.nTrials !== null ? <p className="mt-0.5 text-[11px] text-gray-500">median of {measure.nTrials} trial(s)</p> : null}
     </div>
   );
 }

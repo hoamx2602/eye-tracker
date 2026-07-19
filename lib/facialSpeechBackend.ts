@@ -41,6 +41,32 @@ export interface QualityIssue {
   message: string;
 }
 
+/** Per-frame left/right trace behind a facial summary number. */
+export interface FaceSeries {
+  label: string;
+  unit: string;
+  t_ms: number[];
+  left: number[];
+  right: number[];
+  peak_t_ms: number;
+}
+
+export interface F0Contour {
+  trial: number;
+  start_s: number;
+  step_s: number;
+  /** null marks an unvoiced frame — a break in the line, not a drop to zero. */
+  hz: (number | null)[];
+}
+
+export interface SpeechSeries {
+  duration_s: number;
+  envelope: number[];
+  gate: number;
+  trials_s: [number, number][];
+  f0?: F0Contour[];
+}
+
 export interface FacialSpeechReport {
   version: string;
   /** `insufficient-quality` means the capture could not be measured. It is a
@@ -54,11 +80,43 @@ export interface FacialSpeechReport {
     face: Record<string, number | null>;
     speech: Record<string, { duration_s?: number; rms_dbfs?: number; clipping_ratio?: number; snr_db?: number | null } | undefined>;
   };
-  face: { available: boolean; metrics: Record<string, FaceMetricValue>; task_frame_counts: Record<string, number> };
+  timeline?: Record<string, unknown>;
+  face: {
+    available: boolean;
+    metrics: Record<string, FaceMetricValue>;
+    task_frame_counts: Record<string, number>;
+    series: Record<string, FaceSeries>;
+    /** Annotated stills as data: URIs, keyed rest / smile_peak / brow_peak / eye_closed. */
+    key_frames: Record<string, string>;
+  };
   speech: {
     tasks: Record<string, Record<string, unknown>>;
     asr: { available: boolean; reason?: string };
   };
+}
+
+/** Aggregate across repetitions: a median plus the spread between trials. */
+export interface TrialAggregate {
+  median: number | null;
+  iqr: number | null;
+  n_trials: number;
+  per_trial: number[];
+}
+
+export function asTrialAggregate(value: unknown): TrialAggregate | null {
+  if (typeof value !== 'object' || value === null || !('median' in value)) return null;
+  const record = value as Record<string, unknown>;
+  return {
+    median: typeof record.median === 'number' ? record.median : null,
+    iqr: typeof record.iqr === 'number' ? record.iqr : null,
+    n_trials: typeof record.n_trials === 'number' ? record.n_trials : 0,
+    per_trial: Array.isArray(record.per_trial) ? (record.per_trial as number[]) : [],
+  };
+}
+
+export function asSpeechSeries(value: unknown): SpeechSeries | null {
+  if (typeof value !== 'object' || value === null || !('envelope' in value)) return null;
+  return value as SpeechSeries;
 }
 
 export interface FacialSpeechJob {
