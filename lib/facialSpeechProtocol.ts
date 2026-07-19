@@ -1,4 +1,4 @@
-export type FacialSpeechDomain = 'face' | 'speech';
+export type FacialSpeechDomain = 'face' | 'speech' | 'quality';
 
 export interface FacialSpeechTask {
   id: string;
@@ -14,10 +14,16 @@ export interface FacialSpeechTask {
 
 export interface MetricDefinition {
   id: string;
-  domain: FacialSpeechDomain | 'quality';
+  domain: FacialSpeechDomain;
   label: string;
   unit: string;
   purpose: string;
+  /**
+   * Whether the offline processor computes this today. The list is shown to the
+   * subject, so a planned metric must not be presented as something the report
+   * will contain.
+   */
+  status: 'implemented' | 'planned';
 }
 
 /**
@@ -73,6 +79,16 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
     captureNotes: 'Keep your head and shoulders still.',
   },
   {
+    id: 'capture_noise_floor',
+    domain: 'quality',
+    title: 'Room silence',
+    instruction: 'Stay silent and still for 5 seconds. Do not speak, move, or touch the microphone.',
+    durationSec: 5,
+    clinicalAnchor: 'Acoustic quality control',
+    captureNotes:
+      'Measures the room noise floor. Without it, SNR has to be guessed from the speech itself, and every acoustic measure is interpreted without knowing how noisy the recording was.',
+  },
+  {
     id: 'speech_sustained_a',
     domain: 'speech',
     title: 'Sustained vowel /a/',
@@ -93,12 +109,13 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
   {
     id: 'speech_reading',
     domain: 'speech',
-    title: 'Read a fixed sentence',
-    instruction: 'Read clearly: “Today is bright. I speak clearly and steadily.” Repeat twice.',
-    durationSec: 18,
-    clinicalAnchor: 'NIHSS dysarthria-style intelligibility sample',
-    captureNotes: 'A fixed sentence supports ASR/phoneme alignment and repeat-session comparison.',
-    nearLensPrompt: 'Today is bright. I speak clearly and steadily.',
+    title: 'Read the word list aloud',
+    instruction: 'Read each word clearly, pausing briefly between them. Read the whole list twice.',
+    durationSec: 24,
+    clinicalAnchor: 'NIHSS dysarthria item word list',
+    captureNotes:
+      'This is the actual NIHSS list, chosen to stress different articulators, so the recording is directly comparable with a clinician-graded NIHSS dysarthria item. Vietnamese cohorts need a tone-balanced list of their own; do not read English error rates against Vietnamese speech.',
+    nearLensPrompt: 'MAMA · TIP-TOP · FIFTY-FIFTY · THANKS · HUCKLEBERRY · BASEBALL PLAYER',
   },
   {
     id: 'speech_counting',
@@ -112,22 +129,25 @@ export const FACIAL_SPEECH_TASKS: FacialSpeechTask[] = [
 ];
 
 export const FACIAL_SPEECH_METRICS: MetricDefinition[] = [
-  { id: 'capture_face_visibility', domain: 'quality', label: 'Valid face-frame ratio', unit: '%', purpose: 'Quality gate: score only when the face is frontal and landmarks are stable.' },
-  { id: 'capture_audio_snr', domain: 'quality', label: 'SNR / background-noise level', unit: 'dB', purpose: 'Quality gate: avoid interpreting speech features from excessively noisy audio.' },
-  { id: 'head_pose_stability', domain: 'quality', label: 'Head-pose stability', unit: 'deg', purpose: 'Flags geometric bias caused by head rotation or tilt.' },
-  { id: 'resting_asymmetry', domain: 'face', label: 'Resting asymmetry', unit: 'ratio', purpose: 'Normalised position/height differences across eyes, brows and mouth corners.' },
-  { id: 'smile_excursion_ratio', domain: 'face', label: 'Left/right smile-excursion ratio', unit: 'ratio', purpose: 'Measures unilateral reduction during smile/show-teeth.' },
-  { id: 'mouth_corner_vertical_asymmetry', domain: 'face', label: 'Mouth-corner vertical asymmetry', unit: 'IPD-normalised', purpose: 'Lower-face facial-droop feature.' },
-  { id: 'brow_excursion_ratio', domain: 'face', label: 'Left/right brow-excursion ratio', unit: 'ratio', purpose: 'Measures upper-face function during voluntary movement.' },
-  { id: 'eye_closure_asymmetry', domain: 'face', label: 'Eye-closure asymmetry', unit: 'ratio', purpose: 'Compares bilateral eye aperture/blink blendshapes.' },
-  { id: 'au_left_right_delta', domain: 'face', label: 'Left/right Facial Action Unit delta', unit: 'score', purpose: 'AU12/AU6, brow, blink and lip-corner activation.' },
-  { id: 'sustained_f0', domain: 'speech', label: 'F0 and F0 variation', unit: 'Hz', purpose: 'Pitch stability during sustained vowel phonation.' },
-  { id: 'jitter_shimmer_hnr', domain: 'speech', label: 'Jitter, shimmer, HNR', unit: '% / % / dB', purpose: 'Periodicity and voice-quality measures in the vowel window.' },
-  { id: 'maximum_phonation_time', domain: 'speech', label: 'Maximum phonation time', unit: 's', purpose: 'Tracks usable /a/ duration; never used alone for diagnosis.' },
-  { id: 'ddk_rate_regularity', domain: 'speech', label: 'Pa-ta-ka rate and regularity', unit: 'syllables/s, CV', purpose: 'Assesses timing and regularity of sequential speech movement.' },
-  { id: 'connected_speech_rate', domain: 'speech', label: 'Speech rate, articulation rate, pause ratio', unit: 'words/s, syllables/s, %', purpose: 'Separates slow speech caused by pauses from articulation rate.' },
-  { id: 'asr_alignment', domain: 'speech', label: 'Reading alignment / word-phoneme error', unit: 'WER, PER, confidence', purpose: 'Fixed-utterance intelligibility proxy, always paired with audio quality.' },
-  { id: 'prosody', domain: 'speech', label: 'Pitch and intensity variation', unit: 'Hz / dB', purpose: 'Adds monotonicity and breath-control measurements.' },
+  { id: 'capture_face_visibility', domain: 'quality', label: 'Valid face-frame ratio', unit: '%', purpose: 'Quality gate: score only when the face is frontal and landmarks are stable.', status: 'implemented' },
+  { id: 'capture_audio_snr', domain: 'quality', label: 'SNR / background-noise level', unit: 'dB', purpose: 'Quality gate: avoid interpreting speech features from excessively noisy audio.', status: 'implemented' },
+  { id: 'head_pose_stability', domain: 'quality', label: 'Head-pose stability', unit: 'deg, IPD', purpose: 'Blocks a window whose head pose drifted from the rest baseline, since every measure here is rest-relative.', status: 'implemented' },
+  { id: 'mouth_corner_vertical_asymmetry', domain: 'face', label: 'Resting mouth-corner vertical asymmetry', unit: 'IPD-normalised', purpose: 'Lower-face facial-droop feature, taken along the face axis so head tilt does not register.', status: 'implemented' },
+  { id: 'smile_excursion_ratio', domain: 'face', label: 'Left/right smile excursion', unit: 'IPD-normalised, ratio', purpose: 'Measures unilateral reduction during smile/show-teeth, and names the reduced side.', status: 'implemented' },
+  { id: 'brow_excursion_ratio', domain: 'face', label: 'Left/right brow excursion', unit: 'IPD-normalised, ratio', purpose: 'Measures upper-face function during voluntary movement.', status: 'implemented' },
+  { id: 'eye_closure_asymmetry', domain: 'face', label: 'Eye-closure residual asymmetry', unit: 'ratio', purpose: 'Compares residual palpebral aperture at maximum closure.', status: 'implemented' },
+  { id: 'upper_versus_lower_face', domain: 'face', label: 'Upper- versus lower-face symmetry gap', unit: 'ratio difference', purpose: 'Whether the forehead is involved. Reported raw, with no cut-off applied.', status: 'implemented' },
+  { id: 'ocular_narrowing_during_smile', domain: 'face', label: 'Ocular narrowing during smile', unit: 'ratio', purpose: 'Synkinesis proxy: involuntary eye narrowing accompanying a voluntary smile.', status: 'implemented' },
+  { id: 'resting_asymmetry_full', domain: 'face', label: 'Full resting asymmetry panel', unit: 'ratio', purpose: 'Adds brow, palpebral-fissure and philtrum displacement to the resting measure.', status: 'planned' },
+  { id: 'au_left_right_delta', domain: 'face', label: 'Left/right Facial Action Unit delta', unit: 'score', purpose: 'AU12/AU6, brow, blink and lip-corner activation.', status: 'planned' },
+  { id: 'sustained_f0', domain: 'speech', label: 'F0 and F0 variation', unit: 'Hz', purpose: 'Pitch stability, measured per phonation and reported as a median across trials.', status: 'implemented' },
+  { id: 'jitter_shimmer_hnr', domain: 'speech', label: 'Jitter, shimmer, HNR', unit: '% / % / dB', purpose: 'Periodicity and voice quality, measured on the steady middle of each sustained vowel.', status: 'implemented' },
+  { id: 'maximum_phonation_time', domain: 'speech', label: 'Maximum phonation time', unit: 's', purpose: 'Longest single sustained /a/; never used alone for diagnosis.', status: 'implemented' },
+  { id: 'ddk_rate_regularity', domain: 'speech', label: 'Pa-ta-ka energy-peak rate and regularity', unit: 'peaks/s, CV', purpose: 'Timing and regularity of sequential speech movement, measured per run. A proxy for syllable rate, not a syllable count.', status: 'implemented' },
+  { id: 'connected_speech_timing', domain: 'speech', label: 'Pause count, pause duration, speaking-time ratio', unit: 'count, s, %', purpose: 'Separates slow speech caused by pausing from slow articulation.', status: 'implemented' },
+  { id: 'prosody', domain: 'speech', label: 'Pitch and intensity variation', unit: 'Hz / dB', purpose: 'Monotonicity and breath-control measurements over connected speech.', status: 'implemented' },
+  { id: 'articulation_rate', domain: 'speech', label: 'Speech and articulation rate', unit: 'syllables/s', purpose: 'Needs syllable-level alignment, so it arrives with the language-specific ASR stage.', status: 'planned' },
+  { id: 'asr_alignment', domain: 'speech', label: 'Reading alignment / word-phoneme error', unit: 'WER, PER, confidence', purpose: 'Fixed-utterance intelligibility proxy, always paired with audio quality.', status: 'planned' },
 ];
 
 export const FACIAL_SPEECH_PROTOCOL_VERSION = '1.0.0';

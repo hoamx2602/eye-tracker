@@ -109,10 +109,14 @@ export default function FacialSpeechPage() {
       tasks: completedTasksRef.current,
       expectedTaskOrder: FACIAL_SPEECH_TASKS.map((task) => ({ id: task.id, domain: task.domain, durationSec: task.durationSec })),
       metricsRequested: FACIAL_SPEECH_METRICS.map((metric) => metric.id),
+      // What the offline processor actually enforces. Keep this in step with
+      // the backend gates: a manifest that claims a gate the processor does not
+      // run is a false provenance record.
       qualityPolicy: {
         requireFrontalFace: true,
         requireStableHeadPose: true,
         requireAudioSnrGate: true,
+        failClosed: true,
         interpretation: 'screening-and-clinical-review, not standalone diagnosis',
       },
     };
@@ -302,7 +306,11 @@ export default function FacialSpeechPage() {
                   <div className="max-w-lg rounded-xl border border-blue-400/30 bg-gray-950/80 px-4 py-3 backdrop-blur-sm">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-300">Task recording in progress</p>
                     <p className="mt-1 text-sm font-medium text-white">
-                      {currentTask.domain === 'face' ? 'Keep your eyes on the camera lens. Do not read the screen.' : 'Keep your face centred and complete the speech task.'}
+                      {currentTask.domain === 'face'
+                        ? 'Keep your eyes on the camera lens. Do not read the screen.'
+                        : currentTask.domain === 'quality'
+                          ? 'Stay silent and still until the task ends.'
+                          : 'Keep your face centred and complete the speech task.'}
                     </p>
                   </div>
                 </div>
@@ -404,7 +412,9 @@ function TaskGuide({
         </div>
       ) : (
         <>
-          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-gray-500">{currentTask.domain === 'face' ? 'Facial movement' : 'Motor speech'}</p>
+          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-gray-500">
+            {currentTask.domain === 'face' ? 'Facial movement' : currentTask.domain === 'quality' ? 'Recording quality' : 'Motor speech'}
+          </p>
           <h2 className="mt-1 text-xl font-semibold">{currentTask.title}</h2>
           <p className="mt-4 min-h-24 text-base leading-7 text-gray-200">{currentTask.instruction}</p>
           <div className="mt-4 rounded-lg bg-gray-800 p-3 text-sm text-gray-400">
@@ -589,6 +599,9 @@ function MetricPanel({ title, metrics }: { title: string; metrics: MetricDefinit
               <span className="shrink-0 text-xs text-blue-300">{metric.unit}</span>
             </div>
             <p className="mt-1 text-xs leading-5 text-gray-500">{metric.purpose}</p>
+            {metric.status === 'planned' ? (
+              <p className="mt-1.5 inline-block rounded bg-gray-700 px-1.5 py-0.5 text-[11px] text-gray-300">Not yet in the report</p>
+            ) : null}
           </div>
         ))}
       </div>

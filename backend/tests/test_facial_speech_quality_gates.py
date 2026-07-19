@@ -249,6 +249,32 @@ def test_an_empty_window_is_rejected_rather_than_crashing() -> None:
     assert report["available"] is False
 
 
+def test_a_measured_room_noise_floor_drives_the_snr_gate() -> None:
+    """The silence task measures the room; a voiced window cannot.
+
+    A sustained vowel is voiced end to end, so there is no quiet moment inside
+    it from which to infer the noise floor - which is why the battery captures
+    silence separately.
+    """
+    speech = _tone(6.0, amplitude=0.2)
+    report, issues = _speech_features(speech, SAMPLE_RATE, "speech_sustained_a", session_noise_floor=0.1)
+    assert "audio-snr-low" in _codes(issues)
+    assert report["available"] is False
+    assert report["quality"]["noise_floor_source"] == "silence-task"
+
+
+def test_a_quiet_room_passes_the_snr_gate() -> None:
+    report, issues = _speech_features(_tone(6.0, amplitude=0.2), SAMPLE_RATE, "speech_sustained_a", session_noise_floor=0.001)
+    assert "audio-snr-low" not in _codes(issues)
+    assert report["quality"]["snr_db"] > 15.0
+
+
+def test_snr_source_is_recorded_when_no_silence_task_was_captured() -> None:
+    speech = np.concatenate([np.zeros(SAMPLE_RATE, dtype=np.float32), _tone(6.0)])
+    report, _ = _speech_features(speech, SAMPLE_RATE, "speech_counting")
+    assert report["quality"]["noise_floor_source"] in {"within-window", None}
+
+
 def test_usable_audio_passes_the_gates() -> None:
     report, issues = _speech_features(_tone(6.0), SAMPLE_RATE, "speech_sustained_a")
     assert not _blocking(issues), _codes(issues)

@@ -43,6 +43,8 @@ MAX_POSE_SPREAD_WITHIN_TASK_IPD = 0.10
 MIN_TASK_FACE_FRAMES = 15  # ~1 s of usable video at SAMPLE_INTERVAL_MS
 MAX_CLIPPING_RATIO = 0.01
 MIN_SPEECH_ACTIVITY_RATIO = 0.20
+MIN_SNR_DB = 15.0
+NOISE_FLOOR_TASK = "capture_noise_floor"
 # Shortest window that can still carry the task's measurement. Below this the
 # subject did not perform the task for long enough to measure, whatever the
 # audio quality.
@@ -272,6 +274,7 @@ def _speech_features(
     sample_rate: int,
     task_id: str,
     include_ddk: bool = False,
+    session_noise_floor: float | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     """Acoustic features for one task window, gated before anything is computed.
 
@@ -297,14 +300,19 @@ def _speech_features(
     # speech; treating that as noise put the gate above the signal and scored a
     # textbook-perfect /a/ as containing no speech at all.
     has_silence = floor_estimate < 0.3 * peak
-    noise_floor = floor_estimate if has_silence else 0.0
+    # The dedicated silence task measures the room directly, which is the only
+    # way to know the noise floor of a window that is voiced end to end.
+    noise_floor = session_noise_floor if session_noise_floor is not None else (floor_estimate if has_silence else 0.0)
     speech_gate = max(peak * 0.15, noise_floor * 1.5, 0.005)
     activity = float(np.mean(envelope > speech_gate)) if envelope.size else 0.0
     quality["speech_activity_ratio"] = activity
-    quality["noise_floor_rms"] = noise_floor if has_silence else None
+    quality["noise_floor_rms"] = noise_floor or None
+    quality["noise_floor_source"] = "silence-task" if session_noise_floor is not None else (
+        "within-window" if has_silence else None
+    )
     quality["snr_db"] = (
-        float(20.0 * math.log10(peak / floor_estimate))
-        if has_silence and floor_estimate > 1e-9 and peak > 1e-9
+        float(20.0 * math.log10(peak / noise_floor))
+        if noise_floor > 1e-9 and peak > 1e-9
         else None
     )
 
@@ -319,6 +327,13 @@ def _speech_features(
             "audio-clipping", BLOCKING, task_id,
             f"{quality['clipping_ratio']:.1%} of samples are clipped in {task_id}. "
             "Reduce microphone gain or move further from the microphone and re-capture.",
+        ))
+    if quality["snr_db"] is not None and quality["snr_db"] < MIN_SNR_DB:
+        issues.append(_issue(
+            "audio-snr-low", BLOCKING, task_id,
+            f"Speech in {task_id} is only {quality['snr_db']:.0f} dB above the room noise floor "
+            f"(minimum {MIN_SNR_DB:.0f} dB). Acoustic measures are not interpretable at this level; "
+            "move to a quieter room and re-capture.",
         ))
     if activity < MIN_SPEECH_ACTIVITY_RATIO:
         issues.append(_issue(
@@ -893,6 +908,24 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
                 "ffprobe reported no per-stream start times, so audio and video are assumed to share an origin. "
                 "Any container-level A/V offset is uncorrected.",
             ))
+        def window_slice(task_id: str) -> np.ndarray | None:
+            window = _window_samples(tasks, task_id)
+            if not window:
+                return None
+            start = max(0, int((window[0] / 1000.0 - audio_offset_s) * sample_rate))
+            end = min(len(audio), int((window[1] / 1000.0 - audio_offset_s) * sample_rate))
+            return audio[start:end] if end > start else None
+
+        # Measure the room directly rather than inferring it from speech.
+        silence = window_slice(NOISE_FLOOR_TASK)
+        session_noise_floor = float(np.sqrt(np.mean(silence ** 2))) if silence is not None and silence.size else None
+        if session_noise_floor is None:
+            speech_issues.append(_issue(
+                "noise-floor-not-captured", ADVISORY, NOISE_FLOOR_TASK,
+                "The silence task is missing, so SNR is estimated from quiet moments inside each speech window. "
+                "That is unreliable for continuously voiced tasks such as the sustained vowel.",
+            ))
+
         for task_id in MIN_SPEECH_DURATION_S:
             window = _window_samples(tasks, task_id)
             if not window:
@@ -901,10 +934,13 @@ def analyze_facial_speech(video_path: str, payload: dict[str, Any], progress: Pr
                     f"The capture metadata has no completed {task_id} window; the task was not performed.",
                 ))
                 continue
-            start = max(0, int((window[0] / 1000.0 - audio_offset_s) * sample_rate))
-            end = min(len(audio), int((window[1] / 1000.0 - audio_offset_s) * sample_rate))
+            segment = window_slice(task_id)
             report, issues = _speech_features(
-                audio[start:end], sample_rate, task_id, include_ddk=task_id == "speech_ddk_patka"
+                segment if segment is not None else np.zeros(0, dtype=np.float32),
+                sample_rate,
+                task_id,
+                include_ddk=task_id == "speech_ddk_patka",
+                session_noise_floor=session_noise_floor,
             )
             speech_tasks[task_id] = report
             speech_issues.extend(issues)
