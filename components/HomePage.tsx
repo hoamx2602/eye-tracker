@@ -27,8 +27,58 @@ interface Step {
   icon: React.ReactNode;
   tagline: string;
   description: string;
-  section: 'calibration' | 'neuro';
+  section: 'calibration' | 'neuro' | 'facial';
 }
+
+/**
+ * Per-section accent. Written as whole class strings (not interpolated fragments)
+ * so Tailwind's scanner keeps them.
+ */
+const SECTION_THEME: Record<Step['section'], {
+  setLabel: string;
+  badge: string;
+  badgeDot: string;
+  iconTile: string;
+  node: string;
+  nodeIcon: string;
+  rule: string;
+  dot: string;
+  heading: string;
+}> = {
+  calibration: {
+    setLabel: 'Neurological Assessment — Set 1',
+    badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    badgeDot: 'bg-blue-500',
+    iconTile: 'bg-blue-500/10 text-blue-400',
+    node: 'border-blue-500 bg-blue-500 shadow-sm shadow-blue-500/50',
+    nodeIcon: 'text-blue-400',
+    rule: 'border-blue-500',
+    dot: 'bg-blue-500',
+    heading: 'text-blue-400',
+  },
+  neuro: {
+    setLabel: 'Neurological Assessment — Set 2',
+    badge: 'bg-gray-700 text-gray-400 border-gray-600',
+    badgeDot: 'bg-gray-500',
+    iconTile: 'bg-gray-700 text-gray-300',
+    node: 'border-blue-500 bg-blue-500 shadow-sm shadow-blue-500/50',
+    nodeIcon: 'text-blue-400',
+    rule: 'border-blue-500',
+    dot: 'bg-blue-500',
+    heading: 'text-blue-400',
+  },
+  facial: {
+    setLabel: 'Facial Assessment — Set 3',
+    badge: 'bg-teal-500/10 text-teal-300 border-teal-500/20',
+    badgeDot: 'bg-teal-400',
+    iconTile: 'bg-teal-500/10 text-teal-300',
+    node: 'border-teal-400 bg-teal-400 shadow-sm shadow-teal-400/50',
+    nodeIcon: 'text-teal-300',
+    rule: 'border-teal-400',
+    dot: 'bg-teal-400',
+    heading: 'text-teal-300',
+  },
+};
 
 // ─── Step data ────────────────────────────────────────────────────────────────
 
@@ -194,7 +244,80 @@ const NEURO_STEPS: Step[] = [
   },
 ];
 
-const ALL_STEPS: Step[] = [...CALIBRATION_STEPS, ...NEURO_STEPS];
+// Set 3: facial drooping screen. Poses follow the MEEI / eFACE standard photo set —
+// one neutral baseline plus five effortful expressions, each driven by a different
+// branch of the facial nerve, so upper-face sparing (central/stroke) can be told
+// apart from full hemifacial weakness (peripheral/Bell's palsy).
+const FACIAL_STEPS: Step[] = [
+  {
+    id: 'face_rest',
+    label: 'Resting Symmetry',
+    duration: '~15 sec',
+    durationSec: 15,
+    section: 'facial',
+    icon: <FaceRestIcon />,
+    tagline: 'Hold a completely relaxed, neutral face while a photo is captured.',
+    description:
+      'Look straight at the camera with your face fully relaxed — no smiling, no talking, mouth gently closed. This neutral baseline is what every later pose is compared against. At rest, a weakened side of the face often shows a flattened smile line beside the nose, a lower corner of the mouth, or a wider eye opening.',
+  },
+  {
+    id: 'brow_raise',
+    label: 'Brow Raise',
+    duration: '~15 sec',
+    durationSec: 15,
+    section: 'facial',
+    icon: <BrowRaiseIcon />,
+    tagline: 'Raise both eyebrows as high as you can and hold.',
+    description:
+      'Lift your eyebrows as if surprised, hold for a few seconds, then relax. This is the single most informative pose in the set: the forehead receives nerve supply from both sides of the brain, so in a stroke the brow usually still lifts normally even when the mouth droops. If the forehead is weak on the same side as the mouth, the problem is more likely in the facial nerve itself.',
+  },
+  {
+    id: 'eye_closure',
+    label: 'Eye Closure',
+    duration: '~15 sec',
+    durationSec: 15,
+    section: 'facial',
+    icon: <EyeClosedIcon />,
+    tagline: 'Close both eyes gently, then squeeze them shut tightly.',
+    description:
+      'First close your eyes softly as if falling asleep, then squeeze them tightly shut. Incomplete closure on one side, or a visible gap between the eyelids, points to weakness of the muscle that rings the eye. This pose also matters for care rather than diagnosis alone — an eye that cannot close fully is at real risk of corneal injury and needs protection.',
+  },
+  {
+    id: 'smile',
+    label: 'Full Smile',
+    duration: '~15 sec',
+    durationSec: 15,
+    section: 'facial',
+    icon: <SmileIcon />,
+    tagline: 'Give your biggest smile, showing your teeth.',
+    description:
+      'Smile as widely as you can with your teeth showing, and hold it. This is the classic "does one side of the smile droop?" check used in stroke screening. The system measures how far each corner of the mouth travels from its resting position; a difference between the two sides is the strongest single indicator of facial drooping.',
+  },
+  {
+    id: 'lip_pucker',
+    label: 'Lip Pucker',
+    duration: '~15 sec',
+    durationSec: 15,
+    section: 'facial',
+    icon: <PuckerIcon />,
+    tagline: 'Purse your lips forward as if to whistle or say "ooo".',
+    description:
+      'Push your lips forward into a tight pucker and hold. This isolates the ring of muscle around the mouth, which controls speech sounds, drinking and keeping food in the mouth. A pucker that pulls off-centre toward one side shows that the lips are weak on the opposite side.',
+  },
+  {
+    id: 'snarl',
+    label: 'Snarl',
+    duration: '~15 sec',
+    durationSec: 15,
+    section: 'facial',
+    icon: <SnarlIcon />,
+    tagline: 'Wrinkle your nose and lift your upper lip, as if smelling something bad.',
+    description:
+      'Wrinkle your nose upward and raise your upper lip to expose the upper teeth. This targets the small muscles that lift the lip and deepen the smile line beside the nose — an area that is often the first to weaken and the last to recover. It completes the picture across the whole face, from forehead to mouth.',
+  },
+];
+
+const ALL_STEPS: Step[] = [...CALIBRATION_STEPS, ...NEURO_STEPS, ...FACIAL_STEPS];
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -313,6 +436,64 @@ function EyeIcon() {
   );
 }
 
+function FaceRestIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[18px] h-[18px]">
+      <path d="M10 2c3.3 0 5.5 2.4 5.5 6.5S13 18 10 18 4.5 12.6 4.5 8.5 6.7 2 10 2z" />
+      <path d="M10 3.2v13.6" strokeWidth="1" opacity="0.45" strokeDasharray="1.5 1.5" />
+      <path d="M7 8.2h1.4M11.6 8.2H13" strokeLinecap="round" />
+      <path d="M7.8 13h4.4" strokeLinecap="round" opacity="0.7" />
+    </svg>
+  );
+}
+function BrowRaiseIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[18px] h-[18px]">
+      <path d="M3 7.5Q5.5 4.5 8 7.5M12 7.5Q14.5 4.5 17 7.5" strokeLinecap="round" />
+      <circle cx="6" cy="12" r="1.4" />
+      <circle cx="14" cy="12" r="1.4" />
+      <path d="M10 5.5V2.2M10 2.2 8.7 3.6M10 2.2l1.3 1.4" strokeLinecap="round" strokeLinejoin="round" opacity="0.75" />
+    </svg>
+  );
+}
+function EyeClosedIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[18px] h-[18px]">
+      <path d="M3 8.5q7 6 14 0" strokeLinecap="round" />
+      <path d="M4.2 11.6 3.2 13.4M8 13.2l-.4 2M12 13.2l.4 2M15.8 11.6l1 1.8" strokeLinecap="round" opacity="0.6" />
+    </svg>
+  );
+}
+function SmileIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[18px] h-[18px]">
+      <circle cx="10" cy="10" r="8" />
+      <circle cx="7.2" cy="8" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="12.8" cy="8" r="0.9" fill="currentColor" stroke="none" />
+      <path d="M5.8 11.8q4.2 4.2 8.4 0" strokeLinecap="round" />
+    </svg>
+  );
+}
+function PuckerIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[18px] h-[18px]">
+      <ellipse cx="10" cy="10" rx="3.2" ry="4.2" />
+      <ellipse cx="10" cy="10" rx="1.2" ry="1.8" />
+      <path d="M4.6 6.4 2.8 5M15.4 6.4 17.2 5M4.6 13.6 2.8 15M15.4 13.6 17.2 15" strokeLinecap="round" opacity="0.5" />
+    </svg>
+  );
+}
+function SnarlIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[18px] h-[18px]">
+      <path d="M6.5 5.5q3.5-2 7 0M6 8q3-1.6 6 0" strokeLinecap="round" opacity="0.6" />
+      <path d="M5.5 12.5q4.5-3.5 9 0" strokeLinecap="round" />
+      <path d="M6.6 12.9h6.8v1.6a3.4 3.4 0 0 1-6.8 0z" fill="currentColor" stroke="none" opacity="0.25" />
+      <path d="M6.6 13h6.8" strokeLinecap="round" opacity="0.8" />
+    </svg>
+  );
+}
+
 // ─── Timeline item ────────────────────────────────────────────────────────────
 
 function TimelineItem({
@@ -336,7 +517,7 @@ function TimelineItem({
         relative z-10 mt-[3px] flex-shrink-0 w-[22px] h-[22px] rounded-full border-2
         flex items-center justify-center transition-all duration-150
         ${isSelected
-          ? 'border-blue-500 bg-blue-500 shadow-sm shadow-blue-500/50'
+          ? SECTION_THEME[step.section].node
           : 'border-gray-600 bg-gray-800 group-hover:border-gray-500'}
       `}>
         {isSelected
@@ -348,7 +529,7 @@ function TimelineItem({
       <div className={`flex-1 flex items-center gap-2 pb-5 transition-colors duration-150
         ${isSelected ? 'text-white' : 'text-gray-500 group-hover:text-gray-300'}`}>
         <span className={`flex-shrink-0 transition-colors
-          ${isSelected ? 'text-blue-400' : 'text-gray-700 group-hover:text-gray-500'}`}>
+          ${isSelected ? SECTION_THEME[step.section].nodeIcon : 'text-gray-700 group-hover:text-gray-500'}`}>
           {step.icon}
         </span>
         <div>
@@ -362,11 +543,11 @@ function TimelineItem({
 
 // ─── Section label ────────────────────────────────────────────────────────────
 
-function SectionLabel({ part, title }: { part: string; title: string }) {
+function SectionLabel({ part, title, section }: { part: string; title: string; section: Step['section'] }) {
   return (
     <div className="mb-4">
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="text-[11px] font-extrabold tracking-[0.12em] text-blue-400 uppercase">{part}</span>
+        <span className={`text-[11px] font-extrabold tracking-[0.12em] uppercase ${SECTION_THEME[section].heading}`}>{part}</span>
         <div className="flex-1 h-px bg-gray-700" />
       </div>
       <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-3">{title}</p>
@@ -377,7 +558,7 @@ function SectionLabel({ part, title }: { part: string; title: string }) {
 // ─── Step description panel ───────────────────────────────────────────────────
 
 function StepPanel({ step }: { step: Step }) {
-  const isCalibration = step.section === 'calibration';
+  const theme = SECTION_THEME[step.section];
   const globalIndex = ALL_STEPS.findIndex(s => s.id === step.id);
 
   return (
@@ -387,12 +568,10 @@ function StepPanel({ step }: { step: Step }) {
         <span className={`
           inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full
           text-[11px] font-semibold uppercase tracking-wide border
-          ${isCalibration
-            ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-            : 'bg-gray-700 text-gray-400 border-gray-600'}
+          ${theme.badge}
         `}>
-          <span className={`w-1.5 h-1.5 rounded-full ${isCalibration ? 'bg-blue-500' : 'bg-gray-500'}`} />
-          {isCalibration ? 'Neurological Assessment — Set 1' : 'Neurological Assessment — Set 2'}
+          <span className={`w-1.5 h-1.5 rounded-full ${theme.badgeDot}`} />
+          {theme.setLabel}
         </span>
       </div>
 
@@ -400,7 +579,7 @@ function StepPanel({ step }: { step: Step }) {
       <div className="flex items-start gap-4 mb-6">
         <div className={`
           w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0
-          ${isCalibration ? 'bg-blue-500/10 text-blue-400' : 'bg-gray-700 text-gray-300'}
+          ${theme.iconTile}
         `}>
           <div className="scale-[2]">{step.icon}</div>
         </div>
@@ -418,7 +597,7 @@ function StepPanel({ step }: { step: Step }) {
       </div>
 
       {/* Tagline */}
-      <div className="border-l-2 border-blue-500 pl-4 mb-5">
+      <div className={`border-l-2 pl-4 mb-5 ${theme.rule}`}>
         <p className="text-base text-gray-200 font-medium leading-snug">{step.tagline}</p>
       </div>
 
@@ -430,7 +609,7 @@ function StepPanel({ step }: { step: Step }) {
         {ALL_STEPS.map((s, i) => (
           <div key={s.id} className={`h-1 rounded-full transition-all duration-300
             ${s.id === step.id
-              ? 'w-5 bg-blue-500'
+              ? `w-5 ${theme.dot}`
               : i < globalIndex ? 'w-2 bg-gray-600' : 'w-2 bg-gray-700'}`}
           />
         ))}
@@ -491,7 +670,7 @@ export default function HomePage() {
               </p>
             </div>
 
-            <SectionLabel part="Neurological Assessment" title="Set 1" />
+            <SectionLabel part="Neurological Assessment" title="Set 1" section="calibration" />
             {CALIBRATION_STEPS.map((step, i) => (
               <TimelineItem
                 key={step.id}
@@ -503,12 +682,23 @@ export default function HomePage() {
             ))}
 
 
-            <SectionLabel part="Neurological Assessment" title="Set 2" />
+            <SectionLabel part="Neurological Assessment" title="Set 2" section="neuro" />
             {NEURO_STEPS.map((step, i) => (
               <TimelineItem
                 key={step.id}
                 step={step}
                 isLast={i === NEURO_STEPS.length - 1}
+                isSelected={selected.id === step.id}
+                onClick={() => setSelected(step)}
+              />
+            ))}
+
+            <SectionLabel part="Facial Assessment" title="Set 3 · Facial Drooping" section="facial" />
+            {FACIAL_STEPS.map((step, i) => (
+              <TimelineItem
+                key={step.id}
+                step={step}
+                isLast={i === FACIAL_STEPS.length - 1}
                 isSelected={selected.id === step.id}
                 onClick={() => setSelected(step)}
               />
