@@ -31,3 +31,4 @@ dist-ssr
 .next
 tickets
 tsconfig.tsbuildinfo
+backup.sql
