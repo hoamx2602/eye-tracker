@@ -138,12 +138,30 @@ export function facialSpeechHandlingEnabled(): boolean {
   return !['0', 'false', 'no', 'off'].includes(raw.trim().toLowerCase());
 }
 
+/**
+ * `fetch` rejects with a bare "Failed to fetch" for connection refused, DNS
+ * failure and blocked CORS alike. Surfaced as-is it reads like the analysis
+ * examined the capture and gave up, when in fact nothing was ever sent. Name
+ * the address that could not be reached instead.
+ */
+async function backendFetch(path: string, init?: RequestInit): Promise<Response> {
+  const base = offlineBackendUrl();
+  try {
+    return await fetch(`${base}${path}`, init);
+  } catch (cause) {
+    throw new Error(
+      `the offline analysis backend at ${base} is unreachable. Start it (cd backend && docker compose up -d) or point NEXT_PUBLIC_OFFLINE_GAZE_BACKEND_URL at where it runs. The capture is still on this page — download it, or retry once the backend is up.`,
+      { cause },
+    );
+  }
+}
+
 export async function startFacialSpeechProcessing(video: Blob, payload: Record<string, unknown>): Promise<FacialSpeechJob> {
   if (!video.size) throw new Error('No capture video is available for offline analysis.');
   const form = new FormData();
   form.append('file', video, 'facial-speech.webm');
   form.append('payload', JSON.stringify(payload));
-  const response = await fetch(`${offlineBackendUrl()}/facial-speech/process`, { method: 'POST', body: form });
+  const response = await backendFetch('/facial-speech/process', { method: 'POST', body: form });
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
     throw new Error(typeof detail?.detail === 'string' ? detail.detail : `Offline backend failed: HTTP ${response.status}`);
@@ -152,7 +170,7 @@ export async function startFacialSpeechProcessing(video: Blob, payload: Record<s
 }
 
 export async function getFacialSpeechJob(jobId: string): Promise<FacialSpeechJob> {
-  const response = await fetch(`${offlineBackendUrl()}/facial-speech/jobs/${encodeURIComponent(jobId)}`);
+  const response = await backendFetch(`/facial-speech/jobs/${encodeURIComponent(jobId)}`);
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
     throw new Error(typeof detail?.detail === 'string' ? detail.detail : `Unable to read processing status: HTTP ${response.status}`);

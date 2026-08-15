@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 import uuid
+from typing import TYPE_CHECKING
 
 import numpy as np
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
@@ -32,17 +33,22 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .calibration import CalibrationDot, fit_mapper
 from .events import ScreenGeometry, detect_events
-from .gaze_model import GazeModel, _WEIGHTS_DIR as WEIGHTS_DIR
 from .head_comp import build_compensator
 from .schemas import BiomarkersOut, GazeSampleOut, ProcessRequest, ProcessResponse, ValidationOut
 from .validation import evaluate_mapper
 from .video import process_video
 from .facial_speech import analyze_facial_speech, parse_payload
 
+if TYPE_CHECKING:
+    from .gaze_model import GazeModel
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # WEIGHTS_DIR resolved in gaze_model (env → docker mount → local models/openface).
+# That module pulls in torch and OpenFace, which only exist in the CUDA image.
+# The facial-speech route needs neither, so the import is deferred to first use:
+# a machine without a GPU can still run this service for /facial-speech.
 
 # Frames below this eye-region quality are dropped from the scored trace (glasses
 # glare). Conservative: only clearly-glared frames (heavy specular coverage).
@@ -59,22 +65,32 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
-_model: GazeModel | None = None
+_model: "GazeModel | None" = None
 _facial_speech_jobs: dict[str, dict] = {}
 _facial_speech_jobs_lock = threading.Lock()
 
 
-def get_model() -> GazeModel:
+def get_model() -> "GazeModel":
     global _model
     if _model is None:
-        _model = GazeModel(weights_dir=WEIGHTS_DIR)
+        from .gaze_model import GazeModel, _WEIGHTS_DIR
+
+        _model = GazeModel(weights_dir=_WEIGHTS_DIR)
     return _model
 
 
 @app.get("/health")
 def health() -> dict:
-    import torch
-    return {"status": "ok", "cuda": torch.cuda.is_available(), "weights_dir": WEIGHTS_DIR}
+    # Reported rather than asserted: on a CPU-only host the gaze stack is
+    # absent and /process is unavailable, while /facial-speech still works.
+    try:
+        import torch
+
+        from .gaze_model import _WEIGHTS_DIR
+
+        return {"status": "ok", "cuda": torch.cuda.is_available(), "weights_dir": _WEIGHTS_DIR, "gaze_available": True}
+    except Exception as exc:
+        return {"status": "ok", "cuda": False, "gaze_available": False, "gaze_unavailable_reason": str(exc)}
 
 
 def _facial_speech_job_view(job: dict) -> dict:

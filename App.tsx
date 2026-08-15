@@ -59,6 +59,7 @@ import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, QUICK_CALIBRATION_POINTS, roundedRect } from '@/lib/appHelpers';
 import { CalibrationMetaRecorder, type SessionMeta } from '@/lib/calibrationMeta';
 import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
+import { getAssessmentFlow, storeFlowConsent, storeFlowDemographics } from '@/lib/assessmentFlow';
 import { offlineBackendUrl, offlineHandlingEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
@@ -2513,6 +2514,9 @@ function App() {
   };
 
   const handleConsentAgree = () => {
+    // Recorded here so a later screen on its own route (the facial capture) can
+    // state when consent was given instead of asking for it a second time.
+    storeFlowConsent(new Date().toISOString());
     pathSyncSourceRef.current = 'internal';
     router.push('/demographics');
   };
@@ -2529,6 +2533,17 @@ function App() {
 
   const handleDemographicsSubmit = (data: DemographicsData) => {
     demographicsRef.current = data;
+
+    // Facial drooping screen chosen on the home page: it uses no gaze data, so
+    // the setup guide and calibration are skipped and the subject goes straight
+    // to the capture. Carry the answers over — /facial-speech is a separate
+    // route, so the in-memory ref above does not survive the navigation.
+    if (getAssessmentFlow() === 'facial') {
+      storeFlowDemographics(data);
+      pathSyncSourceRef.current = 'internal';
+      router.push(PATHS.FACIAL_SPEECH);
+      return;
+    }
 
     // Activate glasses optimization if participant wears glasses and the feature is enabled
     const cfg = configRef.current;

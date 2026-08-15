@@ -28,6 +28,34 @@ cd backend
 docker compose up -d --build
 ```
 
+### Running it without a GPU (macOS / any CPU host)
+
+`docker compose` here builds on a CUDA base image and reserves an NVIDIA device,
+so it cannot start on a machine without one. The facial-speech analysis needs no
+GPU — only MediaPipe, FFmpeg and Parselmouth — and the gaze stack (torch +
+OpenFace) is imported lazily, so the service starts and serves `/facial-speech`
+on a CPU host:
+
+```bash
+brew install ffmpeg                                   # audio extraction
+pip install fastapi 'uvicorn[standard]' python-multipart numpy \
+            opencv-python-headless scikit-learn scipy pydantic \
+            mediapipe praat-parselmouth                # 0.4.4 is pinned for the
+                                                       # image's Python 3.10; on
+                                                       # 3.13 install unpinned
+cd backend && python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+`GET /health` reports `gaze_available: false` on such a host: `/process` (gaze)
+is unavailable there, `/facial-speech/*` is fully functional. The browser
+defaults to `http://localhost:8000`; override with
+`NEXT_PUBLIC_OFFLINE_GAZE_BACKEND_URL`, and allow the frontend's origin through
+`OFFLINE_BACKEND_CORS_ORIGINS` if it is not on `:3000`.
+
+If the route reports that the backend is unreachable, the capture is not lost —
+the page keeps it in memory and offers **Retry analysis** and **Download video +
+metadata**.
+
 The browser uses MediaPipe for the live cursor during a test. After the session
 the **recorded video** is sent here. This service runs a deep gaze model per
 frame, re-fits the calibration mapping from the recorded calibration dots, maps

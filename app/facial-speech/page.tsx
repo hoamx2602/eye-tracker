@@ -14,12 +14,19 @@ import {
   type FacialSpeechJob,
 } from '@/lib/facialSpeechBackend';
 import { AnalysisReport } from '@/components/facial-speech/AnalysisReport';
+import { readFlowConsent, readFlowDemographics } from '@/lib/assessmentFlow';
+import {
+  archiveFacialSpeechCapture,
+  facialSpeechDeferAnalysisEnabled,
+  type ArchivedCapture,
+} from '@/lib/facialSpeechArchive';
+import EyeSpinner from '@/components/ui/EyeSpinner';
 
 /** Bump when the wording of the consent notice changes materially, so a stored
  * capture records which notice the subject actually agreed to. */
 const CONSENT_NOTICE_VERSION = '1.0.0';
 
-type CaptureState = 'ready' | 'recording' | 'processing' | 'complete' | 'error';
+type CaptureState = 'ready' | 'recording' | 'processing' | 'saving' | 'complete' | 'error';
 type TaskPhase = 'instruction' | 'countdown' | 'active';
 
 interface CompletedTask {
@@ -72,9 +79,18 @@ export default function FacialSpeechPage() {
   const [completedTasks, setCompletedTasks] = useState<CompletedTask[]>([]);
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   const [processingJob, setProcessingJob] = useState<FacialSpeechJob | null>(null);
+  const [archivedCapture, setArchivedCapture] = useState<ArchivedCapture | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
   const [consentAt, setConsentAt] = useState<string | null>(null);
   const consentAtRef = useRef<string | null>(null);
   consentAtRef.current = consentAt;
+  // Consent carried in from the shared consent screen, when the subject reached
+  // this route through the assessment flow. Kept distinct from `consentAt` so
+  // the manifest can say which notice was actually agreed to.
+  const [inheritedConsentAt, setInheritedConsentAt] = useState<string | null>(null);
+  const inheritedConsentAtRef = useRef<string | null>(null);
+  inheritedConsentAtRef.current = inheritedConsentAt;
+  const needsOwnConsent = inheritedConsentAt === null;
   const [message, setMessage] = useState('Read the consent notice below, then allow camera and microphone access.');
 
   const currentTask = FACIAL_SPEECH_TASKS[taskIndex];
@@ -93,6 +109,16 @@ export default function FacialSpeechPage() {
     const id = window.setInterval(tick, 100);
     return () => window.clearInterval(id);
   }, [isTaskActive, taskIndex]);
+
+  // Read after mount, not during render: sessionStorage is unavailable to the
+  // server pass and reading it inline would hydrate two different trees.
+  useEffect(() => {
+    const acknowledgedAt = readFlowConsent();
+    if (!acknowledgedAt) return;
+    setInheritedConsentAt(acknowledgedAt);
+    setConsentAt(acknowledgedAt);
+    setMessage('Consent recorded on the previous screen. Allow camera and microphone access, then begin.');
+  }, []);
 
   useEffect(() => {
     const previousOverflow = document.documentElement.style.overflow;
@@ -115,7 +141,18 @@ export default function FacialSpeechPage() {
       captureStartedAt: captureStartedAtRef.current,
       // Part of the provenance record: a capture without recorded consent is
       // not usable as study data, whatever else it contains.
-      consent: { acknowledgedAt: consentAtRef.current, noticeVersion: CONSENT_NOTICE_VERSION },
+      consent: {
+        acknowledgedAt: consentAtRef.current,
+        // Which document was agreed to. On the flow route the subject read the
+        // shared participant-consent screen and never saw this page's notice,
+        // so claiming its version here would be a false provenance record.
+        source: inheritedConsentAtRef.current ? 'assessment-flow-consent-screen' : 'facial-speech-capture-notice',
+        noticeVersion: inheritedConsentAtRef.current ? null : CONSENT_NOTICE_VERSION,
+      },
+      // Present when the subject reached this route through the home-screen
+      // flow, which collects demographics before the capture. Null for a direct
+      // visit to /facial-speech, which stays usable on its own.
+      subject: readFlowDemographics(),
       media: {
         container: video.type || 'video/webm',
         video: getTrackSettings(stream?.getVideoTracks()[0]),
@@ -171,9 +208,36 @@ export default function FacialSpeechPage() {
       setMessage('Offline analysis complete. Review the quality gates and measurements below.');
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Unknown offline-processing error.';
-      setProcessingJob((current) => current ? { ...current, status: 'failed', phase: 'failed', message: detail, error: detail } : null);
+      // When the upload itself never connected there is no job yet. Synthesise
+      // one so the failure is shown in the status card - and so the retry
+      // control has a failed job to key off - instead of only in the caption.
+      setProcessingJob((current) => ({
+        ...(current ?? { id: 'local', progress: 0 }),
+        status: 'failed',
+        phase: 'failed',
+        message: detail,
+        error: detail,
+      }));
       setCaptureState('complete');
       setMessage(`Offline analysis could not complete: ${detail}`);
+    }
+  }, []);
+
+  /** Deferred mode: store the capture now, measure it later. */
+  const archiveCapture = useCallback(async (video: Blob, manifest: Record<string, unknown>) => {
+    setCaptureState('saving');
+    setArchiveError(null);
+    setMessage('Saving your capture…');
+    try {
+      const saved = await archiveFacialSpeechCapture(video, manifest, setMessage);
+      setArchivedCapture(saved);
+      setCaptureState('complete');
+      setMessage('Your capture has been saved.');
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Unknown error while saving the capture.';
+      setArchiveError(detail);
+      setCaptureState('complete');
+      setMessage(`The capture could not be saved: ${detail}`);
     }
   }, []);
 
@@ -223,7 +287,9 @@ export default function FacialSpeechPage() {
       const manifest = buildManifest(`facial-speech-${Date.now()}`, video);
       setVideoBlob(video);
       captureManifestRef.current = manifest;
-      if (facialSpeechHandlingEnabled()) {
+      if (facialSpeechDeferAnalysisEnabled()) {
+        void archiveCapture(video, manifest);
+      } else if (facialSpeechHandlingEnabled()) {
         void processCapture(video, manifest);
       } else {
         setCaptureState('complete');
@@ -252,11 +318,13 @@ export default function FacialSpeechPage() {
     captureManifestRef.current = null;
     processingCancelledRef.current = false;
     setProcessingJob(null);
+    setArchivedCapture(null);
+    setArchiveError(null);
     setVideoBlob(null);
     recorder.start(1000);
     setCaptureState('recording');
     setMessage('The session is recording. Read the task guide, then start the timed task when ready.');
-  }, [buildManifest, prepareCapture, processCapture]);
+  }, [archiveCapture, buildManifest, prepareCapture, processCapture]);
 
   const startCurrentTask = useCallback(() => {
     if (captureState !== 'recording' || taskPhase !== 'instruction') return;
@@ -307,6 +375,26 @@ export default function FacialSpeechPage() {
     setMessage('Read the next task guide before you start its timed capture.');
   }, [currentTask, isTaskActive, taskIndex]);
 
+  // Either half of the pipeline can fail on a capture that is otherwise fine,
+  // and re-recording six poses to recover from that would be an absurd cost.
+  const canRetry =
+    captureState === 'complete' &&
+    !!videoBlob &&
+    (archiveError !== null || (processingJob?.status === 'failed' && facialSpeechHandlingEnabled()));
+
+  const retryLastStep = useCallback(() => {
+    if (!videoBlob) return;
+    const manifest = captureManifestRef.current ?? buildManifest(`facial-speech-${Date.now()}`, videoBlob);
+    captureManifestRef.current = manifest;
+    if (facialSpeechDeferAnalysisEnabled()) {
+      void archiveCapture(videoBlob, manifest);
+      return;
+    }
+    processingCancelledRef.current = false;
+    setProcessingJob(null);
+    void processCapture(videoBlob, manifest);
+  }, [archiveCapture, buildManifest, processCapture, videoBlob]);
+
   const exportArtifacts = useCallback(() => {
     if (!videoBlob) return;
     const manifest = captureManifestRef.current ?? buildManifest(`facial-speech-${Date.now()}`, videoBlob);
@@ -318,17 +406,11 @@ export default function FacialSpeechPage() {
   return (
     <main className="min-h-screen bg-gray-950 px-4 py-8 text-white sm:px-8">
       <div className="mx-auto max-w-6xl">
-        <header className="mb-8 flex flex-col gap-4 border-b border-gray-800 pb-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">Offline neurological assessment</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Facial drooping &amp; speech assessment</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-400">
-              A standardised video-and-audio capture for facial movement asymmetry and motor-speech screening. Automated findings require clinical review.
-            </p>
-          </div>
-          <div className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
-            Sudden facial droop or new speech difficulty is an emergency. Seek urgent medical help; do not wait for this assessment.
-          </div>
+        <header className="mb-8 border-b border-gray-800 pb-6">
+          <h1 className="text-3xl font-semibold tracking-tight">Facial drooping &amp; speech assessment</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-400">
+            A standardised video-and-audio capture for facial movement asymmetry and motor-speech screening. Automated findings require clinical review.
+          </p>
         </header>
 
         {/* The camera is the whole stage. Guidance and controls sit on top of
@@ -340,8 +422,28 @@ export default function FacialSpeechPage() {
           <div className="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900 shadow-2xl shadow-black/20">
             <div className="relative aspect-video bg-black">
               <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
-              <div className="absolute left-4 top-4 z-10 rounded-full bg-black/70 px-3 py-1 text-xs font-medium text-white">
-                {captureState === 'recording' ? '● SESSION RECORDING' : captureState === 'processing' ? '● OFFLINE ANALYSIS' : captureState === 'complete' ? 'CAPTURE COMPLETE' : 'CAMERA PREVIEW'}
+              {/* The one recording indicator on screen, so it has to be the one
+                  that reads as live: red and pulsing while the camera is
+                  actually capturing, neutral in every other state. */}
+              <div
+                className={`absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${
+                  captureState === 'recording' ? 'bg-red-600/90 text-white' : 'bg-black/70 text-white'
+                }`}
+              >
+                {captureState === 'recording' ? (
+                  <>
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+                    SESSION RECORDING
+                  </>
+                ) : captureState === 'processing' ? (
+                  '● OFFLINE ANALYSIS'
+                ) : captureState === 'saving' ? (
+                  '● SAVING CAPTURE'
+                ) : captureState === 'complete' ? (
+                  'CAPTURE COMPLETE'
+                ) : (
+                  'CAMERA PREVIEW'
+                )}
               </div>
               {captureState === 'recording' ? (
                 <div className="absolute right-4 top-4 z-10 rounded-full bg-black/70 px-3 py-1 text-xs font-medium tabular-nums text-white">
@@ -372,6 +474,20 @@ export default function FacialSpeechPage() {
                 />
               ) : null}
 
+              {/* The upload can take a while on a long capture. Hold the stage
+                  with the app's own loading indicator so it reads as work in
+                  progress, not as a page that stopped responding. */}
+              {captureState === 'saving' ? (
+                <div className="absolute inset-0 z-20 grid place-items-center bg-gray-950/85 px-6 text-center backdrop-blur-sm">
+                  {/* EyeSpinner renders its own label — the stage text belongs
+                      there, not in a second line beside it. */}
+                  <div className="flex flex-col items-center gap-4">
+                    <EyeSpinner size="xl" label={message} />
+                    <p className="max-w-sm text-xs text-gray-400">Keep this page open until the capture is stored.</p>
+                  </div>
+                </div>
+              ) : null}
+
               {captureState === 'ready' || captureState === 'error' ? (
                 <div className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-center gap-3 bg-gradient-to-t from-black/85 to-transparent px-4 pb-5 pt-12">
                   <button onClick={() => void prepareCapture()} className="rounded-lg border border-gray-500 bg-black/40 px-4 py-2 text-sm font-medium text-gray-100 backdrop-blur-sm transition hover:border-blue-400 hover:text-blue-300">
@@ -393,13 +509,32 @@ export default function FacialSpeechPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
               <p className="text-sm text-gray-300">{message}</p>
               {captureState === 'complete' ? (
-                <button onClick={exportArtifacts} className="shrink-0 rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium text-gray-100 transition hover:border-blue-400 hover:text-blue-300">
-                  Download video + metadata
-                </button>
+                <div className="flex shrink-0 flex-wrap gap-3">
+                  {canRetry ? (
+                    <button onClick={retryLastStep} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500">
+                      {archiveError ? 'Retry saving' : 'Retry analysis'}
+                    </button>
+                  ) : null}
+                  <button onClick={exportArtifacts} className="rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium text-gray-100 transition hover:border-blue-400 hover:text-blue-300">
+                    Download video + metadata
+                  </button>
+                </div>
               ) : null}
             </div>
           </div>
         </section>
+
+        {archivedCapture ? <SavedNotice capture={archivedCapture} /> : null}
+
+        {archiveError ? (
+          <section className="mt-6 rounded-2xl border border-red-900/80 bg-red-950/30 p-5">
+            <h2 className="text-lg font-semibold text-red-100">Capture not saved</h2>
+            <p className="mt-2 text-sm leading-6 text-red-200">{archiveError}</p>
+            <p className="mt-2 text-sm leading-6 text-red-200/80">
+              The recording is still held on this page. Use <strong>Retry saving</strong>, or download the video and metadata so nothing is lost.
+            </p>
+          </section>
+        ) : null}
 
         {captureState === 'processing' || processingJob ? (
           <section className="mt-6">
@@ -412,16 +547,12 @@ export default function FacialSpeechPage() {
           </section>
         ) : null}
 
-        {captureState === 'ready' || captureState === 'error' ? (
+        {/* Only for a direct visit to this route. Reaching it through the
+            assessment flow means consent was already given and recorded on the
+            shared consent screen; asking again would be noise, not diligence. */}
+        {needsOwnConsent && (captureState === 'ready' || captureState === 'error') ? (
           <ConsentPanel consentAt={consentAt} onChange={setConsentAt} />
         ) : null}
-
-        <section className="mt-6 rounded-2xl border border-gray-800 bg-gray-900 p-5">
-          <h2 className="text-lg font-semibold">How the offline processor identifies each task</h2>
-          <p className="mt-2 max-w-4xl text-sm leading-6 text-gray-400">
-            The browser creates one continuous video to avoid camera re-acquisition, codec boundaries, and lost frames. It writes an exact start/end timestamp for every timed task into the paired metadata file. The backend decodes only those task windows; guidance and countdown frames are excluded from all metrics. It may create derived clips internally for replay, but the original evidence remains one loss-minimised source file.
-          </p>
-        </section>
 
         <section className="mt-6 grid gap-6 lg:grid-cols-2">
           <MetricPanel title="Facial metrics to be reported" metrics={FACIAL_SPEECH_METRICS.filter((metric) => metric.domain === 'face')} />
@@ -429,6 +560,27 @@ export default function FacialSpeechPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+/** Deferred mode has no report to show, so the confirmation is the outcome:
+ * say plainly that the capture is stored and what happens to it next. */
+function SavedNotice({ capture }: { capture: ArchivedCapture }) {
+  return (
+    <section className="mt-6 rounded-2xl border border-emerald-800/70 bg-emerald-950/30 p-5">
+      <div className="flex items-start gap-3">
+        <svg viewBox="0 0 20 20" fill="currentColor" className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400">
+          <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.7-9.3a1 1 0 00-1.4-1.4L9 10.6 7.7 9.3a1 1 0 00-1.4 1.4l2 2a1 1 0 001.4 0l4-4z" />
+        </svg>
+        <div>
+          <h2 className="text-lg font-semibold text-emerald-100">Capture saved</h2>
+          <p className="mt-1 text-sm leading-6 text-emerald-200/90">
+            Your recording and its task timings are stored in the system. The measurement analysis is run later, so there is no report on this screen. You can close this page.
+          </p>
+          <p className="mt-3 font-mono text-xs text-emerald-300/80">Reference: {capture.sessionId}</p>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -542,12 +694,12 @@ function ActiveTaskOverlay({
         </div>
       ) : null}
       <div className={`absolute inset-x-0 z-20 flex flex-col items-center gap-2 px-4 ${task.nearLensPrompt ? 'top-16' : 'top-14'}`}>
-        <div className="flex items-center gap-2 rounded-full bg-red-950/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-red-200 backdrop-blur-sm">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />
-          Recording · {task.title}
+        {/* Which pose is being held, not that recording is happening - the badge
+            in the corner already says that, and saying it twice on the same
+            screen just competes with the task name. */}
+        <div className="rounded-full bg-black/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white backdrop-blur-sm">
+          {task.title}
         </div>
-        <p className="rounded-full bg-black/60 px-3 py-1 text-xs text-gray-200 backdrop-blur-sm">{cue}</p>
-
         {/* A bar rather than large digits: during a facial task the subject is
             meant to be looking at the lens, and a counting number is the most
             attention-grabbing thing that could be put on screen. */}
@@ -581,6 +733,13 @@ function ActiveTaskOverlay({
           </button>
         ) : null}
       </div>
+
+      {/* Held at the foot of the frame, clear of the task prompt and timer that
+          share the top. It is a standing reminder for the whole task, so it
+          does not need to sit where the subject is already reading. */}
+      <p className="absolute inset-x-0 bottom-4 z-20 mx-auto w-fit max-w-[80%] rounded-full bg-black/60 px-3 py-1 text-center text-xs text-gray-200 backdrop-blur-sm">
+        {cue}
+      </p>
     </>
   );
 }

@@ -164,7 +164,7 @@ export const uploadApi = {
    * Upload via presigned URL (client PUTs directly to S3). Use for large files to avoid
    * Vercel 4.5 MB request body limit. Returns public URL or null if blob is empty.
    */
-  async uploadBlob(blob: Blob, filename: string, contentType?: string): Promise<string | null> {
+  async uploadBlob(blob: Blob, filename: string, contentType?: string, prefix?: string): Promise<string | null> {
     if (!blob || blob.size === 0) return null;
     const baseUrl = getBaseUrl();
     let presignRes: Response;
@@ -172,7 +172,7 @@ export const uploadApi = {
       presignRes = await fetch(`${baseUrl}/api/upload/presign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename, contentType: contentType || blob.type }),
+        body: JSON.stringify({ filename, contentType: contentType || blob.type, ...(prefix ? { prefix } : {}) }),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

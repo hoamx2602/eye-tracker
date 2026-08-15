@@ -16,6 +16,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { isOfflineMetaExportEnabled, withOfflineMetaExportFlag } from '@/lib/offlineExportMeta';
+import { setAssessmentFlow } from '@/lib/assessmentFlow';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -638,6 +639,17 @@ export default function HomePage() {
 
   const totalMin = Math.ceil(ALL_STEPS.reduce((sum, s) => sum + s.durationSec, 0) / 60);
 
+  // Picking a facial pose starts the facial drooping screen on its own: consent
+  // and demographics as usual, then straight to the capture, no calibration.
+  // The eye-tracking sets still run the full route.
+  const isFacialFlow = selected.section === 'facial';
+  const facialMin = Math.ceil(FACIAL_STEPS.reduce((sum, s) => sum + s.durationSec, 0) / 60);
+
+  const handleBegin = () => {
+    setAssessmentFlow(isFacialFlow ? 'facial' : 'full');
+    router.push(withOfflineMetaExportFlag('/consent'));
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-white">
 
@@ -715,21 +727,24 @@ export default function HomePage() {
                 <div>
                   <p className="text-sm font-semibold text-white">Ready to begin?</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Click any step to preview it, then start when ready.
+                    {isFacialFlow
+                      ? `Consent and personal details, then the facial capture — no calibration, ~${facialMin} min.`
+                      : 'Click any step to preview it, then start when ready.'}
                   </p>
                 </div>
-                {/* Phase 2: router.push('/setup') */}
                 <button
-                  onClick={() => router.push(withOfflineMetaExportFlag('/consent'))}
-                  className="
+                  onClick={handleBegin}
+                  className={`
                     flex items-center gap-2 px-5 py-2.5 rounded-xl flex-shrink-0
-                    bg-blue-600 hover:bg-blue-500 active:scale-[0.97]
+                    active:scale-[0.97]
                     text-white text-sm font-semibold
-                    transition-all duration-150
-                    shadow-lg shadow-blue-900/40
-                  "
+                    transition-all duration-150 shadow-lg
+                    ${isFacialFlow
+                      ? 'bg-teal-600 hover:bg-teal-500 shadow-teal-900/40'
+                      : 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/40'}
+                  `}
                 >
-                  Begin Assessment
+                  {isFacialFlow ? 'Begin Facial Assessment' : 'Begin Assessment'}
                   <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
                     <path d="M3.75 7.25a.75.75 0 000 1.5h6.69l-3.22 3.22a.75.75 0 101.06 1.06l4.5-4.5a.75.75 0 000-1.06l-4.5-4.5a.75.75 0 10-1.06 1.06l3.22 3.22H3.75z" />
                   </svg>

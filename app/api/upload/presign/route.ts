@@ -52,14 +52,18 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { filename, contentType } = body as { filename?: string; contentType?: string };
+    const { filename, contentType, prefix } = body as { filename?: string; contentType?: string; prefix?: string };
     if (!filename || typeof filename !== 'string') {
       return NextResponse.json({ error: 'Missing or invalid filename' }, { status: 400 });
     }
 
     const ext = filename.includes('.') ? filename.split('.').pop() : '';
     const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const key = `calibration/${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${safeName}`;
+    // Folder in the bucket. Defaults to the historical `calibration/` so existing
+    // callers and stored objects are unaffected; other capture kinds pass their
+    // own so a later batch job can find them without opening every object.
+    const safePrefix = typeof prefix === 'string' && /^[a-z0-9-]{1,32}$/.test(prefix) ? prefix : 'calibration';
+    const key = `${safePrefix}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${safeName}`;
     const resolvedContentType = contentType || (ext === 'webm' ? 'video/webm' : 'image/jpeg');
 
     const s3 = getS3Client();
