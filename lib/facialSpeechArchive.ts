@@ -17,6 +17,16 @@ import { sessionsApi, uploadApi, type CreateSessionPayload } from '@/services/ap
 /** Marks a Session row as a capture that has been stored but not yet measured. */
 export const FACIAL_SPEECH_PENDING_STATUS = 'facial_speech_captured';
 
+/** Set once the deferred analysis has been run over a stored capture. */
+export const FACIAL_SPEECH_ANALYSED_STATUS = 'facial_speech_analysed';
+
+/** Every status that identifies a Session row as a facial-speech capture. Used
+ * to route rows to the facial tab and away from the calibration list. */
+export const FACIAL_SPEECH_STATUSES = [FACIAL_SPEECH_PENDING_STATUS, FACIAL_SPEECH_ANALYSED_STATUS];
+
+/** Value of `config.protocol` on a stored capture. */
+export const FACIAL_SPEECH_PROTOCOL_ID = 'facial-speech-screening';
+
 /** Bucket folder, kept apart from the eye-tracking captures so a later batch
  * analysis can enumerate exactly these objects. */
 const S3_PREFIX = 'facial-speech';
@@ -62,7 +72,7 @@ export async function archiveFacialSpeechCapture(
     ...(videoUrl ? { videoUrl } : {}),
     ...(subject && typeof subject === 'object' ? { demographics: subject as CreateSessionPayload['demographics'] } : {}),
     config: {
-      protocol: 'facial-speech-screening',
+      protocol: FACIAL_SPEECH_PROTOCOL_ID,
       captureId,
       analysis: 'deferred',
       metadataUrl,

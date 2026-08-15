@@ -47,6 +47,12 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
               Neuro Runs
             </Link>
             <Link
+              href="/admin/facial-speech"
+              className={`font-medium transition ${pathname?.startsWith('/admin/facial-speech') ? 'text-white' : 'text-slate-300 hover:text-white'}`}
+            >
+              Facial Droop
+            </Link>
+            <Link
               href="/admin/config"
               className={`font-medium transition ${pathname?.startsWith('/admin/config') ? 'text-white' : 'text-slate-300 hover:text-white'}`}
             >

@@ -4,6 +4,21 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { FACIAL_SPEECH_STATUSES } from '@/lib/facialSpeechArchive';
+
+/**
+ * Facial-speech captures are Sessions too, but they carry no calibration or
+ * gaze data, so they get their own admin tab and are kept out of the
+ * calibration list rather than filling it with rows of empty columns.
+ *
+ * Matched on `status`, not on a JSON path: `config` is nullable and so are its
+ * keys, and in SQL a negated comparison against NULL is NULL, which would
+ * silently drop every session whose config predates this field.
+ */
+const FACIAL_SPEECH_WHERE = { status: { in: FACIAL_SPEECH_STATUSES } };
+const NOT_FACIAL_SPEECH_WHERE = {
+  OR: [{ status: null }, { status: { notIn: FACIAL_SPEECH_STATUSES } }],
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,12 +26,19 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);
     const cursor = searchParams.get('cursor') || undefined;
     const testOnly = searchParams.get('testOnly') === '1';
+    const facialSpeechOnly = searchParams.get('protocol') === 'facial-speech';
+
+    const where = facialSpeechOnly
+      ? FACIAL_SPEECH_WHERE
+      : testOnly
+        ? { testRun: { isNot: null } }
+        : { testRun: null, ...NOT_FACIAL_SPEECH_WHERE };
 
     const sessions = await prisma.session.findMany({
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: { createdAt: 'desc' },
-      where: testOnly ? { testRun: { isNot: null } } : { testRun: null },
+      where,
       include: { testRun: testOnly },
     });
     const hasMore = sessions.length > limit;
