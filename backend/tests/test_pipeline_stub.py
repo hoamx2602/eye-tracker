@@ -155,6 +155,73 @@ def test_full_pipeline_with_stub_model() -> None:
           f" -> comp {val['overall_px']:.1f} px | batches {model.batch_sizes[:3]}...")
 
 
+def test_head_comp_gain_auto_selects_and_rejects() -> None:
+    """
+    "auto" must pick the gain that minimises held-out error — full compensation
+    when the geometry is right, and *off* when the correction only hurts. The
+    second case is the real-session failure mode (135 px compensated vs 123 px
+    raw) that a hard-coded gain=1.0 could not detect.
+    """
+    script, meta = _build_script_and_meta()
+    meta["head_comp_gain"] = "auto"
+    with tempfile.TemporaryDirectory() as td:
+        video_path = str(Path(td) / "session.mp4")
+        _write_video(len(script), video_path)
+        report = reprocess(video_path, meta, model=StubModel(script))
+
+    sel = report["head"]["gain_selection"]
+    assert sel["mode"] == "auto"
+    assert report["head"]["gain"] == 1.0, sel        # geometry is exact here
+    assert sel["sweep_px"]["0.0"] > sel["sweep_px"]["1.0"], sel
+
+    # Now invert the head signal so the compensator pushes the wrong way. A
+    # fixed gain would make the report worse; "auto" must fall back to 0.
+    bad_script = [
+        None if g is None else _Gaze(g.yaw, g.pitch, g.bbox_area, g.quality,
+                                     -g.head_u, -g.head_v, g.head_w)
+        for g in script
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        video_path = str(Path(td) / "session.mp4")
+        _write_video(len(bad_script), video_path)
+        bad = reprocess(video_path, meta, model=StubModel(bad_script))
+
+    assert bad["head"]["gain"] == 0.0, bad["head"]["gain_selection"]
+    assert bad["head"]["compensation_applied"] is False
+    print(f"  good geometry -> gain {report['head']['gain']}, "
+          f"mirrored head -> gain {bad['head']['gain']}")
+
+
+def test_response_mapping_matches_report() -> None:
+    """
+    /process delegates to reprocess() and flattens the report. Guard the wire
+    shape so the flattening can't silently drop a field the browser reads.
+    """
+    from app.schemas import response_from_report
+
+    script, meta = _build_script_and_meta()
+    with tempfile.TemporaryDirectory() as td:
+        video_path = str(Path(td) / "session.mp4")
+        _write_video(len(script), video_path)
+        report = reprocess(video_path, meta, model=StubModel(script), include_trace=True)
+
+    resp = response_from_report(report, include_trace=True)
+    assert resp.calibration_loocv_px == report["calibration"]["loocv_px"]
+    assert resp.calibration_dots_used == report["calibration"]["dots_used"]
+    assert resp.head_compensation_applied is report["head"]["compensation_applied"]
+    assert resp.head_comp_gain == report["head"]["gain"]
+    assert resp.head_comp_gain_selection == report["head"]["gain_selection"]
+    assert resp.validation is not None
+    assert resp.validation.overall_px == report["validation"]["overall_px"]
+    assert resp.biomarkers.saccade_count == report["biomarkers"]["saccade_count"]
+    assert resp.biomarkers.bcea_deg2 == report["biomarkers"]["bcea_deg2"]
+    # Trace carries only the frames that mapped to a real screen point.
+    mapped = [r for r in report["debug_trace"] if r["x"] is not None]
+    assert len(resp.gaze_trace) == len(mapped)
+    assert resp.gaze_trace[0].t_ms == mapped[0]["t"]
+    print(f"  {len(resp.gaze_trace)} trace samples, gain {resp.head_comp_gain}")
+
+
 def test_pipeline_head_comp_disabled() -> None:
     script, meta = _build_script_and_meta()
     meta["head_compensation"] = False

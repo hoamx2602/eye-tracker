@@ -59,9 +59,18 @@ import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, QUICK_CALIBRATION_POINTS, roundedRect } from '@/lib/appHelpers';
 import { CalibrationMetaRecorder, type SessionMeta } from '@/lib/calibrationMeta';
 import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
-import { offlineBackendUrl, offlineHandlingEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
+import { offlineBackendUrl, offlineHandlingEnabled, offlinePersonalizationEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
+import { lockCameraAutoAdjustments, describeCameraLock, type CameraLockResult } from '@/lib/cameraLock';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
+
+/**
+ * How long to let the camera's auto-exposure converge before pinning it.
+ * Locking on the first frame would freeze a half-converged exposure for the
+ * whole session; 1.5 s is past the settling time of every webcam tested and
+ * still comfortably before calibration begins.
+ */
+const CAMERA_LOCK_SETTLE_MS = 1500;
 
 /** When true (NEXT_PUBLIC_CALIBRATION_TEST_MODE=1): after first calibration phase (grid) only, save session and show choice screen (Real-time vs Neurological). Choice is always required. */
 const CALIBRATION_TEST_MODE =
@@ -277,6 +286,9 @@ function App() {
   const timerRef = useRef<(number | ReturnType<typeof setTimeout>)[]>([]);
   const trackingHistoryRef = useRef<GazeRecord[]>([]);
   const zoomLockIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cameraLockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Outcome of the exposure/focus/WB lock — recorded on the session for QA. */
+  const cameraLockRef = useRef<CameraLockResult | null>(null);
 
   // Refs for click hold logic
   const holdStartTimeRef = useRef<number>(0);
@@ -597,6 +609,9 @@ function App() {
       if (zoomLockIntervalRef.current) {
         clearInterval(zoomLockIntervalRef.current);
       }
+      if (cameraLockTimeoutRef.current) {
+        clearTimeout(cameraLockTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -621,11 +636,15 @@ function App() {
     try {
       const supports = typeof navigator !== 'undefined' && navigator.mediaDevices?.getSupportedConstraints?.();
       const wantsZoom = supports && (supports as { zoom?: boolean }).zoom === true;
-      // Prefer 720p; request PTZ so we can lock zoom (reduces auto-zoom when user moves).
+      // Prefer 1080p; request PTZ so we can lock zoom (reduces auto-zoom when user moves).
+      // Resolution is the hard ceiling on gaze accuracy: at 720p the iris spans
+      // only ~15–25 px, so a 1 px landmark/feature error is already tens of px on
+      // screen. The reference webcam system that reaches 1.4° uses 1080p. `ideal`
+      // degrades gracefully on cameras that cannot deliver it.
       const videoConstraints: MediaTrackConstraints & { zoom?: boolean } = {
         facingMode: 'user',
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
+        width: { ideal: 1920, min: 1280 },
+        height: { ideal: 1080, min: 720 },
         // Request a stable frame rate: erratic fps makes the OneEuro dt jittery,
         // which corrupts smoothing and reaction-time measurements in saccade tests.
         frameRate: { ideal: 30, min: 24 },
@@ -668,6 +687,21 @@ function App() {
         if (videoRef.current) videoRef.current.onloadedmetadata = resolve;
       });
       videoRef.current.play();
+      // Freeze exposure/focus/white balance once auto-exposure has settled.
+      // Auto-exposure reacts to the calibration dot's own brightness, so leaving
+      // it running injects a bias correlated with target position — see
+      // lib/cameraLock.ts. Deliberately not awaited: tracking starts immediately
+      // and the lock lands a moment later, well before calibration.
+      if (videoTrack) {
+        cameraLockTimeoutRef.current = setTimeout(() => {
+          lockCameraAutoAdjustments(videoTrack)
+            .then((r) => {
+              cameraLockRef.current = r;
+              console.log('[Camera]', describeCameraLock(r));
+            })
+            .catch((e) => console.warn('[Camera] lock failed:', e));
+        }, CAMERA_LOCK_SETTLE_MS);
+      }
       processVideo();
     } catch (err) {
       console.error('[Camera] getUserMedia failed:', err);
@@ -687,10 +721,14 @@ function App() {
       cancelAnimationFrame(requestRef.current);
       requestRef.current = 0;
     }
-    // Stop the zoom-lock interval.
+    // Stop the zoom-lock interval and any pending exposure/focus/WB lock.
     if (zoomLockIntervalRef.current) {
       clearInterval(zoomLockIntervalRef.current);
       zoomLockIntervalRef.current = null;
+    }
+    if (cameraLockTimeoutRef.current) {
+      clearTimeout(cameraLockTimeoutRef.current);
+      cameraLockTimeoutRef.current = null;
     }
     // Stop all media tracks so the OS camera indicator turns off.
     if (videoRef.current?.srcObject) {
@@ -1782,20 +1820,33 @@ function App() {
             throw new Error('Offline handling is enabled, but no calibration video was recorded.');
           }
           const offlineMeta = buildOfflineSessionMeta();
-          setLoadingMsg(`Processing gaze offline on ${offlineBackendUrl()}…`);
+          const personalize = offlinePersonalizationEnabled();
+          setLoadingMsg(
+            personalize
+              ? `Processing gaze offline (with personalization) on ${offlineBackendUrl()}…`
+              : `Processing gaze offline on ${offlineBackendUrl()}…`
+          );
           console.log('[offline] sending calibration video + metadata to gaze backend', {
             backend: offlineBackendUrl(),
             videoBytes: videoBlob.size,
             calibrationDots: offlineMeta.calibration_dots.length,
             validationDots: offlineMeta.validation_dots.length,
+            personalize,
           });
-          offlineGazeReport = await processOfflineGaze(videoBlob, offlineMeta);
+          offlineGazeReport = await processOfflineGaze(videoBlob, offlineMeta, { personalize });
           const offlineValidation = offlineGazeReport.validation;
           const offlineMsg = offlineValidation
             ? `Offline processing complete: ${offlineValidation.overall_deg.toFixed(2)}° validation error`
             : `Offline processing complete: ${Math.round(offlineGazeReport.calibration_loocv_px)}px LOOCV`;
           setLoadingMsg(offlineMsg);
           console.log('[offline] gaze backend report', offlineGazeReport);
+          if (offlineGazeReport.personalization) {
+            const p = offlineGazeReport.personalization;
+            console.log(`[offline] personalization ${p.kept ? 'KEPT' : 'discarded'}: ${p.reason ?? '—'}`);
+          }
+          if (offlineGazeReport.head_comp_gain_selection) {
+            console.log('[offline] head-comp gain', offlineGazeReport.head_comp_gain_selection);
+          }
         }
         const gridImageCount = calibrationImagesRef.current.length;
         const samples = trainingSamplesRef.current;
@@ -1866,6 +1917,11 @@ function App() {
           config: {
             ...(configRef.current as unknown as Record<string, unknown>),
             ...(demographicsRef.current ? { demographics: demographicsRef.current } : {}),
+            // Capture conditions: which auto-adjustments were actually frozen and
+            // what resolution the driver settled on. Without this, a session that
+            // scored badly can't be told apart from one recorded on a camera that
+            // silently refused the lock or delivered 720p.
+            ...(cameraLockRef.current ? { camera: cameraLockRef.current } : {}),
             ...(offlineGazeReport ? {
               offlineGaze: {
                 status: 'completed',

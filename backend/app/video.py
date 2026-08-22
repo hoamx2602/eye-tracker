@@ -18,15 +18,67 @@ logger = logging.getLogger(__name__)
 # input tensors — VRAM is not the constraint; diminishing returns past ~32.
 _BATCH_SIZE = max(1, int(os.environ.get("GAZE_BATCH_SIZE", "16")))
 
-# Savitzky-Golay parameters for non-causal temporal smoothing.
-# At 30 fps: window=11 ≈ 367 ms. Preserves saccade shape while removing
-# high-freq noise. Increase window for very noisy signals; decrease for
-# high-fps recordings where saccade duration is shorter in frames.
+# Savitzky-Golay parameters for non-causal temporal smoothing *inside fixations*.
+# At 30 fps: window=11 ≈ 367 ms. That is an order of magnitude LONGER than a
+# saccade (30–80 ms), so applying it across the whole trace flattens exactly the
+# events the biomarkers measure — see `_saccade_mask` for why the trace is
+# segmented before this window is ever applied.
 _SG_WINDOW = 11
 _SG_POLY   = 3
 
+# Angle-space speed above which a sample is treated as saccadic and excluded
+# from smoothing. At 30 fps a 4° saccade collapses into a single-frame step of
+# ~120°/s, while landmark/inference noise of ~0.5°/frame is only ~15°/s, so the
+# two populations separate cleanly well below this threshold.
+_SACCADE_VEL_DEG_S = 60.0
+# Frames kept unsmoothed on each side of a detected saccade. The sample before
+# onset and after offset carry the step edges; smoothing them back into the
+# neighbouring fixation is what rounds off peak velocity.
+_SACCADE_PAD = 1
 
-def _smooth_gaze(arr: np.ndarray) -> np.ndarray:
+
+def _saccade_mask(
+    yaw: np.ndarray,
+    pitch: np.ndarray,
+    t_ms: np.ndarray,
+    vel_thresh_deg_s: float = _SACCADE_VEL_DEG_S,
+    pad: int = _SACCADE_PAD,
+) -> np.ndarray:
+    """
+    Boolean mask of samples belonging to a saccade, computed on the RAW trace.
+
+    Detection must run before smoothing: a filter wide enough to be useful
+    inside a fixation is also wide enough to erase the event it would be asked
+    to detect afterwards. Speed is the angular distance between consecutive
+    gaze directions (small-angle: hypot of the per-axis deltas), which is the
+    same quantity events.py thresholds in screen space — just upstream of the
+    calibration mapping, so it is available before a mapper exists.
+
+    NaN samples (blink / no face) are never marked: their neighbours are
+    genuinely unknown, not fast.
+    """
+    n = len(yaw)
+    mask = np.zeros(n, dtype=bool)
+    if n < 3:
+        return mask
+
+    dt_s = np.diff(t_ms) / 1000.0
+    dt_s[dt_s <= 0] = np.nan
+    step_deg = np.rad2deg(np.hypot(np.diff(yaw), np.diff(pitch)))
+    vel = step_deg / dt_s                       # deg/s between sample i and i+1
+
+    fast = vel > vel_thresh_deg_s               # NaN compares False — intended
+    # A fast step spans the two samples it connects.
+    mask[:-1] |= fast
+    mask[1:]  |= fast
+
+    for _ in range(max(0, pad)):
+        mask[:-1] |= mask[1:].copy()
+        mask[1:]  |= mask[:-1].copy()
+    return mask
+
+
+def _smooth_gaze(arr: np.ndarray, saccade_mask: np.ndarray | None = None) -> np.ndarray:
     """
     Non-causal Savitzky-Golay smoothing over a 1-D gaze angle trace.
 
@@ -34,6 +86,14 @@ def _smooth_gaze(arr: np.ndarray) -> np.ndarray:
     every sample is smoothed using both past AND future values, which is only
     possible offline. This removes the systematic timing bias in saccade onset
     detection that causal filters introduce.
+
+    `saccade_mask` (from `_saccade_mask`, shared across both gaze axes so the
+    two stay time-aligned) splits the trace into fixation segments that are
+    filtered **independently**; masked samples are passed through untouched.
+    The filter therefore never mixes samples across a saccade boundary, which
+    is what preserved amplitude and peak velocity. Pass None for slowly-varying
+    signals such as the head-position proxy, where a single window over the
+    whole trace is correct.
 
     NaN gaps (blinks / no-face frames) are bridged by linear interpolation
     before filtering then restored afterward so calibration.py can still
@@ -50,11 +110,40 @@ def _smooth_gaze(arr: np.ndarray) -> np.ndarray:
     # Bridge NaN gaps with linear interpolation (modifies only NaN positions).
     result[~valid] = np.interp(t[~valid], t[valid], arr[valid])
 
-    result = savgol_filter(result, window_length=_SG_WINDOW, polyorder=_SG_POLY)
+    if saccade_mask is None:
+        result = savgol_filter(result, window_length=_SG_WINDOW, polyorder=_SG_POLY)
+    else:
+        for start, stop in _runs(~saccade_mask):
+            seg_len = stop - start
+            # SG needs window > polyorder and an odd window; a segment shorter
+            # than that is left raw (it is at most a few frames of fixation
+            # wedged between two saccades — there is nothing to average).
+            window = min(_SG_WINDOW, seg_len if seg_len % 2 else seg_len - 1)
+            if window <= _SG_POLY:
+                continue
+            result[start:stop] = savgol_filter(
+                result[start:stop], window_length=window, polyorder=_SG_POLY,
+            )
 
     # Restore NaN at original gap positions so downstream code can filter them.
     result[~valid] = np.nan
     return result
+
+
+def _runs(flags: np.ndarray) -> list[tuple[int, int]]:
+    """Contiguous [start, stop) index ranges where `flags` is True."""
+    out: list[tuple[int, int]] = []
+    i, n = 0, len(flags)
+    while i < n:
+        if flags[i]:
+            j = i
+            while j < n and flags[j]:
+                j += 1
+            out.append((i, j))
+            i = j
+        else:
+            i += 1
+    return out
 
 
 def process_video(
@@ -127,8 +216,12 @@ def process_video(
     cap.release()
 
     to_arr = lambda v: np.asarray(v, dtype=float)
-    yaw_arr   = _smooth_gaze(to_arr(yaw_list))
-    pitch_arr = _smooth_gaze(to_arr(pitch_list))
+    t_arr = to_arr(t_ms_list)
+    yaw_raw, pitch_raw = to_arr(yaw_list), to_arr(pitch_list)
+    # Detect saccades on the raw trace, then smooth only between them (F7).
+    sacc = _saccade_mask(yaw_raw, pitch_raw, t_arr)
+    yaw_arr   = _smooth_gaze(yaw_raw,   sacc)
+    pitch_arr = _smooth_gaze(pitch_raw, sacc)
     quality_arr = to_arr(quality_list)
     # Head moves slowly; the same zero-phase smoothing kills bbox jitter without
     # lagging real postural drift.
@@ -140,11 +233,13 @@ def process_video(
     n_valid = int(np.sum(~np.isnan(yaw_arr)))
     n_glare = int(np.sum((quality_arr < 0.5) & (quality_arr > 0.0)))
     logger.info(
-        "Processed %d frames — %d gaze hits (%.0f%%), %d glare frames, SG-smoothed (window=%d)",
-        n_total, n_valid, 100 * n_valid / max(1, n_total), n_glare, _SG_WINDOW,
+        "Processed %d frames — %d gaze hits (%.0f%%), %d glare frames, "
+        "%d saccadic frames kept unsmoothed, SG window=%d inside fixations",
+        n_total, n_valid, 100 * n_valid / max(1, n_total), n_glare,
+        int(sacc.sum()), _SG_WINDOW,
     )
     return {
-        "t_ms": to_arr(t_ms_list), "yaw": yaw_arr, "pitch": pitch_arr,
+        "t_ms": t_arr, "yaw": yaw_arr, "pitch": pitch_arr,
         "quality": quality_arr,
         "head_u": head_u_arr, "head_v": head_v_arr, "head_w": head_w_arr,
     }
