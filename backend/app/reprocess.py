@@ -129,6 +129,7 @@ def reprocess(
             "region_errors_px": mapper.region_errors_px,
             "degree": mapper.degree,
             "alpha": mapper.alpha,
+            "use_head": mapper.use_head,
             "dots_used": mapper.n_dots_used,
             "dots_total": mapper.n_dots_total,
         },
@@ -177,17 +178,21 @@ def _analyze(frames: dict, meta: dict, geo: ScreenGeometry, cal_dots: list[Calib
     Reused for the baseline and (when personalizing) the fine-tuned pass.
     """
     quality = frames.get("quality")
+    head = {k: frames[k] for k in ("head_u", "head_v", "head_w") if k in frames}
     mapper = fit_mapper(
         cal_dots,
         frames["t_ms"], frames["yaw"], frames["pitch"],
         frame_quality=quality,
+        # Let CV decide whether head position earns its place as a mapper input.
+        # When it does, head_comp's geometric correction is redundant and the
+        # gain sweep below settles on 0 by itself.
+        frame_head=head if len(head) == 3 and meta.get("head_aware_mapping", True) else None,
         outlier_sigma=meta.get("calibration_outlier_sigma", 2.5),
     )
 
     # Head-translation (parallax) compensation: reference = head position during
     # the calibration windows; every mapped point is shifted by the displacement
     # since then. Disable per session with "head_compensation": false.
-    head = {k: frames[k] for k in ("head_u", "head_v", "head_w") if k in frames}
     comp_enabled = meta.get("head_compensation", True) and len(head) == 3
 
     def _build(gain: float):
@@ -210,7 +215,9 @@ def _analyze(frames: dict, meta: dict, geo: ScreenGeometry, cal_dots: list[Calib
             frames["t_ms"], frames["yaw"], frames["pitch"], geo,
             frame_quality=quality,
             compensator=compensator,
-            frame_head=head if compensator is not None else None,
+            # Always supply head arrays: the compensator needs them, and so does
+            # the mapper itself when CV made it head-aware.
+            frame_head=head if len(head) == 3 else None,
         )
 
     # Gain selection. The compensator assumes a webcam HFOV and an un-mirrored
@@ -260,7 +267,9 @@ def _analyze(frames: dict, meta: dict, geo: ScreenGeometry, cal_dots: list[Calib
             "per_point": [asdict(p) for p in rep.per_point],
         }
 
-    mapped = mapper.map(frames["yaw"], frames["pitch"])
+    mapped = mapper.map(
+        frames["yaw"], frames["pitch"], head=head if mapper.use_head else None,
+    )
     x_px, y_px = mapped[:, 0], mapped[:, 1]
     head_motion = None
     if compensator is not None:

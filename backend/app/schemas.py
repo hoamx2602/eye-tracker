@@ -118,6 +118,15 @@ class ProcessResponse(BaseModel):
     calibration_degree: int = Field(
         default=2, description="Polynomial degree auto-selected by cross-validation."
     )
+    calibration_use_head: bool = Field(
+        default=False,
+        description=(
+            "Whether cross-validation found head position worth including as a "
+            "mapper input. Only possible when calibration spans several head "
+            "poses; a single-pose grid leaves the head columns constant and CV "
+            "correctly drops them."
+        ),
+    )
     calibration_dots_used: int = Field(
         description="Calibration dots kept after outlier rejection."
     )
@@ -187,6 +196,7 @@ def response_from_report(report: dict, include_trace: bool = False) -> ProcessRe
         calibration_loocv_px=cal["loocv_px"],
         calibration_region_errors_px=cal["region_errors_px"],
         calibration_degree=cal["degree"],
+        calibration_use_head=cal["use_head"],
         calibration_dots_used=cal["dots_used"],
         calibration_dots_total=cal["dots_total"],
         head_compensation_applied=head["compensation_applied"],

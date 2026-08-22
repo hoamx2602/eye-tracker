@@ -23,6 +23,8 @@ export interface OfflineGazeProcessResponse {
   calibration_loocv_px: number;
   calibration_region_errors_px: Record<string, number>;
   calibration_degree: number;
+  /** Whether CV found head position worth including as a mapper input. */
+  calibration_use_head?: boolean;
   calibration_dots_used: number;
   calibration_dots_total: number;
   head_compensation_applied: boolean;

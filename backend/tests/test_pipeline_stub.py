@@ -192,6 +192,80 @@ def test_head_comp_gain_auto_selects_and_rejects() -> None:
           f"mirrored head -> gain {bad['head']['gain']}")
 
 
+def _build_multipose_script() -> tuple[list[_Gaze | None], dict]:
+    """
+    Calibration spanning three head positions, validation at a fourth the mapper
+    has never seen. This is the setup a multi-head-pose calibration protocol
+    would produce, and the only one in which head position can be identified as
+    a mapper input at all.
+    """
+    rng = np.random.default_rng(7)
+    cx_cm, cy_cm = W_PX / 2 / PPCM, H_PX / 2 / PPCM
+    script: list[_Gaze | None] = []
+    cal_dots, val_dots = [], []
+    frame_ms = 1000.0 / FPS
+
+    def emit(targets, dots_out, head_cm):
+        hu, hv, hw = _observed_head(*head_cm)
+        hx, hy = head_cm
+        for (tx, ty) in targets:
+            t0 = len(script) * frame_ms
+            for _ in range(FRAMES_PER_DOT):
+                yaw = np.arctan(((tx / PPCM) - (cx_cm + hx)) / Z_CM) + rng.normal(0, 2e-4)
+                pitch = np.arctan(((ty / PPCM) - (cy_cm + hy)) / Z_CM) + rng.normal(0, 2e-4)
+                script.append(_Gaze(yaw=yaw, pitch=pitch, head_u=hu, head_v=hv, head_w=hw))
+            t1 = len(script) * frame_ms - frame_ms
+            dots_out.append({"screen_x": tx, "screen_y": ty, "t_start_ms": t0, "t_end_ms": t1})
+            script.extend([None] * GAP_FRAMES)
+
+    for head in [(0.0, 0.0), (-3.5, 0.0), (3.5, 1.5)]:
+        emit(CAL_TARGETS, cal_dots, head)
+    emit(VAL_TARGETS, val_dots, HEAD_VAL_CM)
+
+    meta = {
+        "screen": {"width_px": W_PX, "height_px": H_PX, "width_cm": W_CM,
+                   "viewing_distance_cm": Z_CM},
+        "camera_hfov_deg": HFOV,
+        "calibration_dots": cal_dots,
+        "validation_dots": val_dots,
+        # Isolate the mapper: no geometric compensation to share the credit.
+        "head_compensation": False,
+    }
+    return script, meta
+
+
+def test_head_aware_mapping_selected_only_when_it_earns_it() -> None:
+    """
+    Head position becomes a mapper input only when calibration actually spans
+    several head poses — the single-pose case leaves the head columns constant,
+    where fitting them would be fitting noise.
+    """
+    # Single pose: head columns carry no information, so CV must reject them.
+    script, meta = _build_script_and_meta()
+    meta["head_compensation"] = False
+    with tempfile.TemporaryDirectory() as td:
+        video_path = str(Path(td) / "session.mp4")
+        _write_video(len(script), video_path)
+        single = reprocess(video_path, meta, model=StubModel(script))
+    assert single["calibration"]["use_head"] is False, single["calibration"]
+
+    # Three poses: head position is identifiable and should be picked up.
+    script, meta = _build_multipose_script()
+    with tempfile.TemporaryDirectory() as td:
+        video_path = str(Path(td) / "session.mp4")
+        _write_video(len(script), video_path)
+        multi = reprocess(video_path, meta, model=StubModel(script))
+
+    assert multi["calibration"]["use_head"] is True, multi["calibration"]
+
+    # And it must pay off on validation dots recorded at an unseen head position.
+    single_err = single["validation"]["overall_px"]
+    multi_err = multi["validation"]["overall_px"]
+    assert multi_err < 0.5 * single_err, (multi_err, single_err)
+    print(f"  single-pose {single_err:.1f} px (head=False) -> "
+          f"multi-pose {multi_err:.1f} px (head=True)")
+
+
 def test_response_mapping_matches_report() -> None:
     """
     /process delegates to reprocess() and flattens the report. Guard the wire
