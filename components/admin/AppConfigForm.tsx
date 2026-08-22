@@ -298,6 +298,25 @@ export default function AppConfigForm() {
               </select>
             </section>
 
+            <section className="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-cyan-300">Wait for the eye to settle</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Record each calibration dot once gaze has actually arrived, instead of after a fixed
+                    wait. Turn off to restore the old fixed-timer behaviour.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleChange('gazeContingentCalibration', !localConfig.gazeContingentCalibration)}
+                  className={`relative w-12 h-6 rounded-full transition flex-shrink-0 ml-4 ${localConfig.gazeContingentCalibration ? 'bg-cyan-500' : 'bg-slate-600'}`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${localConfig.gazeContingentCalibration ? 'left-7' : 'left-1'}`} />
+                </button>
+              </div>
+            </section>
+
             <section className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <div>

@@ -216,6 +216,16 @@ export interface AppConfig {
   chartSmoothingMethod: ChartSmoothingMethod;
   chartSmoothingWindow: number; // Frames (2–30)
 
+  // --- CALIBRATION CAPTURE ---
+  /**
+   * Start recording a calibration dot when the eye has actually settled on it,
+   * instead of after a fixed wait. The fixed wait recorded the approach saccade
+   * on corner dots — the targets that dominate calibration error. The timed
+   * behaviour remains as a backstop, so a dot that never settles is still
+   * recorded, just flagged. Default true.
+   */
+  gazeContingentCalibration: boolean;
+
   // --- GLASSES OPTIMIZATION ---
   /** Master toggle. When true + participant reports wearing glasses, all sub-features activate. */
   glassesOptimization: boolean;
@@ -280,6 +290,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   // Chart Display Defaults
   chartSmoothingMethod: ChartSmoothingMethod.MOVING_AVERAGE,
   chartSmoothingWindow: 7,
+
+  // Calibration Capture Defaults
+  gazeContingentCalibration: true,
 
   // Glasses Optimization Defaults
   glassesOptimization: true,

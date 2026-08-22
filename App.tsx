@@ -61,6 +61,7 @@ import { CalibrationMetaRecorder, type SessionMeta } from '@/lib/calibrationMeta
 import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
 import { offlineBackendUrl, offlineHandlingEnabled, offlinePersonalizationEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
 import { lockCameraAutoAdjustments, describeCameraLock, type CameraLockResult } from '@/lib/cameraLock';
+import { FixationGate, type GateSample, type DotConvergence } from '@/lib/fixationGate';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
 
@@ -71,6 +72,18 @@ import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracti
  * still comfortably before calibration begins.
  */
 const CAMERA_LOCK_SETTLE_MS = 1500;
+
+/**
+ * How much longer than the old fixed prep wait the gaze-contingent gate may
+ * spend waiting for the eye to arrive before recording anyway.
+ *
+ * 2.5× turns the old 800 ms into a 2 s ceiling. Corner dots — the largest
+ * saccade, the longest settle, and the targets that dominate calibration
+ * error — routinely need more than 800 ms, which is the whole reason the timed
+ * flow recorded the worst data on the hardest targets. Dots that hit this
+ * ceiling are recorded with reason "timeout" so bad windows stay visible.
+ */
+const GAZE_CONTINGENT_TIMEOUT_FACTOR = 2.5;
 
 /** When true (NEXT_PUBLIC_CALIBRATION_TEST_MODE=1): after first calibration phase (grid) only, save session and show choice screen (Real-time vs Neurological). Choice is always required. */
 const CALIBRATION_TEST_MODE =
@@ -276,6 +289,19 @@ function App() {
   const detectionStrideRef = useRef(1);
   const detectionAvgMsRef = useRef(0);
   const isCollectingRef = useRef(false);
+  /**
+   * Gaze-contingent capture. The frame loop is a stable callback that reads
+   * everything through refs, so the gate, the dot list and the "start recording"
+   * callback all have to be reachable that way too.
+   */
+  const fixationGateRef = useRef(new FixationGate());
+  const gateActiveRef = useRef(false);
+  const gateCaptureTimeRef = useRef(0);
+  const gateIndexRef = useRef(0);
+  const calibPointsRef = useRef<CalibrationPoint[]>([]);
+  const beginDotCaptureRef = useRef<((captureTime: number, c: DotConvergence) => void) | null>(null);
+  /** Per-dot record of how long the eye took to settle — saved with the session. */
+  const dotConvergenceRef = useRef<DotConvergence[]>([]);
   const collectionBufferRef = useRef<number[][]>([]);
   /** Parallel raw-features buffer — same lifecycle as collectionBufferRef. Used to store
    *  EyeFeatures per frame so the averaged result can be saved in TrainingSample.rawEyeFeatures,
@@ -1130,6 +1156,40 @@ function App() {
                     rawCollectionBufferRef.current.push(features);
                   }
 
+                  // 1a. Gaze-contingent gate: decide when the eye has actually
+                  // arrived at the dot, instead of assuming it has after a fixed
+                  // wait. Runs only while waiting to record, never during it.
+                  if (currentStatus === 'CALIBRATION' && gateActiveRef.current && !isCollectingRef.current) {
+                    const dot = calibPointsRef.current[gateIndexRef.current];
+                    if (dot) {
+                      const sample: GateSample = {
+                        t: now,
+                        lx: features.leftRelative.x,
+                        ly: features.leftRelative.y,
+                        rx: features.rightRelative.x,
+                        ry: features.rightRelative.y,
+                      };
+                      // Proximity needs a trained regressor; on the first grid
+                      // there is none, so the gate falls back to stability only.
+                      if (hybridRegressorRef.current.hasTrainedModel()) {
+                        const v = eyeTrackingService.prepareFeatureVector(features, configRef.current);
+                        const pred = hybridRegressorRef.current.predict(v, configRef.current.regressionMethod);
+                        sample.predX = pred.x;
+                        sample.predY = pred.y;
+                      }
+                      const verdict = fixationGateRef.current.push(sample);
+                      if (verdict.settled) {
+                        beginDotCaptureRef.current?.(gateCaptureTimeRef.current, {
+                          index: gateIndexRef.current,
+                          reason: verdict.reason,
+                          waitMs: verdict.elapsedMs,
+                          spread: verdict.spread,
+                          offsetPx: verdict.offsetPx,
+                        });
+                      }
+                    }
+                  }
+
                   // 1b. Data Collection (eye movement exercises)
                   if (currentStatus === 'CALIBRATION' && exerciseActiveRef.current) {
                     const target = exerciseTargetRef.current;
@@ -1356,12 +1416,45 @@ function App() {
   };
 
 
-  // --- CALIBRATION LOGIC ENGINE (TIMER BASED) ---
+  /**
+   * Begin recording the current dot. Shared by the gaze-contingent path (called
+   * the moment the eye settles) and the safety timeout (called regardless), so
+   * both start from identical state.
+   */
+  const beginDotCapture = useCallback((captureTime: number, convergence: DotConvergence) => {
+    if (isCollectingRef.current) return;    // already recording this dot
+    dotConvergenceRef.current.push(convergence);
+    collectionBufferRef.current = [];
+    rawCollectionBufferRef.current = [];
+    isCollectingRef.current = true;
+    gateActiveRef.current = false;
+    metaRecorderRef.current.markWindowStart();   // dot dwell begins
+    setIsCapturing(true);
+
+    const tEnd = setTimeout(() => {
+      isCollectingRef.current = false;
+      setIsCapturing(false);
+      const cleanBuffer = DataCleaner.clean(
+        collectionBufferRef.current,
+        configRef.current.outlierMethod,
+        configRef.current.outlierThreshold,
+      );
+      processCalibBuffer(cleanBuffer, rawCollectionBufferRef.current);
+    }, captureTime);
+    timerRef.current.push(tEnd);
+  }, []);
+
+  // Mirror into refs for the frame loop, which is a stable callback.
+  useEffect(() => { calibPointsRef.current = calibPoints; }, [calibPoints]);
+  useEffect(() => { beginDotCaptureRef.current = beginDotCapture; }, [beginDotCapture]);
+
+  // --- CALIBRATION LOGIC ENGINE (GAZE-CONTINGENT, TIMER-BACKSTOPPED) ---
   useEffect(() => {
     if (status !== 'CALIBRATION') {
       timerRef.current.forEach(clearTimeout);
       timerRef.current = [];
       isCollectingRef.current = false;
+      gateActiveRef.current = false;
       return;
     }
 
@@ -1382,37 +1475,50 @@ function App() {
     const speedMultiplier = NEURO_QUICK_MODE
       ? 0.5
       : config.calibrationSpeed === 'FAST' ? 0.5 : config.calibrationSpeed === 'SLOW' ? 1.5 : 1.0;
-    const prepTime = 800 * speedMultiplier;
     const captureTime = 1200 * speedMultiplier;
+    const prepTime = 800 * speedMultiplier;
+    const gated = config.gazeContingentCalibration !== false;
+    // When gated, the old fixed prep wait becomes only a *ceiling*: recording
+    // starts as soon as the eye has actually arrived (usually sooner), and at
+    // the latest here — so a subject the gate cannot read still completes
+    // calibration, with the dot marked unconverged rather than silently trusted.
+    const prepDeadline = gated ? prepTime * GAZE_CONTINGENT_TIMEOUT_FACTOR : prepTime;
+
+    if (gated) {
+      // Hand the frame loop a gate for this dot; it calls beginDotCapture the
+      // moment the eye settles. Proximity is only checked once a regressor
+      // exists — during the first grid there is nothing to predict with.
+      fixationGateRef.current.reset({ x: point.x, y: point.y }, performance.now());
+      gateCaptureTimeRef.current = captureTime;
+      gateIndexRef.current = currentCalibIndex;
+      gateActiveRef.current = true;
+    }
 
     const tStart = setTimeout(() => {
-      collectionBufferRef.current = [];
-      rawCollectionBufferRef.current = [];
-      isCollectingRef.current = true;
-      metaRecorderRef.current.markWindowStart();   // dot dwell begins (timer mode)
-      setIsCapturing(true);
-    }, prepTime);
+      if (isCollectingRef.current) return;
+      if (gated) {
+        console.warn(
+          `[Calibration] dot ${currentCalibIndex} never settled within ${Math.round(prepDeadline)}ms — recording anyway`
+        );
+      }
+      beginDotCapture(captureTime, {
+        index: currentCalibIndex,
+        reason: gated ? 'timeout' : 'stable',
+        waitMs: prepDeadline,
+        spread: null,
+        offsetPx: null,
+      });
+    }, prepDeadline);
 
-    const tEnd = setTimeout(() => {
-      isCollectingRef.current = false;
-      setIsCapturing(false);
-
-      const buffer = collectionBufferRef.current;
-      const rawFeatBuffer = rawCollectionBufferRef.current;
-      // Use standard cleaning for timer method
-      const cleanBuffer = DataCleaner.clean(buffer, configRef.current.outlierMethod, configRef.current.outlierThreshold);
-      processCalibBuffer(cleanBuffer, rawFeatBuffer);
-
-    }, prepTime + captureTime);
-
-    timerRef.current.push(tStart, tEnd);
+    timerRef.current.push(tStart);
 
     return () => {
       timerRef.current.forEach(clearTimeout);
       timerRef.current = [];
+      gateActiveRef.current = false;
     };
 
-  }, [currentCalibIndex, status, calibPoints, calibPhase, config.calibrationSpeed, config.calibrationMethod, retryCount]);
+  }, [currentCalibIndex, status, calibPoints, calibPhase, config.calibrationSpeed, config.calibrationMethod, config.gazeContingentCalibration, retryCount, beginDotCapture]);
 
   const toHeadSnapshot = (v: HeadValidationResult | null): HeadSnapshot | undefined => {
     if (!v) return undefined;
@@ -1922,6 +2028,12 @@ function App() {
             // scored badly can't be told apart from one recorded on a camera that
             // silently refused the lock or delivered 720p.
             ...(cameraLockRef.current ? { camera: cameraLockRef.current } : {}),
+            // How long each dot took to settle, and whether it settled at all.
+            // Dots recorded with reason "timeout" are the ones whose calibration
+            // data is suspect — the signal the timed flow never produced.
+            ...(dotConvergenceRef.current.length
+              ? { dotConvergence: dotConvergenceRef.current }
+              : {}),
             ...(offlineGazeReport ? {
               offlineGaze: {
                 status: 'completed',
@@ -2661,6 +2773,7 @@ function App() {
     neuroLiveGazeRef.current = { x: 0, y: 0 };
     smootherRef.current.reset();
     validationErrorsRef.current = [];
+    dotConvergenceRef.current = [];
     setAccuracyScore(null);
     trackingHistoryRef.current = []; 
     setCapturedImages([]); // Reset images
