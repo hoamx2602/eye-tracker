@@ -26,6 +26,7 @@ import threading
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from .device import resolve_device
 from .gaze_model import GazeModel, _WEIGHTS_DIR as WEIGHTS_DIR
 from .reprocess import reprocess
 from .schemas import ProcessRequest, ProcessResponse, response_from_report
@@ -61,8 +62,24 @@ def get_model() -> GazeModel:
 
 @app.get("/health")
 def health() -> dict:
+    """
+    Liveness plus which compute the model will actually use.
+
+    `device` is the honest answer; `cuda` is kept for older checklists and is
+    just `device == "cuda"`. On an Apple-Silicon Mac running natively this
+    reports "mps" — Docker Desktop on macOS cannot reach the GPU, so a
+    containerised Mac run correctly reports "cpu".
+    """
     import torch
-    return {"status": "ok", "cuda": torch.cuda.is_available(), "weights_dir": WEIGHTS_DIR}
+
+    device = resolve_device()
+    return {
+        "status": "ok",
+        "device": device,
+        "cuda": device.startswith("cuda"),
+        "torch": torch.__version__,
+        "weights_dir": WEIGHTS_DIR,
+    }
 
 
 @app.post("/process", response_model=ProcessResponse)

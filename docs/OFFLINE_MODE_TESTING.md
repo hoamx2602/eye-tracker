@@ -14,8 +14,8 @@ backend GPU để xử lý offline và lưu report chính thức vào session.
 
 ## 1. Checklist nhanh
 
-- Docker backend chạy ở `http://localhost:8000`.
-- `/health` trả `cuda: true`.
+- Backend chạy ở `http://localhost:8000` (Docker trên máy NVIDIA, hoặc native trên Mac).
+- `/health` trả `device: "cuda"` — hoặc `"mps"` nếu chạy native trên Mac Apple Silicon.
 - Frontend `.env.local` bật `NEXT_PUBLIC_OFFLINE_HANDLING=1`.
 - Restart `npm run dev` sau khi sửa `.env.local`.
 - Chạy assessment từ đầu.
@@ -42,10 +42,23 @@ curl.exe -s http://localhost:8000/health
 Kỳ vọng:
 
 ```json
-{"status":"ok","cuda":true,"weights_dir":"/models/openface"}
+{"status":"ok","device":"cuda","cuda":true,"torch":"2.7.1","weights_dir":"/models/openface"}
 ```
 
-Nếu `cuda` là `false`, offline mode vẫn có thể chạy CPU nhưng rất chậm. Với máy
+**Trên MacBook Apple Silicon:** đừng dùng Docker — Docker Desktop trên macOS
+không truy cập được GPU (không có CUDA, và MPS không được truyền vào container),
+nên container sẽ rơi về CPU. Chạy native để backend tự bắt được Metal:
+
+```bash
+cd backend
+export OPENFACE_WEIGHTS=$PWD/models/openface
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Khi đó `/health` phải trả `"device":"mps"`. Xem `backend/README.md` mục
+"Apple Silicon (M-series Mac)" để biết chi tiết cài đặt.
+
+Nếu `device` là `"cpu"`, offline mode vẫn chạy nhưng chậm hơn nhiều. Với máy
 có NVIDIA GPU, cần kiểm tra driver/NVIDIA Container Toolkit:
 
 ```powershell

@@ -192,6 +192,42 @@ def test_head_comp_gain_auto_selects_and_rejects() -> None:
           f"mirrored head -> gain {bad['head']['gain']}")
 
 
+def test_detection_downscale_maps_boxes_back() -> None:
+    """
+    Detection runs on a shrunk frame; the boxes it returns must land on the same
+    pixels of the full-resolution frame. A wrong factor here silently shifts
+    every face crop — and therefore every gaze estimate — without failing.
+    """
+    from app.imaging import downscale_for_detection
+
+    # 1080p in, 640 wide out, aspect preserved.
+    frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    small, scale = downscale_for_detection(frame, 640)
+    assert small.shape[1] == 640, small.shape
+    assert small.shape[0] == 360, small.shape
+    assert np.allclose(scale, [3.0, 3.0, 3.0, 3.0]), scale
+
+    # A box in small-image coords must map back to the same fraction of the frame.
+    box_small = np.array([160.0, 90.0, 320.0, 270.0])
+    box_full = box_small * scale
+    assert np.allclose(box_full, [480.0, 270.0, 960.0, 810.0]), box_full
+
+    # Frames at or below the cap are passed through untouched — same object, no
+    # interpolation, unit factors.
+    small2, scale2 = downscale_for_detection(frame[:, :640], 640)
+    assert small2 is frame[:, :640].base or small2.shape == (1080, 640, 3)
+    assert np.allclose(scale2, 1.0), scale2
+
+    # An aspect ratio whose scaled height rounds must still map back exactly,
+    # which is why the factors are per-axis rather than shared.
+    odd = np.zeros((577, 1000, 3), dtype=np.uint8)
+    s_odd, sc_odd = downscale_for_detection(odd, 640)
+    assert np.isclose(s_odd.shape[1] * sc_odd[0], 1000.0), sc_odd
+    assert np.isclose(s_odd.shape[0] * sc_odd[1], 577.0), sc_odd
+    assert sc_odd[0] != sc_odd[1], "rounded height should give distinct x/y factors"
+    print(f"  1920x1080 -> {small.shape[1]}x{small.shape[0]}, factors {scale[:2]}")
+
+
 def _build_multipose_script() -> tuple[list[_Gaze | None], dict]:
     """
     Calibration spanning three head positions, validation at a fourth the mapper
