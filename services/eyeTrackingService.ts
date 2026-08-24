@@ -1,5 +1,6 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark, FaceLandmarkerResult } from "@mediapipe/tasks-vision";
 import { EyeLandmarkIndices, EyeFeatures, HeadPose, AppConfig } from "../types";
+import { checkDistance, faceScale, type DistanceCalibration } from "../lib/viewingDistance";
 
 // Lightweight inline types for optional MediaPipe outputs (avoids importing extra @mediapipe types)
 interface BlendshapeCategory { categoryName: string; score: number; }
@@ -17,7 +18,17 @@ export interface HeadValidationResult {
   valid: boolean;
   message: string;
   /** Debug: face width in normalized coords (for tuning distance thresholds) */
-  debug?: { faceWidth: number; minFaceWidth: number; maxFaceWidth: number; targetDistanceCm: number };
+  debug?: {
+    faceWidth: number;
+    /** Face width before the FOV fudge — what the distance calibration consumes. */
+    rawFaceWidth?: number;
+    minFaceWidth: number;
+    maxFaceWidth: number;
+    targetDistanceCm: number;
+    /** Present only when a measured calibration was supplied. */
+    measuredDistanceCm?: number;
+    distanceBandCm?: number;
+  };
 }
 
 export class EyeTrackingService {
@@ -52,18 +63,28 @@ export class EyeTrackingService {
 
   /**
    * Checks if the head is positioned correctly for high-quality tracking.
-   * Uses faceDistanceCm from app config to enforce allowed distance (closer = larger face in frame).
-   * faceWidthScale compensates for camera FOV; headDistanceTolerance widens the band for cameras that auto-zoom.
+   *
+   * Distance handling has two modes. When a `distanceCalibration` is supplied
+   * (measured with the bank-card + blind-spot procedure — see
+   * lib/viewingDistance.ts) the check is done in **centimetres**: face size is
+   * converted to a real distance and compared to the target. Without one it
+   * falls back to the original hand-tuned band on normalised face width, which
+   * silently assumes a camera field of view and an average face size and can be
+   * 30–40% wrong — that fallback exists so a session is never blocked, not
+   * because it is trustworthy.
+   *
    * @param landmarks MediaPipe landmarks
-   * @param faceDistanceCm Target distance in cm (40–90). Used to compute allowed face size in frame.
-   * @param faceWidthScale Scale applied to raw face width (1 = built-in; 0.65–0.8 typical for external 1080p webcam).
-   * @param headDistanceTolerance Widen band (1 = strict, 2 = 2x band). Use 2+ when camera auto-zooms (Center Stage, etc.).
+   * @param faceDistanceCm Target distance in cm (30–60).
+   * @param faceWidthScale Fallback-only fudge for camera FOV (1 = built-in; 0.65–0.8 typical external 1080p).
+   * @param headDistanceTolerance Widen the accepted band (1 = strict, 2 = 2x).
+   * @param distanceCalibration Measured face-size→cm calibration, when available.
    */
   validateHeadPosition(
     landmarks: NormalizedLandmark[],
     faceDistanceCm: number = 60,
     faceWidthScale: number = 1,
-    headDistanceTolerance: number = 1
+    headDistanceTolerance: number = 1,
+    distanceCalibration: DistanceCalibration | null = null,
   ): HeadValidationResult {
     if (!landmarks) return { valid: false, message: "No Face Detected" };
 
@@ -75,18 +96,36 @@ export class EyeTrackingService {
     const rawFaceWidth = Math.sqrt(Math.pow(rightEdge.x - leftEdge.x, 2) + Math.pow(rightEdge.y - leftEdge.y, 2));
     const scale = Math.max(0.5, Math.min(1.5, faceWidthScale ?? 1));
     const faceWidth = Math.max(0.01, Math.min(1, rawFaceWidth * scale));
-    const D = Math.max(40, Math.min(90, faceDistanceCm));
+    const D = Math.max(30, Math.min(90, faceDistanceCm));
+    const tol = Math.max(1, Math.min(3, headDistanceTolerance ?? 1));
+
+    // Yaw foreshortens the measured width by cos(yaw); without removing it, a
+    // participant who merely turns their head is told they have moved away.
+    const yaw = this.calculateGeometricHeadPose(landmarks)?.yaw ?? 0;
+    const scaleInvariant = faceScale(rawFaceWidth, yaw);
+    const distCheck = distanceCalibration
+      ? checkDistance(distanceCalibration, scaleInvariant, D, tol)
+      : null;
+
     let minFaceWidth = 0.09 + (90 - D) * 0.0012;
     let maxFaceWidth = 0.17 - (D - 40) * 0.0007;
     // Widen band when camera auto-zooms (Center Stage, Studio Effects) so user can still pass
-    const tol = Math.max(1, Math.min(3, headDistanceTolerance ?? 1));
     if (tol > 1) {
       const center = (minFaceWidth + maxFaceWidth) / 2;
       const halfBand = ((maxFaceWidth - minFaceWidth) / 2) * tol;
       minFaceWidth = Math.max(0.05, center - halfBand);
       maxFaceWidth = Math.min(0.35, center + halfBand);
     }
-    const debug = { faceWidth, minFaceWidth, maxFaceWidth, targetDistanceCm: D };
+    const debug = {
+      faceWidth,
+      rawFaceWidth,
+      minFaceWidth,
+      maxFaceWidth,
+      targetDistanceCm: D,
+      ...(distCheck && Number.isFinite(distCheck.distanceCm)
+        ? { measuredDistanceCm: distCheck.distanceCm, distanceBandCm: distCheck.bandCm }
+        : {}),
+    };
 
     // 1. Center Check (Horizontal & Vertical)
     const centerX = 0.5;
@@ -103,9 +142,18 @@ export class EyeTrackingService {
       return { valid: false, message: nose.y < centerY ? "Move Down" : "Move Up", debug };
     }
 
-    // 2. Size/Distance Check
-    if (faceWidth < minFaceWidth) return { valid: false, message: "Move Closer", debug };
-    if (faceWidth > maxFaceWidth) return { valid: false, message: "Move Back", debug };
+    // 2. Distance check. A measured calibration wins outright — it knows the
+    // camera and this face, where the band below only guesses at both. The
+    // message carries the actual centimetres so the participant can aim, rather
+    // than nudging blindly until an opaque gate turns green.
+    if (distCheck && distCheck.verdict !== 'unknown') {
+      const at = `${distCheck.distanceCm.toFixed(0)}cm → ${D}cm`;
+      if (distCheck.verdict === 'too-close') return { valid: false, message: `Move Back (${at})`, debug };
+      if (distCheck.verdict === 'too-far') return { valid: false, message: `Move Closer (${at})`, debug };
+    } else {
+      if (faceWidth < minFaceWidth) return { valid: false, message: "Move Closer", debug };
+      if (faceWidth > maxFaceWidth) return { valid: false, message: "Move Back", debug };
+    }
 
     // 3. Tilt Check (Head Rotation)
     const tilt = Math.abs(leftEdge.y - rightEdge.y);

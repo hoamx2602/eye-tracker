@@ -63,7 +63,7 @@ export interface HeadSnapshot {
   targetDistanceCm?: number;
 }
 
-export type AppState = 'IDLE' | 'LOADING_MODEL' | 'HEAD_POSITIONING' | 'CALIBRATION' | 'TRACKING' | 'POST_CALIBRATION_CHOICE' | 'NEURO_FLOW';
+export type AppState = 'IDLE' | 'LOADING_MODEL' | 'DISTANCE_CALIBRATION' | 'HEAD_POSITIONING' | 'CALIBRATION' | 'TRACKING' | 'POST_CALIBRATION_CHOICE' | 'NEURO_FLOW';
 
 export type TrackingMode = 'free_gaze' | 'random_dots' | 'article_reading';
 
@@ -189,7 +189,17 @@ export interface AppConfig {
   outlierThreshold: number; // For TRIM: %, For STD_DEV: Sigma count
   
   // Head Positioning
-  faceDistance: number; // Target distance in CM (e.g. 50, 60, 70)
+  /**
+   * Target eye-to-screen distance in cm (30–60).
+   *
+   * Closer is not uniformly better. Iris pixels scale as 1/d, but so does the
+   * angle the screen subtends: at 30 cm the screen corners sit ~33° from centre,
+   * past the ~25° where people start turning the head instead of the eyes, which
+   * would turn an oculomotor test into a head-movement test. Below 30 cm the
+   * downward gaze to the bottom of the screen also starts occluding the iris
+   * behind the eyelid, and many fixed-focus webcams stop focusing.
+   */
+  faceDistance: number;
   /** Scale for face width from different camera FOV (1 = built-in, &lt;1 e.g. 0.7 for external webcam so 60cm passes) */
   faceWidthScale: number;
   /** Widen acceptable distance band (1 = strict, 2 = 2x band for cameras that auto-zoom). Default 2 to cope with Center Stage / Studio Effects. */

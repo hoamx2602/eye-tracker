@@ -19,6 +19,7 @@ import StopSaveModal from './StopSaveModal';
 import CapturedImageModal from './CapturedImageModal';
 import TrackingToolbar from './TrackingToolbar';
 import HeadPositioningScreen from './HeadPositioningScreen';
+import DistanceCalibrationScreen, { type DistanceCalibrationScreenProps } from './DistanceCalibrationScreen';
 
 import SetupGuideScreen from './SetupGuideScreen';
 import EyeSpinner from './ui/EyeSpinner';
@@ -93,12 +94,15 @@ type AppMainOverlaysProps = {
   exerciseRetryCount?: number;
   onAssessmentContinue?: () => void;
   onAssessmentRedo?: () => void;
+  /** Present while status is DISTANCE_CALIBRATION; drives the card + blind-spot flow. */
+  distanceCalibrationProps?: DistanceCalibrationScreenProps | null;
 };
 
 export default function AppMainOverlays(props: AppMainOverlaysProps) {
   const {
     status,
     currentScreen,
+    distanceCalibrationProps,
     headPosCanvasRef,
     headValidation,
     positionHoldTime,
@@ -249,6 +253,10 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
             )}
           </div>
         </div>
+      )}
+
+      {status === 'DISTANCE_CALIBRATION' && distanceCalibrationProps && (
+        <DistanceCalibrationScreen {...distanceCalibrationProps} />
       )}
 
       {status === 'HEAD_POSITIONING' && (

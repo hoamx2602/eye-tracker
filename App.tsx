@@ -62,6 +62,9 @@ import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
 import { offlineBackendUrl, offlineHandlingEnabled, offlinePersonalizationEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
 import { lockCameraAutoAdjustments, describeCameraLock, type CameraLockResult } from '@/lib/cameraLock';
 import { FixationGate, type GateSample, type DotConvergence } from '@/lib/fixationGate';
+import DistanceCalibrationScreen from '@/components/DistanceCalibrationScreen';
+import { faceScale as toFaceScale, distanceFromFace, loadCalibration, saveCalibration, type DistanceCalibration } from '@/lib/viewingDistance';
+import { loadScreenScale } from '@/lib/screenScale';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
 
@@ -302,6 +305,15 @@ function App() {
   const beginDotCaptureRef = useRef<((captureTime: number, c: DotConvergence) => void) | null>(null);
   /** Per-dot record of how long the eye took to settle — saved with the session. */
   const dotConvergenceRef = useRef<DotConvergence[]>([]);
+  /**
+   * Measured face-size→centimetre calibration for this participant on this
+   * camera. Null until the setup step runs; everything downstream falls back to
+   * the configured target distance when it is.
+   */
+  const distanceCalRef = useRef<DistanceCalibration | null>(null);
+  /** Live raw face width (fraction of frame), fed to the distance calibration UI. */
+  const lastFaceWidthRef = useRef<number | null>(null);
+  const [liveFaceWidth, setLiveFaceWidth] = useState<number | null>(null);
   const collectionBufferRef = useRef<number[][]>([]);
   /** Parallel raw-features buffer — same lifecycle as collectionBufferRef. Used to store
    *  EyeFeatures per frame so the averaged result can be saved in TrainingSample.rawEyeFeatures,
@@ -492,7 +504,11 @@ function App() {
         }
         break;
       case 'calibration':
-        if (status !== 'HEAD_POSITIONING' && status !== 'CALIBRATION') {
+        if (
+          status !== 'DISTANCE_CALIBRATION' &&
+          status !== 'HEAD_POSITIONING' &&
+          status !== 'CALIBRATION'
+        ) {
           handleStartProcess();
         }
         break;
@@ -609,10 +625,12 @@ function App() {
     const shouldStart = (status === 'NEURO_FLOW' && neuroPhase !== 'done') || 
                        (status === 'TRACKING' && createdSessionId) ||
                        (status === 'CALIBRATION') ||
-                       (status === 'HEAD_POSITIONING');
+                       (status === 'HEAD_POSITIONING') ||
+                       // The distance step reads face size from the same loop.
+                       (status === 'DISTANCE_CALIBRATION');
     
     if (!shouldStart || hasCameraStream) {
-      if (status !== 'NEURO_FLOW' && status !== 'TRACKING' && status !== 'CALIBRATION' && status !== 'HEAD_POSITIONING') {
+      if (status !== 'NEURO_FLOW' && status !== 'TRACKING' && status !== 'CALIBRATION' && status !== 'HEAD_POSITIONING' && status !== 'DISTANCE_CALIBRATION') {
         hasTriedStartCameraNeuroRef.current = false;
       }
       return;
@@ -1027,8 +1045,17 @@ function App() {
                 landmarks,
                 configRef.current.faceDistance,
                 configRef.current.faceWidthScale ?? 1,
-                configRef.current.headDistanceTolerance ?? 2
+                configRef.current.headDistanceTolerance ?? 2,
+                distanceCalRef.current,
               );
+              if (validation.debug?.rawFaceWidth != null) {
+                lastFaceWidthRef.current = validation.debug.rawFaceWidth;
+                // Only mirror into React state while the distance screen needs
+                // it — a setState per frame during tracking would be wasteful.
+                if (statusRef.current === 'DISTANCE_CALIBRATION') {
+                  setLiveFaceWidth(validation.debug.rawFaceWidth);
+                }
+              }
               setHeadValidation(validation);
               headValidationRef.current = validation;
               isHeadValidRef.current = validation.valid;
@@ -2034,6 +2061,12 @@ function App() {
             ...(dotConvergenceRef.current.length
               ? { dotConvergence: dotConvergenceRef.current }
               : {}),
+            // The measured geometry every angular figure was derived from. A
+            // session without this was scored against an assumed distance and
+            // must not be pooled with measured ones as if they were comparable.
+            ...(distanceCalRef.current
+              ? { distanceCalibration: distanceCalRef.current }
+              : {}),
             ...(offlineGazeReport ? {
               offlineGaze: {
                 status: 'completed',
@@ -2673,8 +2706,32 @@ function App() {
       console.warn("Fullscreen denied", e);
     }
     await startCamera();
-    setStatus('HEAD_POSITIONING');
+    // Measure the real viewing distance before anything depends on it. Reuse a
+    // measurement already taken this session (e.g. the participant went back a
+    // step) rather than putting them through the blind-spot task again.
+    const existing = distanceCalRef.current ?? loadCalibration();
+    if (existing) {
+      distanceCalRef.current = existing;
+      setStatus('HEAD_POSITIONING');
+    } else {
+      setStatus('DISTANCE_CALIBRATION');
+    }
   };
+
+  const handleDistanceCalibrated = useCallback((cal: DistanceCalibration) => {
+    distanceCalRef.current = cal;
+    saveCalibration(cal);
+    console.log(
+      `[distance] measured ${cal.distanceCm.toFixed(1)} cm ±${(cal.spreadCm ?? 0).toFixed(1)} ` +
+      `(K=${cal.k.toFixed(4)}, ${cal.pxPerCm.toFixed(1)} px/cm)`
+    );
+    setStatus('HEAD_POSITIONING');
+  }, []);
+
+  const handleDistanceSkipped = useCallback(() => {
+    console.warn('[distance] skipped — angular units fall back to the configured target distance');
+    setStatus('HEAD_POSITIONING');
+  }, []);
 
   const handleStartCalibrationClick = () => {
     router.push('/consent');
@@ -2840,11 +2897,26 @@ function App() {
   };
 
   const buildOfflineSessionMeta = (): SessionMeta => {
+    // Physical geometry, measured where possible. `widthCm` used to be a
+    // hard-coded 34.5 paired with `window.innerWidth` — the monitor's width next
+    // to the *viewport's* pixel count, two quantities that only agree by
+    // accident. Both now come from the card measurement, and the viewing
+    // distance from the blind-spot calibration rather than the config target.
+    // Every degree the backend reports rests on these two numbers.
+    const scale = loadScreenScale();
+    const cal = distanceCalRef.current;
+    const widthPx = window.innerWidth;
+    const widthCm = scale ? widthPx / scale.pxPerCm : 34.5;
+    const viewingDistanceCm =
+      cal && lastFaceWidthRef.current != null
+        ? distanceFromFace(cal, toFaceScale(lastFaceWidthRef.current))
+        : configRef.current.faceDistance;
+
     return metaRecorderRef.current.build({
-      widthPx: window.innerWidth,
+      widthPx,
       heightPx: window.innerHeight,
-      widthCm: 34.5,   // TODO: set to your monitor's real physical width (cm) for accurate degree units
-      viewingDistanceCm: configRef.current.faceDistance,
+      widthCm,
+      viewingDistanceCm,
       glasses: !!demographicsRef.current?.wearsGlasses,
     });
   };
@@ -2986,6 +3058,13 @@ function App() {
       <AppMainOverlays
         status={status}
         currentScreen={currentScreen}
+        distanceCalibrationProps={{
+          targetDistanceCm: config.faceDistance,
+          faceWidthNorm: liveFaceWidth,
+          yawRad: rawFeatures?.headPose.yaw ?? 0,
+          onComplete: handleDistanceCalibrated,
+          onSkip: handleDistanceSkipped,
+        }}
         headPosCanvasRef={headPosCanvasRef}
         headValidation={headValidation}
         positionHoldTime={positionHoldTime}

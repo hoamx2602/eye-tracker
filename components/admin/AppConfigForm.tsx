@@ -245,8 +245,8 @@ export default function AppConfigForm() {
                 </div>
                 <input
                   type="range"
-                  min="40"
-                  max="90"
+                  min="30"
+                  max="60"
                   step="5"
                   value={localConfig.faceDistance}
                   onChange={(e) => handleChange('faceDistance', parseInt(e.target.value, 10))}
