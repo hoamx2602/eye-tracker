@@ -78,6 +78,41 @@ import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracti
 const CAMERA_LOCK_SETTLE_MS = 1500;
 
 /**
+ * Does the current state need the camera running?
+ *
+ * This predicate had been written out three separate times — once to start the
+ * camera, once to release the start latch, once to stop it again — and adding a
+ * state meant remembering all three. Missing one is not a small bug: the starter
+ * and the stopper then disagree, and the camera is started and torn down on
+ * every render for as long as the state lasts.
+ *
+ * The switch is deliberately exhaustive with no `default`, so adding a state to
+ * AppState fails the build here until someone decides what it should do.
+ */
+function cameraNeededFor(
+  status: AppState,
+  neuroPhase: string,
+  hasSession: boolean,
+): boolean {
+  switch (status) {
+    case 'DISTANCE_CALIBRATION':
+    case 'HEAD_POSITIONING':
+    case 'CALIBRATION':
+      return true;
+    // Tracking only resumes the camera once a session exists; without one the
+    // route is being restored mid-navigation and there is nothing to record.
+    case 'TRACKING':
+      return hasSession;
+    case 'NEURO_FLOW':
+      return neuroPhase !== 'done';
+    case 'IDLE':
+    case 'LOADING_MODEL':
+    case 'POST_CALIBRATION_CHOICE':
+      return false;
+  }
+}
+
+/**
  * How much longer than the old fixed prep wait the gaze-contingent gate may
  * spend waiting for the eye to arrive before recording anyway.
  *
@@ -636,15 +671,10 @@ function App() {
   const hasTriedStartCameraNeuroRef = useRef(false);
   useEffect(() => {
     // Start camera if we are in neuro flow (uncompleted) OR if we are in tracking (with session) OR if we are in normal setup flows
-    const shouldStart = (status === 'NEURO_FLOW' && neuroPhase !== 'done') || 
-                       (status === 'TRACKING' && createdSessionId) ||
-                       (status === 'CALIBRATION') ||
-                       (status === 'HEAD_POSITIONING') ||
-                       // The distance step reads face size from the same loop.
-                       (status === 'DISTANCE_CALIBRATION');
-    
+    const shouldStart = cameraNeededFor(status, neuroPhase, !!createdSessionId);
+
     if (!shouldStart || hasCameraStream) {
-      if (status !== 'NEURO_FLOW' && status !== 'TRACKING' && status !== 'CALIBRATION' && status !== 'HEAD_POSITIONING' && status !== 'DISTANCE_CALIBRATION') {
+      if (!shouldStart) {
         hasTriedStartCameraNeuroRef.current = false;
       }
       return;
@@ -821,11 +851,8 @@ function App() {
 
   // Automated camera cleanup when navigating away from active tracking/neuro logic (e.g. going home)
   useEffect(() => {
-    const isFlowActive = (status === 'NEURO_FLOW' && neuroPhase !== 'done') || 
-                         (status === 'TRACKING' && createdSessionId) ||
-                         (status === 'CALIBRATION') ||
-                         (status === 'HEAD_POSITIONING');
-                         
+    const isFlowActive = cameraNeededFor(status, neuroPhase, !!createdSessionId);
+
     if (!isFlowActive && hasCameraStream) {
       neuroDebugLog('[App] Navigation/State change -> stopping camera automatically');
       stopCamera();
