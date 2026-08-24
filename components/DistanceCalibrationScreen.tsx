@@ -330,6 +330,8 @@ function FaceCardStep({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [markers, setMarkers] = useState<[number, number]>([0.35, 0.65]);
   const [dragging, setDragging] = useState<0 | 1 | null>(null);
+  /** Whether the shared video element is actually producing frames yet. */
+  const [videoLive, setVideoLive] = useState(false);
 
   // Mirrored to match the rest of the app, so the participant's movements match
   // what they see. The distance between the handles is unaffected by the flip.
@@ -338,7 +340,9 @@ function FaceCardStep({
     const draw = () => {
       const canvas = canvasRef.current;
       const video = videoRef.current;
-      if (canvas && video && video.videoWidth) {
+      const live = !!(video && video.videoWidth > 0 && video.readyState >= 2);
+      setVideoLive((prev) => (prev === live ? prev : live));
+      if (canvas && live && video) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
           if (canvas.width !== video.videoWidth) canvas.width = video.videoWidth;
@@ -387,7 +391,17 @@ function FaceCardStep({
         onPointerLeave={() => setDragging(null)}
       >
         <canvas ref={canvasRef} className="w-full h-full" />
-        {markers.map((x, i) => (
+        {!videoLive && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6">
+            <p className="text-sm font-semibold text-amber-400">Camera not running</p>
+            <p className="text-xs text-slate-400 max-w-sm">
+              This step needs the live picture. If it does not appear within a few seconds, check
+              that camera access is still granted and that no other tab or app is holding the
+              camera, then reload.
+            </p>
+          </div>
+        )}
+        {videoLive && markers.map((x, i) => (
           <div
             key={i}
             onPointerDown={() => setDragging(i as 0 | 1)}

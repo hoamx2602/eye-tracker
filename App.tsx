@@ -651,7 +651,11 @@ function App() {
     }
     if (hasTriedStartCameraNeuroRef.current) return;
     hasTriedStartCameraNeuroRef.current = true;
-    startCamera();
+    // Any failure must also release the latch, for the same reason.
+    startCamera().catch((e) => {
+      hasTriedStartCameraNeuroRef.current = false;
+      console.error('[App] startCamera failed', e);
+    });
   }, [status, hasCameraStream, neuroPhase, createdSessionId]);
 
   // Clean up camera stream on component unmount
@@ -684,6 +688,11 @@ function App() {
        if (process.env.NODE_ENV === 'development') {
          console.warn('[App] Aborting startCamera - on non-camera screen:', parsed.screen);
        }
+       // Release the once-only latch the caller set before calling us. Without
+       // this an aborted attempt leaves the latch stuck: the next *legitimate*
+       // request sees "already tried", returns immediately, and the camera never
+       // starts — a black preview with no error anywhere.
+       hasTriedStartCameraNeuroRef.current = false;
        return;
     }
 
