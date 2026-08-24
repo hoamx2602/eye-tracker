@@ -1,6 +1,7 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark, FaceLandmarkerResult } from "@mediapipe/tasks-vision";
 import { EyeLandmarkIndices, EyeFeatures, HeadPose, AppConfig } from "../types";
 import { checkDistance, faceScale, type DistanceCalibration } from "../lib/viewingDistance";
+import { checkAnchor, type HeadSignature, type PositionAnchor, type AnchorTolerance } from "../lib/positionAnchor";
 
 // Lightweight inline types for optional MediaPipe outputs (avoids importing extra @mediapipe types)
 interface BlendshapeCategory { categoryName: string; score: number; }
@@ -28,6 +29,12 @@ export interface HeadValidationResult {
     /** Present only when a measured calibration was supplied. */
     measuredDistanceCm?: number;
     distanceBandCm?: number;
+    /** Present only when checked against a position anchor. */
+    anchorFault?: string;
+    depthRatio?: number;
+    driftFaceWidths?: number;
+    depthCm?: number;
+    lateralCm?: number;
   };
 }
 
@@ -62,6 +69,33 @@ export class EyeTrackingService {
   }
 
   /**
+   * Where the head is, as the position anchor understands it.
+   *
+   * The reference point is the midpoint between the two outer eye corners
+   * rather than the nose: parallax error is set by where the *eyes* are, and
+   * the nose swings noticeably around them as the head turns.
+   */
+  headSignature(landmarks: NormalizedLandmark[]): HeadSignature | null {
+    if (!landmarks || landmarks.length < 478) return null;
+    const leftEdge = landmarks[EyeLandmarkIndices.LEFT_FACE_EDGE];
+    const rightEdge = landmarks[EyeLandmarkIndices.RIGHT_FACE_EDGE];
+    const lo = landmarks[EyeLandmarkIndices.LEFT_OUTER];
+    const ro = landmarks[EyeLandmarkIndices.RIGHT_OUTER];
+    if (!leftEdge || !rightEdge || !lo || !ro) return null;
+
+    const rawFaceWidth = Math.hypot(rightEdge.x - leftEdge.x, rightEdge.y - leftEdge.y);
+    const pose = this.calculateGeometricHeadPose(landmarks);
+    return {
+      faceScale: faceScale(rawFaceWidth, pose?.yaw ?? 0),
+      cx: (lo.x + ro.x) / 2,
+      cy: (lo.y + ro.y) / 2,
+      yaw: pose?.yaw ?? 0,
+      pitch: pose?.pitch ?? 0,
+      roll: pose?.roll ?? 0,
+    };
+  }
+
+  /**
    * Checks if the head is positioned correctly for high-quality tracking.
    *
    * Distance handling has two modes. When a `distanceCalibration` is supplied
@@ -85,8 +119,39 @@ export class EyeTrackingService {
     faceWidthScale: number = 1,
     headDistanceTolerance: number = 1,
     distanceCalibration: DistanceCalibration | null = null,
+    anchor: PositionAnchor | null = null,
+    anchorTolerance?: AnchorTolerance,
   ): HeadValidationResult {
     if (!landmarks) return { valid: false, message: "No Face Detected" };
+
+    // Once an anchor exists, "correct position" means *where calibration
+    // happened*, not some absolute pose. That is the quantity that actually
+    // governs error: the gaze mapping bakes in the head position it was fitted
+    // at, so a centimetre of drift is about a centimetre of screen error no
+    // matter how well-centred in frame the participant looks.
+    if (anchor) {
+      const sig = this.headSignature(landmarks);
+      const res = checkAnchor(anchor, sig, anchorTolerance);
+      return {
+        valid: res.ok,
+        message: res.message,
+        debug: {
+          faceWidth: sig?.faceScale ?? 0,
+          rawFaceWidth: sig?.faceScale ?? 0,
+          minFaceWidth: 0,
+          maxFaceWidth: 0,
+          targetDistanceCm: faceDistanceCm,
+          anchorFault: res.fault,
+          depthRatio: res.deviation.depthRatio,
+          driftFaceWidths: Math.hypot(
+            res.deviation.lateralFaceWidths || 0,
+            res.deviation.verticalFaceWidths || 0,
+          ),
+          ...(res.deviation.depthCm != null ? { depthCm: res.deviation.depthCm } : {}),
+          ...(res.deviation.lateralCm != null ? { lateralCm: res.deviation.lateralCm } : {}),
+        },
+      };
+    }
 
     const nose = landmarks[EyeLandmarkIndices.NOSE_TIP];
     const leftEdge = landmarks[EyeLandmarkIndices.LEFT_FACE_EDGE];

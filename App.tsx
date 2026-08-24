@@ -64,6 +64,7 @@ import { lockCameraAutoAdjustments, describeCameraLock, type CameraLockResult } 
 import { FixationGate, type GateSample, type DotConvergence } from '@/lib/fixationGate';
 import DistanceCalibrationScreen from '@/components/DistanceCalibrationScreen';
 import { faceScale as toFaceScale, distanceFromFace, loadCalibration, saveCalibration, type DistanceCalibration } from '@/lib/viewingDistance';
+import { captureAnchor, type PositionAnchor } from '@/lib/positionAnchor';
 import { loadScreenScale } from '@/lib/screenScale';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
@@ -311,6 +312,15 @@ function App() {
    * the configured target distance when it is.
    */
   const distanceCalRef = useRef<DistanceCalibration | null>(null);
+  /**
+   * Where the participant was when head positioning completed. From that moment
+   * the position check is relative to this pose rather than to the frame, and
+   * leaving it stops the test — which is the condition that actually invalidates
+   * a calibration.
+   */
+  const positionAnchorRef = useRef<PositionAnchor | null>(null);
+  /** Physical face width (cm) from the card-at-face step, when it has run. */
+  const faceWidthCmRef = useRef<number | null>(null);
   /** Live raw face width (fraction of frame), fed to the distance calibration UI. */
   const lastFaceWidthRef = useRef<number | null>(null);
   const [liveFaceWidth, setLiveFaceWidth] = useState<number | null>(null);
@@ -1047,6 +1057,7 @@ function App() {
                 configRef.current.faceWidthScale ?? 1,
                 configRef.current.headDistanceTolerance ?? 2,
                 distanceCalRef.current,
+                positionAnchorRef.current,
               );
               if (validation.debug?.rawFaceWidth != null) {
                 lastFaceWidthRef.current = validation.debug.rawFaceWidth;
@@ -1096,6 +1107,25 @@ function App() {
                       if (remaining === 0) {
                           headPosStartTimeRef.current = null;
                           setPositionHoldTime(null);
+                          // Lock this pose. Everything after is judged against
+                          // it, so it is captured at the last stable frame
+                          // rather than the first — the participant has been
+                          // holding still for the full countdown by now.
+                          if (!positionAnchorRef.current) {
+                            const sig = eyeTrackingService.headSignature(landmarks);
+                            if (sig) {
+                              const cal = distanceCalRef.current;
+                              positionAnchorRef.current = captureAnchor(sig, {
+                                ...(faceWidthCmRef.current != null
+                                  ? { faceWidthCm: faceWidthCmRef.current } : {}),
+                                distanceCm: cal
+                                  ? distanceFromFace(cal, sig.faceScale)
+                                  : configRef.current.faceDistance,
+                                distanceSource: cal ? cal.method : 'assumed',
+                              });
+                              console.log('[anchor] locked', positionAnchorRef.current);
+                            }
+                          }
                           if (calibrationResumeRef.current) {
                               calibrationResumeRef.current = false;
                               setStatus('CALIBRATION');
@@ -2067,6 +2097,12 @@ function App() {
             ...(distanceCalRef.current
               ? { distanceCalibration: distanceCalRef.current }
               : {}),
+            // Where the participant was locked to, and how far the readings can
+            // be trusted: an anchor carrying faceWidthCm reports drift in exact
+            // centimetres, one without it only in face widths.
+            ...(positionAnchorRef.current
+              ? { positionAnchor: positionAnchorRef.current }
+              : {}),
             ...(offlineGazeReport ? {
               offlineGaze: {
                 status: 'completed',
@@ -2718,13 +2754,20 @@ function App() {
     }
   };
 
-  const handleDistanceCalibrated = useCallback((cal: DistanceCalibration) => {
-    distanceCalRef.current = cal;
-    saveCalibration(cal);
-    console.log(
-      `[distance] measured ${cal.distanceCm.toFixed(1)} cm ±${(cal.spreadCm ?? 0).toFixed(1)} ` +
-      `(K=${cal.k.toFixed(4)}, ${cal.pxPerCm.toFixed(1)} px/cm)`
-    );
+  const handleDistanceCalibrated = useCallback((cal: DistanceCalibration | null) => {
+    // Null means the participant chose to anchor on the configured target
+    // instead of measuring. Position tracking still works — drift is measured
+    // against the anchor — only the absolute units fall back to an assumption.
+    if (cal) {
+      distanceCalRef.current = cal;
+      saveCalibration(cal);
+      console.log(
+        `[distance] measured ${cal.distanceCm.toFixed(1)} cm ±${(cal.spreadCm ?? 0).toFixed(1)} ` +
+        `(K=${cal.k.toFixed(4)}, ${cal.pxPerCm.toFixed(1)} px/cm)`
+      );
+    } else {
+      console.log('[distance] absolute distance assumed from config target');
+    }
     setStatus('HEAD_POSITIONING');
   }, []);
 
@@ -2831,6 +2874,10 @@ function App() {
     smootherRef.current.reset();
     validationErrorsRef.current = [];
     dotConvergenceRef.current = [];
+    // The anchor describes where *this* calibration happened, so it must not
+    // outlive it — a stale anchor would police the new session against the old
+    // session's chair position.
+    positionAnchorRef.current = null;
     setAccuracyScore(null);
     trackingHistoryRef.current = []; 
     setCapturedImages([]); // Reset images
@@ -3062,6 +3109,8 @@ function App() {
           targetDistanceCm: config.faceDistance,
           faceWidthNorm: liveFaceWidth,
           yawRad: rawFeatures?.headPose.yaw ?? 0,
+          videoRef,
+          onFaceWidthCm: (cm: number) => { faceWidthCmRef.current = cm; },
           onComplete: handleDistanceCalibrated,
           onSkip: handleDistanceSkipped,
         }}

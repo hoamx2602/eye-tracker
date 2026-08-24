@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CARD_ASPECT,
+  CARD_WIDTH_MM,
   cardWidthPxFromPxPerCm,
   isPlausibleScale,
   loadScreenScale,
@@ -11,6 +12,7 @@ import {
   viewportWidthCm,
   type ScreenScale,
 } from '@/lib/screenScale';
+import { faceWidthCmFromCard, isPlausibleFaceWidthCm } from '@/lib/positionAnchor';
 import {
   BLIND_SPOT_ECCENTRICITY_DEG,
   aggregateBlindSpotTrials,
@@ -31,7 +33,7 @@ import {
  * face size to centimetres for the rest of the session.
  */
 
-type Step = 'card' | 'blindspot' | 'result';
+type Step = 'card' | 'faceCard' | 'choice' | 'blindspot' | 'result';
 
 const TRIALS = 5;
 /** Sweep speed. Slow enough that a late keypress costs little, fast enough not to bore. */
@@ -48,7 +50,11 @@ export interface DistanceCalibrationScreenProps {
   faceWidthNorm: number | null;
   /** Live head yaw (radians) — corrects the foreshortening of a turned head. */
   yawRad: number;
-  onComplete: (calibration: DistanceCalibration) => void;
+  /** Shared camera element, drawn into the card-at-face step. */
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  /** Physical face width in cm — the number that makes drift readings exact. */
+  onFaceWidthCm: (cm: number) => void;
+  onComplete: (calibration: DistanceCalibration | null) => void;
   /** Continue without a measurement; the old face-width band is used instead. */
   onSkip: () => void;
 }
@@ -57,6 +63,8 @@ export default function DistanceCalibrationScreen({
   targetDistanceCm,
   faceWidthNorm,
   yawRad,
+  videoRef,
+  onFaceWidthCm,
   onComplete,
   onSkip,
 }: DistanceCalibrationScreenProps) {
@@ -65,6 +73,7 @@ export default function DistanceCalibrationScreen({
   const [pxPerCm, setPxPerCm] = useState<number | null>(saved?.pxPerCm ?? null);
   const [calibration, setCalibration] = useState<DistanceCalibration | null>(null);
   const [trialsCm, setTrialsCm] = useState<number[]>([]);
+  const [faceCm, setFaceCm] = useState<number | null>(null);
 
   // Live face scale, sampled continuously so the blind-spot step can pair its
   // distance with the face size observed at that same moment.
@@ -108,16 +117,23 @@ export default function DistanceCalibrationScreen({
     setStep('blindspot');
   }, []);
 
+  const STEP_LABEL: Record<Step, string> = {
+    card: 'Measure your screen',
+    faceCard: 'Measure your face',
+    choice: 'Distance reference',
+    blindspot: 'Measure your distance',
+    result: 'Distance measured',
+  };
+  const STEP_NUMBER: Record<Step, number> = { card: 1, faceCard: 2, choice: 3, blindspot: 3, result: 3 };
+
   return (
     <div className="fixed inset-0 z-[200] bg-slate-950 text-slate-100 overflow-y-auto">
       <div className="min-h-full flex flex-col items-center justify-center gap-6 p-8">
         <header className="text-center">
           <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-cyan-400">
-            Step {step === 'card' ? 1 : 2} of 2 · target {targetDistanceCm} cm
+            Step {STEP_NUMBER[step]} of 3 · target {targetDistanceCm} cm
           </p>
-          <h2 className="text-2xl font-bold mt-2">
-            {step === 'card' ? 'Measure your screen' : step === 'blindspot' ? 'Measure your distance' : 'Distance measured'}
-          </h2>
+          <h2 className="text-2xl font-bold mt-2">{STEP_LABEL[step]}</h2>
         </header>
 
         {step === 'card' && (
@@ -128,8 +144,30 @@ export default function DistanceCalibrationScreen({
               setPxPerCm(v);
               saveScreenScale(cardWidthPxFromPxPerCm(v));
               scaleSamplesRef.current = [];
-              setStep('blindspot');
+              setStep('faceCard');
             }}
+          />
+        )}
+
+        {step === 'faceCard' && (
+          <FaceCardStep
+            videoRef={videoRef}
+            faceWidthNorm={faceWidthNorm}
+            onDone={(cm) => {
+              setFaceCm(cm);
+              onFaceWidthCm(cm);
+              setStep('choice');
+            }}
+            onSkip={() => setStep('choice')}
+          />
+        )}
+
+        {step === 'choice' && (
+          <ChoiceStep
+            faceCm={faceCm}
+            targetDistanceCm={targetDistanceCm}
+            onBlindSpot={() => { scaleSamplesRef.current = []; setStep('blindspot'); }}
+            onUseTarget={() => onComplete(null)}
           />
         )}
 
@@ -250,7 +288,194 @@ function CardStep({
   );
 }
 
-// ─── Step 2: blind spot ──────────────────────────────────────────────────────
+// ─── Step 2: card at the face ────────────────────────────────────────────────
+
+/**
+ * Physical face width, from a card held in the plane of the face.
+ *
+ * This is the one measurement that assumes nothing whatsoever about the camera.
+ * The card and the face are the same distance away, so their pixel widths stand
+ * in exactly the same ratio as their real widths and the focal length cancels —
+ * which is what turns every later drift reading from a ratio into centimetres.
+ *
+ * The card is located by dragging two handles onto its edges rather than by
+ * detecting it. Rectangle detection on a webcam frame fails on dark cards,
+ * glare and motion blur, and a silent mis-detection here would corrupt every
+ * position check for the rest of the session; two deliberate drags cannot fail
+ * quietly.
+ */
+function FaceCardStep({
+  videoRef,
+  faceWidthNorm,
+  onDone,
+  onSkip,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  faceWidthNorm: number | null;
+  onDone: (faceWidthCm: number) => void;
+  onSkip: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [markers, setMarkers] = useState<[number, number]>([0.35, 0.65]);
+  const [dragging, setDragging] = useState<0 | 1 | null>(null);
+
+  // Mirrored to match the rest of the app, so the participant's movements match
+  // what they see. The distance between the handles is unaffected by the flip.
+  useEffect(() => {
+    let raf = 0;
+    const draw = () => {
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
+      if (canvas && video && video.videoWidth) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          if (canvas.width !== video.videoWidth) canvas.width = video.videoWidth;
+          if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
+          ctx.save();
+          ctx.translate(canvas.width, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          ctx.restore();
+        }
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [videoRef]);
+
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (dragging === null) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      setMarkers((m) => (dragging === 0 ? [x, m[1]] : [m[0], x]));
+    },
+    [dragging],
+  );
+
+  const cardWidthNorm = Math.abs(markers[1] - markers[0]);
+  const faceCm =
+    faceWidthNorm != null && cardWidthNorm > 0.01
+      ? faceWidthCmFromCard(cardWidthNorm, faceWidthNorm, CARD_WIDTH_MM / 10)
+      : NaN;
+  const ok = isPlausibleFaceWidthCm(faceCm);
+
+  return (
+    <div className="flex flex-col items-center gap-4 w-full max-w-3xl">
+      <p className="text-sm text-slate-400 text-center max-w-xl">
+        Hold the card flat against your cheek, level with your eyes and facing the camera. Then
+        drag the two handles onto the left and right edges of the card in the picture.
+      </p>
+
+      <div
+        className="relative w-full aspect-video rounded-xl overflow-hidden border border-slate-700 bg-black select-none touch-none"
+        onPointerMove={onPointerMove}
+        onPointerUp={() => setDragging(null)}
+        onPointerLeave={() => setDragging(null)}
+      >
+        <canvas ref={canvasRef} className="w-full h-full" />
+        {markers.map((x, i) => (
+          <div
+            key={i}
+            onPointerDown={() => setDragging(i as 0 | 1)}
+            className="absolute top-0 bottom-0 w-8 -ml-4 cursor-ew-resize flex items-center justify-center"
+            style={{ left: `${x * 100}%` }}
+          >
+            <div className="w-0.5 h-full bg-cyan-400" />
+            <div className="absolute w-4 h-4 rounded-full bg-cyan-400 border-2 border-slate-950 shadow" />
+          </div>
+        ))}
+      </div>
+
+      <div className="font-mono text-xs text-slate-400 tabular-nums">
+        {faceWidthNorm == null
+          ? 'no face detected'
+          : `card ${(cardWidthNorm * 100).toFixed(1)}% of frame · face ${(faceWidthNorm * 100).toFixed(1)}% · face width ${Number.isFinite(faceCm) ? faceCm.toFixed(1) : '—'} cm`}
+      </div>
+
+      {faceWidthNorm != null && Number.isFinite(faceCm) && !ok && (
+        <p className="text-xs text-amber-400 text-center max-w-md">
+          {faceCm.toFixed(1)} cm is outside the range a real face spans (10–20 cm). Check that the
+          handles sit on the card edges and that the card is flat rather than angled.
+        </p>
+      )}
+
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onSkip}
+          className="px-4 py-2 rounded-lg border border-slate-600 text-sm text-slate-300 hover:bg-slate-800"
+        >
+          Skip
+        </button>
+        <button
+          type="button"
+          disabled={!ok}
+          onClick={() => onDone(faceCm)}
+          className="px-6 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:hover:bg-cyan-600 text-white text-sm font-semibold"
+        >
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 3: how to anchor the absolute distance ─────────────────────────────
+
+function ChoiceStep({
+  faceCm,
+  targetDistanceCm,
+  onBlindSpot,
+  onUseTarget,
+}: {
+  faceCm: number | null;
+  targetDistanceCm: number;
+  onBlindSpot: () => void;
+  onUseTarget: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-5 max-w-xl w-full">
+      {faceCm != null && (
+        <p className="font-mono text-xs text-emerald-400 tabular-nums">
+          face width measured: {faceCm.toFixed(1)} cm
+        </p>
+      )}
+      <p className="text-sm text-slate-400 text-center">
+        Position tracking is ready either way — drift from where you sit is measured exactly from
+        here on. What is left is the <em>absolute</em> distance, which only affects the units the
+        results are reported in.
+      </p>
+      <div className="grid sm:grid-cols-2 gap-3 w-full">
+        <button
+          type="button"
+          onClick={onBlindSpot}
+          className="text-left p-4 rounded-xl border border-cyan-700 bg-cyan-950/40 hover:bg-cyan-950/70"
+        >
+          <p className="text-sm font-semibold text-cyan-300">Measure it (about a minute)</p>
+          <p className="text-xs text-slate-400 mt-1">
+            A blind-spot task gives the real distance to about ±3 cm. Worth it if results will be
+            compared against published norms.
+          </p>
+        </button>
+        <button
+          type="button"
+          onClick={onUseTarget}
+          className="text-left p-4 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800"
+        >
+          <p className="text-sm font-semibold text-slate-300">Assume {targetDistanceCm} cm</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Uses the configured target. Fine for comparing a person against themselves; degrees
+            shift by however wrong the assumption is.
+          </p>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 4: blind spot ──────────────────────────────────────────────────────
 
 function BlindSpotStep({
   pxPerCm,
