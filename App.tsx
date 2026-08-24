@@ -461,7 +461,11 @@ function App() {
             if (heatmapRef.current) heatmapRef.current.reset();
             trackingHistoryRef.current = [];
           } else if (parsed.screen === 'calibration') {
-            setStatus('HEAD_POSITIONING');
+            // Landing straight on /calibration (reload, or a deep link) must
+            // still go through the measurement step — jumping to head
+            // positioning here was silently skipping it for the whole flow,
+            // which left every session on the uncalibrated fallback band.
+            setStatus(loadCalibration() ? 'HEAD_POSITIONING' : 'DISTANCE_CALIBRATION');
           } else if (parsed.screen === 'choice') {
             setStatus('IDLE');
           } else if (parsed.screen === 'neuro_pre' || parsed.screen === 'neuro_post' || parsed.screen === 'neuro_done' || parsed.screen === 'neuro_test') {

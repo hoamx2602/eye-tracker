@@ -152,8 +152,16 @@ export interface DistanceCalibration {
   distanceCm: number;
   /** Face scale observed at that distance. */
   faceScale: number;
-  /** How the absolute distance was obtained. */
-  method: 'blind-spot' | 'manual';
+  /**
+   * How the absolute distance was obtained.
+   *
+   * 'assumed' means the participant was declared to be at the configured target
+   * where they happened to be sitting. That makes the absolute figure a guess —
+   * but it is still worth anchoring, because K is fixed against the face size
+   * observed at that instant, so every *change* from that pose is measured
+   * exactly. Only the label is assumed, never the drift.
+   */
+  method: 'blind-spot' | 'manual' | 'assumed';
   /** Trial disagreement for blind-spot calibrations, cm. */
   spreadCm?: number;
   pxPerCm: number;

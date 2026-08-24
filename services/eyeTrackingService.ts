@@ -3,6 +3,24 @@ import { EyeLandmarkIndices, EyeFeatures, HeadPose, AppConfig } from "../types";
 import { checkDistance, faceScale, type DistanceCalibration } from "../lib/viewingDistance";
 import { checkAnchor, type HeadSignature, type PositionAnchor, type AnchorTolerance } from "../lib/positionAnchor";
 
+/**
+ * Smallest fraction of frame width the face may span.
+ *
+ * An iris is about 8% of face width, so a face at 0.13 of a 1920-px frame puts
+ * roughly 20 px across the iris — around the floor at which landmark and
+ * appearance estimates hold up. This is a property of the image alone: it does
+ * not depend on the camera's field of view or on how far away the participant
+ * is, which is exactly why it can be checked without measuring either.
+ */
+const MIN_FACE_WIDTH_FOR_QUALITY = 0.13;
+
+/**
+ * Largest fraction of frame width before the setup stops working for other
+ * reasons — landmarks running off the frame edge, and the minimum focus
+ * distance of typical fixed-focus webcams.
+ */
+const MAX_FACE_WIDTH_SANITY = 0.5;
+
 // Lightweight inline types for optional MediaPipe outputs (avoids importing extra @mediapipe types)
 interface BlendshapeCategory { categoryName: string; score: number; }
 interface TransformMatrixData { data: number[] | Float32Array; }
@@ -172,15 +190,22 @@ export class EyeTrackingService {
       ? checkDistance(distanceCalibration, scaleInvariant, D, tol)
       : null;
 
-    let minFaceWidth = 0.09 + (90 - D) * 0.0012;
-    let maxFaceWidth = 0.17 - (D - 40) * 0.0007;
-    // Widen band when camera auto-zooms (Center Stage, Studio Effects) so user can still pass
-    if (tol > 1) {
-      const center = (minFaceWidth + maxFaceWidth) / 2;
-      const halfBand = ((maxFaceWidth - minFaceWidth) / 2) * tol;
-      minFaceWidth = Math.max(0.05, center - halfBand);
-      maxFaceWidth = Math.min(0.35, center + halfBand);
-    }
+    // Face-size band. This checks IMAGE QUALITY, not distance.
+    //
+    // It used to be derived from the target distance — 0.09 + (90-D)*0.0012 and
+    // so on — which quietly assumed a particular camera field of view. On a
+    // narrower-FOV webcam the face legitimately fills more of the frame at the
+    // same distance, and the participant was told to move back until the image
+    // got *worse*. That is the wrong direction on the one axis that matters:
+    // how many pixels land on the iris depends on the fraction of frame the
+    // face occupies, and nothing else. Bigger is simply better.
+    //
+    // So the floor is a quality minimum and the ceiling is a sanity check for a
+    // face so close that landmarks reach the frame edge and most fixed-focus
+    // webcams stop focusing. Actual distance is checked separately, and only
+    // when it has actually been measured.
+    const minFaceWidth = Math.max(0.05, MIN_FACE_WIDTH_FOR_QUALITY / tol);
+    const maxFaceWidth = MAX_FACE_WIDTH_SANITY;
     const debug = {
       faceWidth,
       rawFaceWidth,
@@ -215,10 +240,11 @@ export class EyeTrackingService {
       const at = `${distCheck.distanceCm.toFixed(0)}cm → ${D}cm`;
       if (distCheck.verdict === 'too-close') return { valid: false, message: `Move Back (${at})`, debug };
       if (distCheck.verdict === 'too-far') return { valid: false, message: `Move Closer (${at})`, debug };
-    } else {
-      if (faceWidth < minFaceWidth) return { valid: false, message: "Move Closer", debug };
-      if (faceWidth > maxFaceWidth) return { valid: false, message: "Move Back", debug };
     }
+    // Image-quality floor applies either way: too few pixels on the iris cannot
+    // be fixed by anything downstream.
+    if (faceWidth < minFaceWidth) return { valid: false, message: "Move Closer", debug };
+    if (faceWidth > maxFaceWidth) return { valid: false, message: "Move Back", debug };
 
     // 3. Tilt Check (Head Rotation)
     const tilt = Math.abs(leftEdge.y - rightEdge.y);

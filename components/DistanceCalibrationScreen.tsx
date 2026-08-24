@@ -167,7 +167,19 @@ export default function DistanceCalibrationScreen({
             faceCm={faceCm}
             targetDistanceCm={targetDistanceCm}
             onBlindSpot={() => { scaleSamplesRef.current = []; setStep('blindspot'); }}
-            onUseTarget={() => onComplete(null)}
+            onUseTarget={() => {
+              // Anchor on where they are sitting right now and call it the
+              // target. The absolute number is a guess, but K is pinned to the
+              // face size observed at this instant, so every later deviation is
+              // exact — which is what the position gate needs.
+              const s = liveScale;
+              onComplete(
+                s && pxPerCm != null
+                  ? calibrate({ distanceCm: targetDistanceCm, faceScale: s, pxPerCm, method: 'assumed' })
+                  : null,
+              );
+            }}
+            ready={liveScale != null && pxPerCm != null}
           />
         )}
 
@@ -429,11 +441,13 @@ function ChoiceStep({
   targetDistanceCm,
   onBlindSpot,
   onUseTarget,
+  ready,
 }: {
   faceCm: number | null;
   targetDistanceCm: number;
   onBlindSpot: () => void;
   onUseTarget: () => void;
+  ready: boolean;
 }) {
   return (
     <div className="flex flex-col items-center gap-5 max-w-xl w-full">
@@ -462,13 +476,17 @@ function ChoiceStep({
         <button
           type="button"
           onClick={onUseTarget}
-          className="text-left p-4 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800"
+          disabled={!ready}
+          className="text-left p-4 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-40"
         >
-          <p className="text-sm font-semibold text-slate-300">Assume {targetDistanceCm} cm</p>
-          <p className="text-xs text-slate-400 mt-1">
-            Uses the configured target. Fine for comparing a person against themselves; degrees
-            shift by however wrong the assumption is.
+          <p className="text-sm font-semibold text-slate-300">
+            Sit where you are and call it {targetDistanceCm} cm
           </p>
+          <p className="text-xs text-slate-400 mt-1">
+            Locks your current position as the reference. Drift from it is still measured exactly;
+            only the absolute figure is a guess, so degrees shift by however wrong it is.
+          </p>
+          {!ready && <p className="text-[11px] text-amber-400 mt-2">Waiting for the camera to see your face…</p>}
         </button>
       </div>
     </div>

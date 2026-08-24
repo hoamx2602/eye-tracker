@@ -10,6 +10,27 @@ type HeadPositioningScreenProps = {
   stableFrameCount: number;
 };
 
+/**
+ * One-line readout of what the position check is actually doing.
+ *
+ * Which numbers are meaningful depends on the mode: once an anchor exists the
+ * check is a comparison against the setup pose, and printing a face-width band
+ * there would be showing values nothing is being compared to.
+ */
+function describeHeadDebug(d: NonNullable<HeadValidationResult['debug']>): string {
+  if (d.anchorFault !== undefined) {
+    const depth = Number.isFinite(d.depthRatio) ? `${((d.depthRatio! - 1) * 100).toFixed(0)}%` : '—';
+    const drift = Number.isFinite(d.driftFaceWidths)
+      ? d.lateralCm != null
+        ? `${Math.abs(d.lateralCm).toFixed(1)}cm`
+        : `${d.driftFaceWidths!.toFixed(2)} face-widths`
+      : '—';
+    return `vs setup pose · depth ${depth} · drift ${drift}`;
+  }
+  const measured = d.measuredDistanceCm != null ? ` · at ${d.measuredDistanceCm.toFixed(0)}cm` : '';
+  return `faceWidth: ${d.faceWidth.toFixed(3)} (min ${d.minFaceWidth.toFixed(2)}) · target ${d.targetDistanceCm}cm${measured}`;
+}
+
 function HeadPositioningScreen({
   headPosCanvasRef,
   headValidation,
@@ -44,13 +65,7 @@ function HeadPositioningScreen({
           {headValidation?.message || 'Detecting face...'}
         </p>
         <p className="text-cyan-300 text-sm mt-2 font-mono">
-          {headValidation?.debug
-            ? `faceWidth: ${headValidation.debug.faceWidth.toFixed(3)} (min: ${headValidation.debug.minFaceWidth.toFixed(
-                3,
-              )}, max: ${headValidation.debug.maxFaceWidth.toFixed(3)}) · target ${
-                headValidation.debug.targetDistanceCm
-              }cm`
-            : 'Debug: center face in frame to see values (or check Console)'}
+          {headValidation?.debug ? describeHeadDebug(headValidation.debug) : 'Debug: center face in frame to see values (or check Console)'}
         </p>
         <p className="text-gray-300 text-sm mt-1.5 font-mono">
           Stable frames:{' '}
