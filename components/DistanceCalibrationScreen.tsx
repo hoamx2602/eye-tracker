@@ -35,10 +35,20 @@ import {
  *
  * Blind-spot procedure follows Li, Joo, Yeatman & Reinecke (2020), Scientific
  * Reports (https://www.nature.com/articles/s41598-019-57204-1): right eye
- * covered, fixation square at screen centre, 30 px red dot sweeping right to
- * left and repeating, five measurements, distance = separation / tan(13.5°).
- * The one deliberate departure is combining trials by median rather than mean —
- * a single late keypress otherwise drags every later reading with it.
+ * covered, 30 px red dot sweeping right to left across a 30 px fixation square
+ * and repeating, five measurements, distance = separation / tan(13.5°).
+ *
+ * Two deliberate departures, both because the paper's setup is not guaranteed
+ * here:
+ *
+ *   Trials are combined by median rather than mean. One late keypress would
+ *   otherwise bias every distance the session reports afterwards.
+ *
+ *   The square is centred only when centring leaves enough travel. The dot must
+ *   get d·tan(13.5°) to its left — 534 px at 40 cm, 800 px at 60 cm — and on a
+ *   narrow window half the width is not enough, in which case the square slides
+ *   right. The geometry only uses the separation at the moment the dot vanishes,
+ *   so where the square sits does not enter the result.
  */
 
 type Step = 'card' | 'blindspot' | 'position';
@@ -133,7 +143,11 @@ export default function DistanceCalibrationScreen({
       )}
 
       {step === 'blindspot' && pxPerCm != null && (
-        <BlindSpotStep onDone={finishBlindSpot} />
+        <BlindSpotStep
+          onDone={finishBlindSpot}
+          pxPerCm={pxPerCm}
+          targetDistanceCm={targetDistanceCm}
+        />
       )}
 
       {step === 'position' && calibration && (
@@ -213,30 +227,67 @@ function CardStep({
 
 // ─── Step 2: blind spot ──────────────────────────────────────────────────────
 
-function BlindSpotStep({ onDone }: { onDone: (offsetsPx: number[]) => void }) {
+function BlindSpotStep({
+  onDone,
+  pxPerCm,
+  targetDistanceCm,
+}: {
+  onDone: (offsetsPx: number[]) => void;
+  pxPerCm: number;
+  targetDistanceCm: number;
+}) {
   const [running, setRunning] = useState(false);
   const [trial, setTrial] = useState(0);
   const [dotX, setDotX] = useState(0);
+  const [squareX, setSquareX] = useState(0);
+  const [reach, setReach] = useState<{ needPx: number; havePx: number } | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const offsetsRef = useRef<number[]>([]);
   const stateRef = useRef({ x: 0, squareX: 0, lastT: 0, active: false });
 
-  // Reset the sweep to the right edge. The dot then crosses the fixation square
-  // and continues left until it enters the blind spot, which sits temporally —
-  // to the participant's left, with the right eye covered.
+  /**
+   * Where the fixation square has to sit for the blind spot to be reachable.
+   *
+   * The dot has to travel `d · tan(13.5°)` to the left of the square before it
+   * enters the blind spot — 534 px at 40 cm on a typical panel, 800 px at 60 cm.
+   * The strip was previously capped at 1024 px with the square centred, leaving
+   * 512 px of travel: the dot ran off the end and restarted before it could
+   * vanish, which is not something the participant can tell apart from "my blind
+   * spot is not there".
+   *
+   * The paper puts the square at screen centre, which works because the geometry
+   * only cares about the *separation* at the moment it disappears, not where the
+   * square is. So centre it when that leaves enough room, and slide it right
+   * when it does not.
+   */
+  const layoutFor = useCallback(
+    (stripWidth: number) => {
+      const needPx = targetDistanceCm * Math.tan((BLIND_SPOT_ECCENTRICITY_DEG * Math.PI) / 180) * pxPerCm;
+      // Headroom: the participant may be further back than the target, and
+      // individual blind spots sit out to about 15°.
+      const wanted = needPx * 1.35;
+      const x = Math.min(stripWidth - DOT_PX * 2, Math.max(stripWidth / 2, wanted));
+      return { squareX: x, needPx, havePx: x };
+    },
+    [pxPerCm, targetDistanceCm],
+  );
+
   const restartSweep = useCallback(() => {
     const strip = stripRef.current;
     if (!strip) return false;
     const w = strip.clientWidth;
+    const { squareX: sx, needPx, havePx } = layoutFor(w);
+    setSquareX(sx);
+    setReach({ needPx, havePx });
     stateRef.current = {
       x: w - DOT_PX,
-      squareX: w / 2,
+      squareX: sx,
       lastT: performance.now(),
       active: true,
     };
     setDotX(w - DOT_PX);
     return true;
-  }, []);
+  }, [layoutFor]);
 
   // Start only once the strip is in the DOM. Calling restartSweep straight from
   // the button handler read a ref that did not exist yet, left the sweep
@@ -290,11 +341,19 @@ function BlindSpotStep({ onDone }: { onDone: (offsetsPx: number[]) => void }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [running, record]);
 
+  // How far out the dot currently is, in degrees of visual angle — the quantity
+  // that has to reach ~13.5° for the blind spot to be found at all.
+  const eccentricityDeg =
+    (Math.atan(Math.abs(squareX - dotX) / pxPerCm / Math.max(targetDistanceCm, 1)) * 180) / Math.PI;
+
   return (
     <>
+      {/* Full-bleed: the dot needs every pixel of travel it can get, and capping
+          this at a centred 1024 px was what stopped the blind spot being
+          reachable at all. Escapes the parent's padding on purpose. */}
       <div
         ref={stripRef}
-        className="relative w-full max-w-5xl h-56 rounded-2xl border-2 border-gray-700 bg-black shadow-2xl overflow-hidden"
+        className="relative w-screen h-56 border-y-2 border-gray-800 bg-black overflow-hidden"
       >
         {running && (
           <>
@@ -303,7 +362,7 @@ function BlindSpotStep({ onDone }: { onDone: (offsetsPx: number[]) => void }) {
               style={{
                 width: SQUARE_PX,
                 height: SQUARE_PX,
-                left: '50%',
+                left: squareX,
                 top: '50%',
                 transform: 'translate(-50%, -50%)',
               }}
@@ -344,9 +403,19 @@ function BlindSpotStep({ onDone }: { onDone: (offsetsPx: number[]) => void }) {
             <p className="text-xl font-bold text-white">
               Press <kbd className="px-2 py-0.5 rounded bg-gray-800 border border-gray-600 font-mono text-base">Space</kbd> when it vanishes
             </p>
+            {/* Current separation in degrees. If this never climbs past ~13°
+                the dot cannot reach the blind spot on this display, which is
+                otherwise indistinguishable from "it just never vanishes". */}
             <p className="text-cyan-300 text-sm mt-2 font-mono tabular-nums">
-              {trial} / {TRIALS} measurements
+              {trial} / {TRIALS} measurements · {eccentricityDeg.toFixed(1)}°
             </p>
+            {reach && reach.havePx < reach.needPx && (
+              <p className="text-amber-400 text-xs mt-2">
+                This display is too narrow to reach the blind spot at {targetDistanceCm} cm —
+                the dot can only get {(reach.havePx / reach.needPx * BLIND_SPOT_ECCENTRICITY_DEG).toFixed(1)}° out.
+                Use a wider window, or lower the target distance.
+              </p>
+            )}
           </>
         )}
       </div>
