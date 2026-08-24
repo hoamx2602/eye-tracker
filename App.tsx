@@ -354,8 +354,7 @@ function App() {
    * a calibration.
    */
   const positionAnchorRef = useRef<PositionAnchor | null>(null);
-  /** Physical face width (cm) from the card-at-face step, when it has run. */
-  const faceWidthCmRef = useRef<number | null>(null);
+
   /** Live raw face width (fraction of frame), fed to the distance calibration UI. */
   const lastFaceWidthRef = useRef<number | null>(null);
   const [liveFaceWidth, setLiveFaceWidth] = useState<number | null>(null);
@@ -1156,8 +1155,6 @@ function App() {
                             if (sig) {
                               const cal = distanceCalRef.current;
                               positionAnchorRef.current = captureAnchor(sig, {
-                                ...(faceWidthCmRef.current != null
-                                  ? { faceWidthCm: faceWidthCmRef.current } : {}),
                                 distanceCm: cal
                                   ? distanceFromFace(cal, sig.faceScale)
                                   : configRef.current.faceDistance,
@@ -2794,25 +2791,13 @@ function App() {
     }
   };
 
-  const handleDistanceCalibrated = useCallback((cal: DistanceCalibration | null) => {
-    // Null means the participant chose to anchor on the configured target
-    // instead of measuring. Position tracking still works — drift is measured
-    // against the anchor — only the absolute units fall back to an assumption.
-    if (cal) {
-      distanceCalRef.current = cal;
-      saveCalibration(cal);
-      console.log(
-        `[distance] measured ${cal.distanceCm.toFixed(1)} cm ±${(cal.spreadCm ?? 0).toFixed(1)} ` +
-        `(K=${cal.k.toFixed(4)}, ${cal.pxPerCm.toFixed(1)} px/cm)`
-      );
-    } else {
-      console.log('[distance] absolute distance assumed from config target');
-    }
-    setStatus('HEAD_POSITIONING');
-  }, []);
-
-  const handleDistanceSkipped = useCallback(() => {
-    console.warn('[distance] skipped — angular units fall back to the configured target distance');
+  const handleDistanceCalibrated = useCallback((cal: DistanceCalibration) => {
+    distanceCalRef.current = cal;
+    saveCalibration(cal);
+    console.log(
+      `[distance] measured ${cal.distanceCm.toFixed(1)} cm ±${(cal.spreadCm ?? 0).toFixed(1)} ` +
+      `(K=${cal.k.toFixed(4)}, ${cal.pxPerCm.toFixed(1)} px/cm)`
+    );
     setStatus('HEAD_POSITIONING');
   }, []);
 
@@ -3149,10 +3134,7 @@ function App() {
           targetDistanceCm: config.faceDistance,
           faceWidthNorm: liveFaceWidth,
           yawRad: rawFeatures?.headPose.yaw ?? 0,
-          videoRef,
-          onFaceWidthCm: (cm: number) => { faceWidthCmRef.current = cm; },
           onComplete: handleDistanceCalibrated,
-          onSkip: handleDistanceSkipped,
         }}
         headPosCanvasRef={headPosCanvasRef}
         headValidation={headValidation}
