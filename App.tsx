@@ -64,6 +64,7 @@ import { lockCameraAutoAdjustments, describeCameraLock, type CameraLockResult } 
 import { FixationGate, type GateSample, type DotConvergence } from '@/lib/fixationGate';
 import DistanceCalibrationScreen from '@/components/DistanceCalibrationScreen';
 import { faceScale as toFaceScale, distanceFromFace, loadCalibration, saveCalibration, type DistanceCalibration } from '@/lib/viewingDistance';
+import { cameraKey as buildCameraKey } from '@/lib/cameraFocal';
 import { captureAnchor, type PositionAnchor } from '@/lib/positionAnchor';
 import { loadScreenScale } from '@/lib/screenScale';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
@@ -75,7 +76,6 @@ import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracti
  * whole session; 1.5 s is past the settling time of every webcam tested and
  * still comfortably before calibration begins.
  */
-const CAMERA_LOCK_SETTLE_MS = 1500;
 
 /**
  * Does the current state need the camera running?
@@ -159,6 +159,9 @@ function App() {
   const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
   /** Orchestrator (ticket 12): pre → tests → post → done. */
   const [neuroPhase, setNeuroPhase] = useState<'pre' | 'tests' | 'post' | 'done'>('pre');
+  /** Same value, readable from the detection loop, which runs outside React. */
+  const neuroPhaseRef = useRef<'pre' | 'tests' | 'post' | 'done'>('pre');
+  useEffect(() => { neuroPhaseRef.current = neuroPhase; }, [neuroPhase]);
   const [neuroRunId, setNeuroRunId] = useState<string | null>(null);
   const [neuroRunStatus, setNeuroRunStatus] = useState<'idle' | 'creating' | 'ready' | 'error'>('idle');
   const [neuroTestOrder, setNeuroTestOrder] = useState<string[]>([]);
@@ -205,7 +208,14 @@ function App() {
   const [stableFrameCount, setStableFrameCount] = useState(0);
   const headPosStartTimeRef = useRef<number | null>(null);
   const lastHeadDebugLogRef = useRef<number>(0);
-  const calibrationResumeRef = useRef(false); // true when we returned to HEAD_POSITIONING from CALIBRATION (resume same step)
+  /**
+   * Where to go back to once the participant has returned to the setup pose.
+   *
+   * Null means head positioning was reached the normal way, at the start of the
+   * session, and calibration should begin. Non-null means the run was stopped
+   * because the pose was left, and that is the state to resume.
+   */
+  const resumeStatusRef = useRef<AppState | null>(null);
   const headInvalidSinceRef = useRef<number | null>(null); // debounce: head invalid start time
   
   const hybridRegressorRef = useRef<HybridRegressor>(new HybridRegressor());
@@ -354,6 +364,13 @@ function App() {
    * a calibration.
    */
   const positionAnchorRef = useRef<PositionAnchor | null>(null);
+  /**
+   * Physical face width in cm, from the card-at-cheek step. Feeds the anchor so
+   * drift is reported in real centimetres rather than against a nominal 15 cm.
+   */
+  const faceWidthCmRef = useRef<number | null>(null);
+  /** Which camera and framing is running — selects the cached focal length. */
+  const [cameraKey, setCameraKey] = useState<string>(() => buildCameraKey(undefined));
 
   /** Live raw face width (fraction of frame), fed to the distance calibration UI. */
   const lastFaceWidthRef = useRef<number | null>(null);
@@ -368,7 +385,6 @@ function App() {
   const timerRef = useRef<(number | ReturnType<typeof setTimeout>)[]>([]);
   const trackingHistoryRef = useRef<GazeRecord[]>([]);
   const zoomLockIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const cameraLockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Outcome of the exposure/focus/WB lock — recorded on the session for QA. */
   const cameraLockRef = useRef<CameraLockResult | null>(null);
 
@@ -499,7 +515,15 @@ function App() {
             // still go through the measurement step — jumping to head
             // positioning here was silently skipping it for the whole flow,
             // which left every session on the uncalibrated fallback band.
-            setStatus(loadCalibration() ? 'HEAD_POSITIONING' : 'DISTANCE_CALIBRATION');
+            const restored = loadCalibration();
+            if (restored) {
+              distanceCalRef.current = restored;
+              // Recover the measured face width too. Losing it across a reload
+              // left the anchor reporting drift against a nominal 15 cm face
+              // while looking exactly as authoritative as a measured one.
+              faceWidthCmRef.current = restored.faceWidthCm ?? null;
+            }
+            setStatus(restored ? 'HEAD_POSITIONING' : 'DISTANCE_CALIBRATION');
           } else if (parsed.screen === 'choice') {
             setStatus('IDLE');
           } else if (parsed.screen === 'neuro_pre' || parsed.screen === 'neuro_post' || parsed.screen === 'neuro_done' || parsed.screen === 'neuro_test') {
@@ -700,9 +724,6 @@ function App() {
       if (zoomLockIntervalRef.current) {
         clearInterval(zoomLockIntervalRef.current);
       }
-      if (cameraLockTimeoutRef.current) {
-        clearTimeout(cameraLockTimeoutRef.current);
-      }
     };
   }, []);
 
@@ -749,6 +770,11 @@ function App() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
+        // Which optics are in play. A focal length cached against a different
+        // device or a different sensor crop must not be reused — it would look
+        // valid and be wrong by an unknown factor on every session.
+        const st = videoTrack.getSettings();
+        setCameraKey(buildCameraKey(st.deviceId, st.width, st.height));
         const caps = videoTrack.getCapabilities() as { zoom?: { min?: number; max?: number } };
         const minZoom = typeof caps?.zoom?.min === 'number' ? caps.zoom.min : null;
         if (minZoom !== null) {
@@ -783,21 +809,15 @@ function App() {
         if (videoRef.current) videoRef.current.onloadedmetadata = resolve;
       });
       videoRef.current.play();
-      // Freeze exposure/focus/white balance once auto-exposure has settled.
-      // Auto-exposure reacts to the calibration dot's own brightness, so leaving
-      // it running injects a bias correlated with target position — see
-      // lib/cameraLock.ts. Deliberately not awaited: tracking starts immediately
-      // and the lock lands a moment later, well before calibration.
-      if (videoTrack) {
-        cameraLockTimeoutRef.current = setTimeout(() => {
-          lockCameraAutoAdjustments(videoTrack)
-            .then((r) => {
-              cameraLockRef.current = r;
-              console.log('[Camera]', describeCameraLock(r));
-            })
-            .catch((e) => console.warn('[Camera] lock failed:', e));
-        }, CAMERA_LOCK_SETTLE_MS);
-      }
+      // The exposure/focus/white-balance lock does NOT happen here. It used to,
+      // 1.5 s after the stream opened — which is before the participant has been
+      // anywhere near the target distance. Focus was pinned at whatever plane
+      // they happened to be sitting at during setup and exposure at whatever the
+      // setup screens were showing, and then they moved closer. Many built-in
+      // webcams have a near limit around 30–40 cm, so the image went soft at
+      // exactly the distance that was supposed to be the sharpest.
+      //
+      // It now fires from the anchor capture instead: see lockCameraForSession.
       processVideo();
     } catch (err) {
       console.error('[Camera] getUserMedia failed:', err);
@@ -817,15 +837,14 @@ function App() {
       cancelAnimationFrame(requestRef.current);
       requestRef.current = 0;
     }
-    // Stop the zoom-lock interval and any pending exposure/focus/WB lock.
+    // Stop the zoom-lock interval.
     if (zoomLockIntervalRef.current) {
       clearInterval(zoomLockIntervalRef.current);
       zoomLockIntervalRef.current = null;
     }
-    if (cameraLockTimeoutRef.current) {
-      clearTimeout(cameraLockTimeoutRef.current);
-      cameraLockTimeoutRef.current = null;
-    }
+    // A new stream is a new set of auto-adjustments, so the next time the
+    // participant settles into position it must be locked again.
+    cameraLockRef.current = null;
     // Stop all media tracks so the OS camera indicator turns off.
     if (videoRef.current?.srcObject) {
       (videoRef.current.srcObject as MediaStream).getTracks().forEach((t) => t.stop());
@@ -1004,6 +1023,102 @@ function App() {
       }
   };
 
+  /**
+   * Leaving the setup pose stops the run.
+   *
+   * Once the anchor exists, `validation` is no longer "is the face nicely
+   * framed" — it is "is the participant still where the gaze mapping was
+   * fitted". Every centimetre of drift from that pose is roughly a centimetre of
+   * screen error, so collecting data past it produces numbers that look fine and
+   * are wrong. The participant goes back to head positioning until they return
+   * to the *original* pose: the anchor is never re-captured, so there is no way
+   * to quietly redefine "correct" as wherever they happened to drift to.
+   *
+   * Gated on the phases where a mapping is being fitted or used:
+   *
+   *   CALIBRATION   fitting it
+   *   TRACKING      using it
+   *   NEURO_FLOW    using it, but only during 'tests' — the pre/post
+   *                 questionnaires are reading and typing, not tracking, and
+   *                 ejecting someone mid-form would throw away answers for no
+   *                 gain.
+   *
+   * Also held off while an assessment modal is up, for the same reason.
+   *
+   * Called from both detection branches on purpose. A lost face is the other
+   * half of the condition this exists for — a participant who has left the frame
+   * entirely is at least as far out of position as one who merely leaned — and
+   * calling it only where landmarks exist meant walking away never stopped
+   * anything.
+   *
+   * 500 ms of debounce so a blink, a hand across the face, or a single dropped
+   * detection does not abort a run.
+   */
+  const enforceSetupPose = useCallback((now: number, validation: HeadValidationResult) => {
+    const poseGated =
+      statusRef.current === 'CALIBRATION' ||
+      statusRef.current === 'TRACKING' ||
+      (statusRef.current === 'NEURO_FLOW' && neuroPhaseRef.current === 'tests');
+
+    if (!poseGated || assessmentPendingRef.current || validation.valid) {
+      headInvalidSinceRef.current = null;
+      return;
+    }
+    if (headInvalidSinceRef.current === null) {
+      headInvalidSinceRef.current = now;
+      return;
+    }
+    if (now - headInvalidSinceRef.current <= 500) return;
+
+    headInvalidSinceRef.current = null;
+    resumeStatusRef.current = statusRef.current;
+    console.log(
+      `[anchor] left the setup pose during ${statusRef.current}: ${validation.message}`,
+      validation.debug,
+    );
+    setStatus('HEAD_POSITIONING');
+    // Set the ref too, not just the state: the next animation frame can run
+    // before React has committed, and it would otherwise still believe the test
+    // is live and fire this a second time.
+    statusRef.current = 'HEAD_POSITIONING';
+  }, []);
+
+  /**
+   * Freeze exposure, focus and white balance — once, and at the right moment.
+   *
+   * The right moment is when the participant is in the pose the session will run
+   * in: at the target distance, under the lighting the test will use. Locking
+   * earlier pins focus at whatever plane they were sitting at while reading the
+   * setup instructions, and they then move closer — which on a webcam with a
+   * near limit around 30–40 cm means the image is softest exactly where the
+   * design intended it to be sharpest.
+   *
+   * Locking at all is still worth it for the reason lib/cameraLock.ts gives:
+   * auto-exposure reacts to the calibration dot's own brightness, so leaving it
+   * running injects a bias *correlated with target position*, which the
+   * calibration fit then absorbs as though it were gaze.
+   *
+   * Not awaited — the caller is about to start calibration and the constraints
+   * land within a frame or two. Idempotent, because head positioning is
+   * re-entered every time the participant leaves the pose.
+   */
+  const lockCameraForSession = useCallback(() => {
+    if (cameraLockRef.current) return;
+    const track = (videoRef.current?.srcObject as MediaStream | undefined)?.getVideoTracks?.()[0];
+    if (!track) return;
+    // Placeholder so a second call cannot race the first before it resolves.
+    cameraLockRef.current = { locked: [], unsupported: [], failed: [], settings: {} };
+    lockCameraAutoAdjustments(track)
+      .then((r) => {
+        cameraLockRef.current = r;
+        console.log('[Camera] locked in position —', describeCameraLock(r));
+      })
+      .catch((e) => {
+        cameraLockRef.current = null;
+        console.warn('[Camera] lock failed:', e);
+      });
+  }, []);
+
   const processVideo = useCallback(() => {
     if (!videoRef.current) return;
     
@@ -1094,7 +1209,7 @@ function App() {
                 landmarks,
                 configRef.current.faceDistance,
                 configRef.current.faceWidthScale ?? 1,
-                configRef.current.headDistanceTolerance ?? 2,
+                configRef.current.headDistanceTolerance ?? 1,
                 distanceCalRef.current,
                 positionAnchorRef.current,
               );
@@ -1138,6 +1253,19 @@ function App() {
                       setStableFrameCount(c => c + 1);
                       if (!headPosStartTimeRef.current) {
                           headPosStartTimeRef.current = now;
+                          // Lock the camera at the START of the hold, not the end.
+                          //
+                          // This is the first frame the participant is verified to
+                          // be at the target distance, so the lock still captures
+                          // the right focus plane and the right lighting — but it
+                          // now has the full two-second countdown to settle in.
+                          // Firing it at anchor capture instead put the
+                          // applyConstraints mode switch in the same tick as
+                          // startActualCalibration(), so the exposure step landed
+                          // on the first calibration dot. With nine training
+                          // samples, one contaminated dot is eleven percent of the
+                          // model.
+                          lockCameraForSession();
                       }
                       const elapsed = now - headPosStartTimeRef.current;
                       const remaining = Math.max(0, 2000 - elapsed);
@@ -1159,13 +1287,21 @@ function App() {
                                   ? distanceFromFace(cal, sig.faceScale)
                                   : configRef.current.faceDistance,
                                 distanceSource: cal ? cal.method : 'assumed',
+                                // Present whenever the card step ran. It is what
+                                // turns every later drift reading from a ratio
+                                // into exact centimetres.
+                                ...(faceWidthCmRef.current != null
+                                  ? { faceWidthCm: faceWidthCmRef.current }
+                                  : {}),
                               });
                               console.log('[anchor] locked', positionAnchorRef.current);
                             }
                           }
-                          if (calibrationResumeRef.current) {
-                              calibrationResumeRef.current = false;
-                              setStatus('CALIBRATION');
+                          const resume = resumeStatusRef.current;
+                          if (resume) {
+                              resumeStatusRef.current = null;
+                              setStatus(resume);
+                              statusRef.current = resume;
                           } else {
                               startActualCalibration();
                           }
@@ -1177,23 +1313,7 @@ function App() {
                   }
               }
 
-              // During CALIBRATION: if head invalid (wrong distance / off-center), return to Head Positioning after short debounce
-              // Do NOT return to HEAD_POSITIONING if we are showing an assessment modal or saving samples,
-              // to avoid interrupting the user.
-              if (
-                statusRef.current === 'CALIBRATION' &&
-                !validation.valid &&
-                !assessmentPendingRef.current
-              ) {
-                  if (headInvalidSinceRef.current === null) headInvalidSinceRef.current = now;
-                  else if (now - headInvalidSinceRef.current > 500) {
-                      headInvalidSinceRef.current = null;
-                      calibrationResumeRef.current = true;
-                      setStatus('HEAD_POSITIONING');
-                  }
-              } else if (statusRef.current === 'CALIBRATION' && validation.valid) {
-                  headInvalidSinceRef.current = null;
-              }
+              enforceSetupPose(now, validation);
 
               // Draw Face Mesh on debugCanvas (skip during HEAD_POSITIONING or LOADING_MODEL)
               if (statusRef.current !== 'HEAD_POSITIONING' && statusRef.current !== 'LOADING_MODEL') {
@@ -1219,7 +1339,13 @@ function App() {
           } else {
              currentFaceLandmarksRef.current = null;
              isHeadValidRef.current = false;
-             setHeadValidation({ valid: false, message: "No Face Detected" });
+             const lost: HeadValidationResult = { valid: false, message: "No Face Detected" };
+             setHeadValidation(lost);
+             headValidationRef.current = lost;
+             // Walking out of frame is leaving the setup pose in its most
+             // extreme form. Without this the gate only ever saw participants
+             // who stayed visible while drifting.
+             enforceSetupPose(now, lost);
           }
       }
 
@@ -1327,7 +1453,7 @@ function App() {
       }
     }
     requestRef.current = requestAnimationFrame(processVideo);
-  }, []); 
+  }, [enforceSetupPose, lockCameraForSession]); 
 
   // --- HEAD POSITIONING CANVAS: draws video + face mesh + target box in a contained view ---
   useEffect(() => {
@@ -2779,27 +2905,39 @@ function App() {
       console.warn("Fullscreen denied", e);
     }
     await startCamera();
+    // A new run gets a new anchor. Keeping the previous one would hold the
+    // participant to a pose belonging to a mapping that is about to be refitted,
+    // and would reject them for sitting differently this time — which is allowed,
+    // as long as they then stay there.
+    positionAnchorRef.current = null;
+    resumeStatusRef.current = null;
     // Measure the real viewing distance before anything depends on it. Reuse a
     // measurement already taken this session (e.g. the participant went back a
     // step) rather than putting them through the blind-spot task again.
     const existing = distanceCalRef.current ?? loadCalibration();
     if (existing) {
       distanceCalRef.current = existing;
+      faceWidthCmRef.current = existing.faceWidthCm ?? faceWidthCmRef.current;
       setStatus('HEAD_POSITIONING');
     } else {
       setStatus('DISTANCE_CALIBRATION');
     }
   };
 
-  const handleDistanceCalibrated = useCallback((cal: DistanceCalibration) => {
-    distanceCalRef.current = cal;
-    saveCalibration(cal);
-    console.log(
-      `[distance] measured ${cal.distanceCm.toFixed(1)} cm ±${(cal.spreadCm ?? 0).toFixed(1)} ` +
-      `(K=${cal.k.toFixed(4)}, ${cal.pxPerCm.toFixed(1)} px/cm)`
-    );
-    setStatus('HEAD_POSITIONING');
-  }, []);
+  const handleDistanceCalibrated = useCallback(
+    (cal: DistanceCalibration, faceWidthCm: number | null) => {
+      distanceCalRef.current = cal;
+      faceWidthCmRef.current = faceWidthCm;
+      saveCalibration(cal);
+      console.log(
+        `[distance] ${cal.method} ${cal.distanceCm.toFixed(1)} cm ±${(cal.spreadCm ?? 0).toFixed(1)} ` +
+        `(K=${cal.k.toFixed(4)}, ${cal.pxPerCm.toFixed(1)} px/cm` +
+        `${faceWidthCm != null ? `, face ${faceWidthCm.toFixed(1)} cm` : ''})`
+      );
+      setStatus('HEAD_POSITIONING');
+    },
+    [],
+  );
 
   const handleStartCalibrationClick = () => {
     router.push('/consent');
@@ -3135,6 +3273,9 @@ function App() {
           faceWidthNorm: liveFaceWidth,
           yawRad: rawFeatures?.headPose.yaw ?? 0,
           onComplete: handleDistanceCalibrated,
+          distanceTolerance: config.headDistanceTolerance ?? 1,
+          videoRef,
+          cameraKey,
         }}
         headPosCanvasRef={headPosCanvasRef}
         headValidation={headValidation}

@@ -52,6 +52,7 @@ interface RunData {
   postSymptomScores: Record<string, number> | null;
   testResults: Record<string, Record<string, unknown>>;
   faceDistance?: number;
+  pxPerCm?: number;
   chartSmoothing?: { method: string; window: number };
   session: {
     id: string;
@@ -316,7 +317,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
   const { session, testOrderSnapshot, testResults, configSnapshot, preSymptomScores, postSymptomScores } = runData;
   const meanErrorPx = session.meanErrorPx;
   const viewingDistanceCm = runData.faceDistance ?? 60;
-  const angularErr = meanErrorPx != null ? angularErrorDeg(meanErrorPx, viewingDistanceCm) : null;
+  const angularErr = meanErrorPx != null ? angularErrorDeg(meanErrorPx, viewingDistanceCm, runData.pxPerCm) : null;
 
   // Extract scoring config from configSnapshot
   const configSnap = configSnapshot as {

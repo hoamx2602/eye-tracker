@@ -47,7 +47,7 @@ export interface PositionAnchor extends HeadSignature {
   faceWidthCm?: number;
   /** Absolute distance at setup, when it was measured rather than assumed. */
   distanceCm?: number;
-  distanceSource?: 'blind-spot' | 'manual' | 'assumed';
+  distanceSource?: 'blind-spot' | 'manual' | 'assumed' | 'camera-focal';
   capturedAt: string;
 }
 
@@ -234,4 +234,35 @@ export function faceWidthCmFromCard(
 /** Sanity band for a measured face width — bizygomatic width across adults and children. */
 export function isPlausibleFaceWidthCm(cm: number): boolean {
   return Number.isFinite(cm) && cm >= 10 && cm <= 20;
+}
+
+/**
+ * Is this box actually a card, seen square-on?
+ *
+ * An ID-1 card is 85.60 × 53.98 mm, so its long side is 1.586 times its short
+ * one whichever way up it is held. A box whose sides do not agree with that has
+ * either been drawn badly or is around a card tilted out of the frontoparallel
+ * plane — and a tilted card reads narrow, which inflates the face width and
+ * every distance derived from it, silently and in one direction.
+ *
+ * The default tolerance admits about 30° of tilt about the long axis. Tighter
+ * would start rejecting honest attempts; looser stops catching the thing that
+ * matters.
+ */
+export const CARD_LONG_OVER_SHORT = 85.6 / 53.98;
+
+export function isPlausibleCardBox(
+  widthPx: number,
+  heightPx: number,
+  tolerance = 0.25,
+): boolean {
+  const long = Math.max(widthPx, heightPx);
+  const short = Math.min(widthPx, heightPx);
+  if (!(short > 0) || !(long > 0)) return false;
+  return Math.abs(long / short - CARD_LONG_OVER_SHORT) <= tolerance;
+}
+
+/** The card's long side in px, whichever orientation it was held in. */
+export function cardLongSidePx(widthPx: number, heightPx: number): number {
+  return Math.max(widthPx, heightPx);
 }

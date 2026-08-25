@@ -45,6 +45,8 @@ type Props = {
   meanErrorPx?: number | null;
   /** Distance from face to screen in cm — used for angular error conversion. Default 60. */
   faceDistanceCm?: number;
+  /** Measured display scale; without it degrees are computed against the CSS reference. */
+  pxPerCm?: number;
   /** From Test mode: target vs gaze recorded during exercises (config.testTrajectories) */
   testTrajectories?: TestTrajectorySegment[] | null;
 };
@@ -94,7 +96,7 @@ function StatBox({ label, value, unit, color }: { label: string; value: string; 
   );
 }
 
-export default function SessionAnalytics({ samples, validationErrors, meanErrorPx, faceDistanceCm = 60, testTrajectories }: Props) {
+export default function SessionAnalytics({ samples, validationErrors, meanErrorPx, faceDistanceCm = 60, pxPerCm, testTrajectories }: Props) {
   const samplesWithFeatures = useMemo(
     () => samples.filter((s) => Array.isArray(s.features) && s.features.length >= FEATURE_DIMENSION_NAMES.length),
     [samples],
@@ -289,9 +291,9 @@ export default function SessionAnalytics({ samples, validationErrors, meanErrorP
             <StatBox label="Mean error" value={meanErrorPx != null ? meanErrorPx.toFixed(1) : '—'} unit="px" color={meanErrorPx != null && meanErrorPx < 10 ? '#22c55e' : '#eab308'} />
             <StatBox
               label={`Angular error (@${faceDistanceCm}cm)`}
-              value={meanErrorPx != null ? angularErrorDeg(meanErrorPx, faceDistanceCm).toFixed(2) : '—'}
+              value={meanErrorPx != null ? angularErrorDeg(meanErrorPx, faceDistanceCm, pxPerCm).toFixed(2) : '—'}
               unit="°"
-              color={meanErrorPx != null && angularErrorDeg(meanErrorPx, faceDistanceCm) < 1 ? '#22c55e' : '#eab308'}
+              color={meanErrorPx != null && angularErrorDeg(meanErrorPx, faceDistanceCm, pxPerCm) < 1 ? '#22c55e' : '#eab308'}
             />
             <StatBox label="Avg pupil R" value={((stats.leftR.mean + stats.rightR.mean) / 2).toFixed(4)} />
             {stats.faceWidth && <StatBox label="Avg face width" value={stats.faceWidth.mean.toFixed(3)} />}

@@ -11,18 +11,78 @@
 const LENIENT_MODE = typeof process !== 'undefined' && (process.env.NEXT_PUBLIC_LENIENT_SCORING === 'true' || process.env.NEXT_PUBLIC_LENIENT_SCORING === '1');
 
 /**
+ * The CSS reference pixel: 1/96 inch. A fallback, not a measurement.
+ *
+ * The spec defines it as a *reference* density, and real displays are not
+ * obliged to match it. A Retina Mac at default scaling lands nearer 50 px/cm
+ * than 37.8, so assuming the reference over-states every error by about a third.
+ */
+export const CSS_REFERENCE_PX_PER_CM = 96 / 2.54; // ≈ 37.795
+
+/**
  * Convert a calibration mean pixel error to visual angle (degrees).
  *
- * Uses the CSS standard: 1 CSS pixel = 1/96 inch = 2.54/96 cm.
- * Formula: θ = atan(errorCm / viewingDistanceCm) × (180/π)
+ *     θ = atan(errorPx / pxPerCm / viewingDistanceCm)
  *
- * @param meanErrorPx   Mean error from calibration validation (CSS pixels)
- * @param viewingDistanceCm  Distance from eye to screen in centimetres (default 60)
+ * Both denominators have to be real numbers or the answer is not in degrees of
+ * anything. This used to hard-code the CSS reference density while the app was
+ * separately measuring the true one with a bank card, and to default the
+ * distance to 60 cm while the app was separately measuring that too — so the
+ * one figure the whole system exists to report was computed from two constants
+ * it had already replaced with measurements.
+ *
+ * @param meanErrorPx        Mean validation error, CSS pixels
+ * @param viewingDistanceCm  Eye-to-screen distance; measure it, do not assume it
+ * @param pxPerCm            Measured display scale (lib/screenScale.ts)
  */
-export function angularErrorDeg(meanErrorPx: number, viewingDistanceCm = 60): number {
-  const CM_PER_CSS_PX = 2.54 / 96; // ≈ 0.02646 cm
-  const errorCm = meanErrorPx * CM_PER_CSS_PX;
+export function angularErrorDeg(
+  meanErrorPx: number,
+  viewingDistanceCm = 60,
+  pxPerCm = CSS_REFERENCE_PX_PER_CM,
+): number {
+  const scale = pxPerCm > 0 ? pxPerCm : CSS_REFERENCE_PX_PER_CM;
+  const errorCm = meanErrorPx / scale;
   return (Math.atan(errorCm / viewingDistanceCm) * 180) / Math.PI;
+}
+
+export interface SessionGeometry {
+  /** Distance the session was actually recorded at, cm. */
+  distanceCm: number;
+  /** Measured display scale, or the CSS reference when the card step never ran. */
+  pxPerCm: number;
+  /** False when either number is a fallback rather than a measurement. */
+  measured: boolean;
+}
+
+/**
+ * The geometry a session was actually recorded at, from its own config blob.
+ *
+ * Preference order matters. The position anchor carries the distance at the
+ * moment the pose was locked, which is what the whole session then held to; the
+ * distance calibration carries the distance at the moment K was fixed, which may
+ * be a step earlier; the configured target is only what was *asked for*. Falling
+ * back to 60 cm — as two admin pages silently did — reports a session run at
+ * 40 cm as though it were at 60, inflating every degree by half.
+ */
+export function sessionGeometry(config: unknown): SessionGeometry {
+  const c = (config && typeof config === 'object' ? config : {}) as Record<string, unknown>;
+  const pick = (key: string, field: string): number | undefined => {
+    const obj = c[key];
+    if (!obj || typeof obj !== 'object') return undefined;
+    const v = (obj as Record<string, unknown>)[field];
+    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined;
+  };
+
+  const anchorCm = pick('positionAnchor', 'distanceCm');
+  const calCm = pick('distanceCalibration', 'distanceCm');
+  const target = typeof c.faceDistance === 'number' ? c.faceDistance : undefined;
+  const pxPerCm = pick('distanceCalibration', 'pxPerCm');
+
+  return {
+    distanceCm: anchorCm ?? calCm ?? target ?? 60,
+    pxPerCm: pxPerCm ?? CSS_REFERENCE_PX_PER_CM,
+    measured: (anchorCm ?? calCm) != null && pxPerCm != null,
+  };
 }
 
 /** Clamp a value between min and max. */

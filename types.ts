@@ -278,9 +278,23 @@ export const DEFAULT_CONFIG: AppConfig = {
   outlierThreshold: 0.10, // Trim 10% from each end (was 0.25)
   
   // Distance
-  faceDistance: 60, // Standard desktop distance (60cm)
+  // Closer is better on both terms that matter: the iris gets more pixels (noise
+  // scales with 1/d), and a given angular error lands fewer centimetres off on
+  // screen. 40 cm is where that stops paying — nearer, the screen subtends so
+  // much visual angle that the participant turns their head to reach the corners
+  // instead of just their eyes, which is exactly what the position anchor is
+  // there to reject. Admin can still move it; this is only where it starts.
+  faceDistance: 40,
   faceWidthScale: 1, // 1 = built-in cam; use ~0.65–0.8 for external 1080p webcam
-  headDistanceTolerance: 2, // 2 = wider band so auto-zoom cameras (Center Stage etc.) don't block
+  // Multiplier on the science-derived distance band (lib/viewingDistance.ts).
+  // 1 = ±5% of the target, which is 10% on BCEA and the most posture may spend.
+  //
+  // This was 2, sized for auto-zoom cameras back when distance was inferred from
+  // a hand-tuned face-width band. Both halves of that rationale are gone: zoom is
+  // pinned to its minimum and re-applied every two seconds, and distance is now
+  // measured rather than guessed. Widen it only for a rig that genuinely cannot
+  // hold position, and knowing it widens the task, not just the tolerance.
+  headDistanceTolerance: 1,
 
   // Exercises
   enableExercises: true,

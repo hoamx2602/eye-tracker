@@ -243,9 +243,15 @@ export default function AppConfigForm() {
                   <span className="text-slate-400">Distance to screen (cm)</span>
                   <span className="font-mono">{localConfig.faceDistance} cm</span>
                 </div>
+                {/* Floor is 20, not 30. Whether a given machine can serve 20 cm is a
+                    separate question the runtime answers with a measured number —
+                    the head has to fit a 16:9 frame, and a 65° webcam at 20 cm
+                    sees about 14 cm of height against a ~22 cm head. Setting a
+                    target this camera cannot reach fails loudly during head
+                    positioning, naming the distance it can. */}
                 <input
                   type="range"
-                  min="30"
+                  min="20"
                   max="60"
                   step="5"
                   value={localConfig.faceDistance}
@@ -270,18 +276,41 @@ export default function AppConfigForm() {
               </div>
               <div>
                 <div className="flex justify-between text-xs mb-1">
-                  <span className="text-slate-400">Distance tolerance (×)</span>
-                  <span className="font-mono">×{(localConfig.headDistanceTolerance ?? 2).toFixed(1)}</span>
+                  <span className="text-slate-400">Distance tolerance</span>
+                  <span className="font-mono">
+                    ±{(localConfig.faceDistance * 0.05 * (localConfig.headDistanceTolerance ?? 1)).toFixed(1)} cm
+                    <span className="text-slate-500"> (×{(localConfig.headDistanceTolerance ?? 1).toFixed(2)})</span>
+                  </span>
                 </div>
                 <input
                   type="range"
                   min={1}
                   max={3}
                   step={0.25}
-                  value={localConfig.headDistanceTolerance ?? 2}
+                  value={localConfig.headDistanceTolerance ?? 1}
                   onChange={(e) => handleChange('headDistanceTolerance', parseFloat(e.target.value))}
                   className="w-full accent-slate-500 h-1 bg-slate-600 rounded-lg"
                 />
+                {/* The band is not only a measurement tolerance. Stimuli sit at
+                    fixed viewport fractions, so how far the participant sits
+                    decides the amplitude they actually perform — widening this
+                    widens the task, and with it what pre and post can be
+                    compared against. */}
+                {localConfig.faceDistance < 30 && (
+                  <p className="text-[11px] text-amber-400/90 mt-1.5 leading-snug">
+                    Below 30 cm the screen subtends more than the comfortable
+                    range of eye rotation, so participants turn their head to
+                    reach the corners — which the position anchor then rejects.
+                    It also needs a wide-angle camera: at 20 cm the head only
+                    fits a frame of about 78° or more.
+                  </p>
+                )}
+                <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                  ×1 is ±5% of the target — 10% on BCEA, and about 10% on the
+                  saccade amplitude the participant actually performs. Widening it
+                  lets the same test differ between sessions: at ×3 the amplitude
+                  can vary by a third.
+                </p>
               </div>
             </section>
 

@@ -10,6 +10,7 @@ import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import ResultsPageClient from './ResultsPageClient';
 import { DEFAULT_CONFIG, ChartSmoothingMethod } from '@/types';
+import { sessionGeometry } from '@/lib/resultScoring';
 
 // Always render fresh — config (smoothing, faceDistance) must reflect latest admin settings
 export const dynamic = 'force-dynamic';
@@ -80,14 +81,18 @@ export default async function ResultsPage({ params }: Props) {
     (run.session?.calibrationGazeSamples as unknown[] | null) ?? []
   ).slice(0, 500);
 
-  // Extract faceDistance used during calibration: prefer session config, fall back to appCfg
+  // Geometry the session was actually recorded at. Both numbers feed every
+  // angular figure on this page, and both are measured during setup — the
+  // configured target is only what was asked for, and the CSS reference pixel
+  // is not this display.
   const sessionCfg = (run.session?.config && typeof run.session.config === 'object')
     ? run.session.config as Record<string, unknown>
     : {};
-  const faceDistance: number =
-    typeof sessionCfg.faceDistance === 'number'
-      ? sessionCfg.faceDistance
-      : appCfg.faceDistance;
+  const geometry = sessionGeometry(sessionCfg);
+  const faceDistance: number = geometry.measured
+    ? geometry.distanceCm
+    : (typeof sessionCfg.faceDistance === 'number' ? sessionCfg.faceDistance : appCfg.faceDistance);
+  const pxPerCm: number = geometry.pxPerCm;
 
   const runData = {
     id: run.id,
@@ -99,6 +104,7 @@ export default async function ResultsPage({ params }: Props) {
     postSymptomScores: (run.postSymptomScores as Record<string, number> | null) ?? null,
     testResults: strippedResults,
     faceDistance,
+    pxPerCm,
     chartSmoothing: {
       method: appCfg.chartSmoothingMethod ?? ChartSmoothingMethod.MOVING_AVERAGE,
       window: appCfg.chartSmoothingWindow ?? 7,

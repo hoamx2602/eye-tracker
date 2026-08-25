@@ -1,6 +1,16 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark, FaceLandmarkerResult } from "@mediapipe/tasks-vision";
 import { EyeLandmarkIndices, EyeFeatures, HeadPose, AppConfig } from "../types";
-import { checkDistance, faceScale, type DistanceCalibration } from "../lib/viewingDistance";
+import {
+  MAX_TARGET_DISTANCE_CM,
+  MIN_TARGET_DISTANCE_CM,
+  checkDistance,
+  faceFitsInFrame,
+  faceScale,
+  frameFitMargin,
+  nearestFittingDistanceCm,
+  type DistanceCalibration,
+  type FaceBounds,
+} from "../lib/viewingDistance";
 import { checkAnchor, type HeadSignature, type PositionAnchor, type AnchorTolerance } from "../lib/positionAnchor";
 
 /**
@@ -15,11 +25,22 @@ import { checkAnchor, type HeadSignature, type PositionAnchor, type AnchorTolera
 const MIN_FACE_WIDTH_FOR_QUALITY = 0.13;
 
 /**
- * Largest fraction of frame width before the setup stops working for other
- * reasons — landmarks running off the frame edge, and the minimum focus
- * distance of typical fixed-focus webcams.
+ * Last-resort width ceiling.
+ *
+ * This used to be 0.5 and used to be the *real* near limit, standing in for
+ * "landmarks running off the frame edge". That proxy was wrong in both
+ * directions once targets below 30 cm became configurable: it blocked a 65°
+ * webcam at 20 cm where the distance check said the participant was exactly
+ * where they were asked to be, and it would happily pass a 90° camera whose
+ * frame the head genuinely did not fit.
+ *
+ * The edge condition is now checked directly against the landmarks — see
+ * `faceFitsInFrame` — which needs no field-of-view assumption at all. What is
+ * left here is a guard against a reading so large it can only be a detector
+ * failure, and against the minimum focus distance of fixed-focus webcams, which
+ * landmarks cannot see.
  */
-const MAX_FACE_WIDTH_SANITY = 0.5;
+const MAX_FACE_WIDTH_SANITY = 0.8;
 
 // Lightweight inline types for optional MediaPipe outputs (avoids importing extra @mediapipe types)
 interface BlendshapeCategory { categoryName: string; score: number; }
@@ -49,6 +70,8 @@ export interface HeadValidationResult {
     distanceBandCm?: number;
     /** Present only when checked against a position anchor. */
     anchorFault?: string;
+    /** Smallest gap between the face and any frame edge; negative means clipped. */
+    frameFitMargin?: number;
     depthRatio?: number;
     driftFaceWidths?: number;
     depthCm?: number;
@@ -84,6 +107,26 @@ export class EyeTrackingService {
   detect(videoElement: HTMLVideoElement, startTimeMs: number): FaceLandmarkerResult | null {
     if (!this.faceLandmarker) return null;
     return this.faceLandmarker.detectForVideo(videoElement, startTimeMs);
+  }
+
+  /**
+   * Bounding box of every landmark, in normalised frame coordinates.
+   *
+   * MediaPipe extrapolates landmarks past the image edge, so values outside
+   * [0,1] are exactly the signal wanted here: they mean part of the face is not
+   * actually being seen.
+   */
+  faceBounds(landmarks: NormalizedLandmark[]): FaceBounds | null {
+    if (!landmarks || !landmarks.length) return null;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < landmarks.length; i++) {
+      const lm = landmarks[i];
+      if (lm.x < minX) minX = lm.x;
+      if (lm.x > maxX) maxX = lm.x;
+      if (lm.y < minY) minY = lm.y;
+      if (lm.y > maxY) maxY = lm.y;
+    }
+    return { minX, maxX, minY, maxY };
   }
 
   /**
@@ -179,7 +222,7 @@ export class EyeTrackingService {
     const rawFaceWidth = Math.sqrt(Math.pow(rightEdge.x - leftEdge.x, 2) + Math.pow(rightEdge.y - leftEdge.y, 2));
     const scale = Math.max(0.5, Math.min(1.5, faceWidthScale ?? 1));
     const faceWidth = Math.max(0.01, Math.min(1, rawFaceWidth * scale));
-    const D = Math.max(30, Math.min(90, faceDistanceCm));
+    const D = Math.max(MIN_TARGET_DISTANCE_CM, Math.min(MAX_TARGET_DISTANCE_CM, faceDistanceCm));
     const tol = Math.max(1, Math.min(3, headDistanceTolerance ?? 1));
 
     // Yaw foreshortens the measured width by cos(yaw); without removing it, a
@@ -245,6 +288,34 @@ export class EyeTrackingService {
     // be fixed by anything downstream.
     if (faceWidth < minFaceWidth) return { valid: false, message: "Move Closer", debug };
     if (faceWidth > maxFaceWidth) return { valid: false, message: "Move Back", debug };
+
+    // Does the face actually fit in the frame?
+    //
+    // Checked against the landmarks rather than inferred from a width fraction,
+    // because the binding constraint is the *shorter* frame axis and a width
+    // proxy cannot see it. A 16:9 frame at 20 cm on a 65° webcam is about 14 cm
+    // tall against a ~22 cm head: the crown and chin leave the image, and with
+    // them HEAD_TOP and CHIN_BOTTOM, which is where pitch comes from.
+    //
+    // The message carries the distance this camera can actually reach, so a
+    // target it cannot serve fails with a number instead of repeating "Move
+    // Back" at someone who is already exactly where they were told to be.
+    const bounds = this.faceBounds(landmarks);
+    if (bounds && !faceFitsInFrame(bounds)) {
+      const spanY = bounds.maxY - bounds.minY;
+      const nearest =
+        distCheck && Number.isFinite(distCheck.distanceCm)
+          ? nearestFittingDistanceCm(spanY, distCheck.distanceCm)
+          : NaN;
+      const advice = Number.isFinite(nearest)
+        ? ` — this camera needs ${Math.ceil(nearest)}cm or more`
+        : '';
+      return {
+        valid: false,
+        message: `Move Back${advice}`,
+        debug: { ...debug, frameFitMargin: frameFitMargin(bounds) },
+      };
+    }
 
     // 3. Tilt Check (Head Rotation)
     const tilt = Math.abs(leftEdge.y - rightEdge.y);

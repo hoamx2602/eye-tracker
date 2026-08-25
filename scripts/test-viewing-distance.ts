@@ -16,7 +16,14 @@ import {
 } from '../lib/screenScale';
 import {
   BLIND_SPOT_ECCENTRICITY_DEG,
+  FRAME_EDGE_MARGIN,
+  MIN_TARGET_DISTANCE_CM,
+  faceFitsInFrame,
+  frameFitMargin,
+  nearestFittingDistanceCm,
   aggregateBlindSpotTrials,
+  assessBlindSpot,
+  blindSpotSpreadLimitCm,
   calibrate,
   checkDistance,
   distanceBandCm,
@@ -184,11 +191,28 @@ console.log('\ndistance gate\n');
   })!;
   const scaleAt = (d: number) => K_TRUE / d;
 
-  // Band is relative with a floor — tighter up close, where a centimetre costs
-  // more angular error.
-  check('band is 3 cm at the 30 cm target', close(distanceBandCm(30), 3, 1e-9));
-  check('band is 6 cm at the 60 cm target', close(distanceBandCm(60), 6, 1e-9));
-  check('tolerance widens the band', close(distanceBandCm(60, 2), 12, 1e-9));
+  // Band is fractional — tighter up close, where a centimetre costs more angular
+  // error — and sized by what the reported science can absorb, not by how badly
+  // the sensor used to mismeasure.
+  check('band is 5% at the 30 cm target', close(distanceBandCm(30), 1.5, 1e-9));
+  check('band is 5% at the 60 cm target', close(distanceBandCm(60), 3, 1e-9));
+  check('tolerance widens the band', close(distanceBandCm(60, 2), 6, 1e-9));
+  check('tolerance is clamped', close(distanceBandCm(60, 99), distanceBandCm(60, 3), 1e-9));
+  check('the noise floor only binds at absurdly near targets',
+    close(distanceBandCm(5), 0.5, 1e-9));
+
+  // The band exists to bound how much the *task* may change between sessions,
+  // not only the error on a number. Saccadic targets sit at fixed viewport
+  // fractions, so amplitude in degrees is set by where the participant sits.
+  const amplitudeDeg = (distCm: number, sepCm = 0.5 * 34.5) =>
+    2 * (Math.atan(sepCm / 2 / distCm) * 180) / Math.PI;
+  const spreadOver = (bandCm: number) =>
+    amplitudeDeg(40 - bandCm) / amplitudeDeg(40 + bandCm) - 1;
+  // The band this replaced: max(3, 40·0.1) · 2 = ±8 cm.
+  check('the old ±8 cm band let the same test vary by ~48%',
+    Math.abs(spreadOver(8) - 0.48) < 0.03, `${(spreadOver(8) * 100).toFixed(0)}%`);
+  check('the new band holds it under 12%', spreadOver(distanceBandCm(40)) < 0.12,
+    `±${distanceBandCm(40).toFixed(1)} cm → ${(spreadOver(distanceBandCm(40)) * 100).toFixed(0)}%`);
 
   for (const target of SUPPORTED_TARGET_DISTANCES_CM) {
     const onTarget = checkDistance(cal, scaleAt(target), target);
@@ -205,6 +229,135 @@ console.log('\ndistance gate\n');
   // rather than receive a confident wrong answer.
   check('reports unknown when uncalibrated',
     checkDistance(null, 0.2, 40).verdict === 'unknown');
+}
+
+console.log('\nframing limit — what actually stops you getting close\n');
+
+{
+  // The near limit is not optics, it is framing: the head has to fit a 16:9
+  // frame, and the vertical axis binds first.
+  check('the config floor is 20 cm', MIN_TARGET_DISTANCE_CM === 20);
+
+  const box = (minX: number, maxX: number, minY: number, maxY: number) =>
+    ({ minX, maxX, minY, maxY });
+
+  check('a comfortably framed face fits', faceFitsInFrame(box(0.35, 0.65, 0.15, 0.85)));
+  check('a face touching the top edge does not',
+    !faceFitsInFrame(box(0.35, 0.65, 0.005, 0.85)));
+  check('nor one MediaPipe extrapolated past the edge',
+    !faceFitsInFrame(box(0.35, 0.65, -0.08, 0.92)),
+    'landmarks outside [0,1] are exactly the signal wanted');
+  check('the margin is the tightest edge, whichever it is',
+    close(frameFitMargin(box(0.30, 0.70, 0.04, 0.85)), 0.04, 1e-9));
+  check('a clipped face reports a negative margin',
+    frameFitMargin(box(0.35, 0.65, -0.05, 0.85)) < 0);
+
+  // A width-fraction proxy cannot see the vertical axis, which is the one that
+  // binds. This is why the old 0.5 ceiling was wrong in both directions.
+  const wideButTall = box(0.40, 0.60, -0.02, 1.02);
+  check('a narrow face can still be clipped vertically', !faceFitsInFrame(wideButTall),
+    'width fraction 0.20 — a width ceiling would have passed this');
+
+  // Extrapolating the nearest workable distance from what is observed.
+  // A head spanning 70% of the frame at 40 cm hits the edge at ~29 cm.
+  const nearest = nearestFittingDistanceCm(0.70, 40);
+  check('predicts the nearest fitting distance', close(nearest, 40 * 0.7 / (1 - 2 * FRAME_EDGE_MARGIN), 1e-9),
+    `${nearest.toFixed(1)} cm`);
+  check('a smaller head can get closer', nearestFittingDistanceCm(0.5, 40) < nearest);
+  check('the prediction scales with where it was observed',
+    close(nearestFittingDistanceCm(0.35, 80), nearest, 1e-9),
+    'same head, measured twice as far, same answer');
+  check('says it does not know without an observation',
+    Number.isNaN(nearestFittingDistanceCm(0, 40)) && Number.isNaN(nearestFittingDistanceCm(0.7, 0)));
+
+  // The case the user asked for, and the honest answer to it.
+  const headAt40 = 0.77; // ~22 cm head in a 28.7 cm-tall frame: 65 deg cam at 40 cm
+  check('a 65° webcam cannot reach 20 cm', nearestFittingDistanceCm(headAt40, 40) > 20,
+    `needs ${nearestFittingDistanceCm(headAt40, 40).toFixed(0)} cm`);
+  const wideAt40 = 0.60; // 78 deg cam
+  check('a wide-angle camera gets closer', nearestFittingDistanceCm(wideAt40, 40) < nearestFittingDistanceCm(headAt40, 40),
+    `needs ${nearestFittingDistanceCm(wideAt40, 40).toFixed(0)} cm`);
+}
+
+console.log('\nblind-spot quality gate\n');
+
+{
+  // A run is only worth anchoring K to if enough trials survived and they agree.
+  const offsetsAt = (d: number, n: number) =>
+    Array.from({ length: n }, () => d * Math.tan((BLIND_SPOT_ECCENTRICITY_DEG * Math.PI) / 180) * PX_PER_CM);
+
+  const good = aggregateBlindSpotTrials(offsetsAt(40, 5), PX_PER_CM);
+  check('accepts five agreeing trials', assessBlindSpot(good).ok,
+    `${good.distanceCm.toFixed(1)} cm ±${good.spreadCm.toFixed(1)}`);
+
+  // The failure this exists for: four trials rejected as implausible leaves one
+  // survivor, whose median absolute deviation is exactly zero. Reported spread
+  // then looks perfect precisely because almost nothing was measured.
+  const oneSurvivor = aggregateBlindSpotTrials(
+    [...offsetsAt(40, 1), ...offsetsAt(400, 4)], PX_PER_CM,
+  );
+  check('the lone-survivor run reports a flattering spread',
+    oneSurvivor.n === 1 && oneSurvivor.spreadCm === 0,
+    `n=${oneSurvivor.n}, spread ${oneSurvivor.spreadCm.toFixed(1)}`);
+  check('...and is rejected anyway', !assessBlindSpot(oneSurvivor).ok,
+    assessBlindSpot(oneSurvivor).reason);
+
+  const twoSurvivors = aggregateBlindSpotTrials(
+    [...offsetsAt(40, 2), ...offsetsAt(400, 3)], PX_PER_CM,
+  );
+  check('rejects two survivors', !assessBlindSpot(twoSurvivors).ok);
+  const threeSurvivors = aggregateBlindSpotTrials(
+    [...offsetsAt(40, 3), ...offsetsAt(400, 2)], PX_PER_CM,
+  );
+  check('accepts three survivors that agree', assessBlindSpot(threeSurvivors).ok);
+
+  // Trials that disagree wildly mean the participant was not holding fixation.
+  const scattered = aggregateBlindSpotTrials(
+    [...offsetsAt(28, 2), ...offsetsAt(40, 1), ...offsetsAt(58, 2)], PX_PER_CM,
+  );
+  check('rejects trials that disagree', !assessBlindSpot(scattered).ok,
+    `spread ±${scattered.spreadCm.toFixed(1)} cm`);
+
+  // ...but ordinary human variability must still pass, or the task never ends.
+  const realistic = aggregateBlindSpotTrials(
+    [offsetsAt(38, 1)[0], offsetsAt(39.5, 1)[0], offsetsAt(40, 1)[0],
+     offsetsAt(41, 1)[0], offsetsAt(42.5, 1)[0]], PX_PER_CM,
+  );
+  check('accepts normal trial-to-trial scatter', assessBlindSpot(realistic).ok,
+    `±${realistic.spreadCm.toFixed(1)} cm, limit ±${blindSpotSpreadLimitCm(realistic.distanceCm).toFixed(1)}`);
+
+  check('rejects a run with no plausible trials at all',
+    !assessBlindSpot(aggregateBlindSpotTrials(offsetsAt(400, 5), PX_PER_CM)).ok);
+
+  // The limit scales with distance: the same centimetre of disagreement is a
+  // bigger relative failure up close.
+  check('spread limit is tighter up close',
+    blindSpotSpreadLimitCm(30) < blindSpotSpreadLimitCm(60));
+}
+
+console.log('\npaired sweep cancels reaction time\n');
+
+{
+  // What the two-legged trial is for. The dot moves at SWEEP_PX_PER_SEC; the
+  // participant reacts RT later, so the outward leg overshoots the true edge and
+  // the inward leg undershoots it by the same distance. Either alone is biased;
+  // the mean is not.
+  const SWEEP = 180;
+  const trueOffset = 40 * Math.tan((BLIND_SPOT_ECCENTRICITY_DEG * Math.PI) / 180) * PX_PER_CM;
+
+  for (const rt of [0.2, 0.3, 0.4]) {
+    const lag = SWEEP * rt;
+    const outward = trueOffset + lag;   // pressed late while moving away
+    const inward = trueOffset - lag;    // pressed late while moving back
+    const single = aggregateBlindSpotTrials(Array(5).fill(outward), PX_PER_CM);
+    const paired = aggregateBlindSpotTrials(Array(5).fill((outward + inward) / 2), PX_PER_CM);
+    check(`outward-only is biased at RT ${rt * 1000} ms`,
+      single.distanceCm - 40 > 2,
+      `reports ${single.distanceCm.toFixed(1)} cm for a true 40 cm`);
+    check(`paired legs cancel it at RT ${rt * 1000} ms`,
+      close(paired.distanceCm, 40, 1e-9),
+      `reports ${paired.distanceCm.toFixed(1)} cm`);
+  }
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : '\nall viewing-distance tests passed\n');

@@ -37,11 +37,24 @@ function HeadPositioningScreen({
   positionHoldTime,
   stableFrameCount,
 }: HeadPositioningScreenProps) {
+  // Two modes, and telling them apart matters. Before the anchor exists the task
+  // is to get framed and to the target distance. After it exists — which is the
+  // only way this screen appears mid-run — the task is to get back to the exact
+  // pose the mapping was fitted at, and "center your face in the box" is then
+  // actively misleading: a well-centred face at the wrong depth is still wrong.
+  const resuming = headValidation?.debug?.anchorFault !== undefined;
+
   return (
     <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col items-center justify-center gap-6 p-8">
       <div className="text-center">
-        <h2 className="text-xl font-bold text-white uppercase tracking-widest">Head Positioning</h2>
-        <p className="text-sm text-gray-500 mt-1">Center your face inside the box</p>
+        <h2 className="text-xl font-bold text-white uppercase tracking-widest">
+          {resuming ? 'Return To Your Position' : 'Head Positioning'}
+        </h2>
+        <p className="text-sm text-gray-500 mt-1">
+          {resuming
+            ? 'The test paused because you moved. Follow the prompt to get back.'
+            : 'Center your face inside the box'}
+        </p>
       </div>
 
       <div className="relative w-full max-w-3xl aspect-video rounded-2xl overflow-hidden border-2 border-gray-700 bg-black shadow-2xl">
