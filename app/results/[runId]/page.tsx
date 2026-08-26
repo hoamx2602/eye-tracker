@@ -93,6 +93,7 @@ export default async function ResultsPage({ params }: Props) {
     ? geometry.distanceCm
     : (typeof sessionCfg.faceDistance === 'number' ? sessionCfg.faceDistance : appCfg.faceDistance);
   const pxPerCm: number = geometry.pxPerCm;
+  const geometryMeasured: boolean = geometry.measured;
 
   const runData = {
     id: run.id,
@@ -105,6 +106,7 @@ export default async function ResultsPage({ params }: Props) {
     testResults: strippedResults,
     faceDistance,
     pxPerCm,
+    geometryMeasured,
     chartSmoothing: {
       method: appCfg.chartSmoothingMethod ?? ChartSmoothingMethod.MOVING_AVERAGE,
       window: appCfg.chartSmoothingWindow ?? 7,

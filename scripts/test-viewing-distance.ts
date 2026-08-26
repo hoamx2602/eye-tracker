@@ -14,6 +14,7 @@ import {
   isPlausibleScale,
   viewportWidthCm,
 } from '../lib/screenScale';
+import { angularErrorDegOrNull, sessionGeometry } from '../lib/resultScoring';
 import {
   BLIND_SPOT_ECCENTRICITY_DEG,
   FRAME_EDGE_MARGIN,
@@ -277,6 +278,51 @@ console.log('\nframing limit — what actually stops you getting close\n');
   const wideAt40 = 0.60; // 78 deg cam
   check('a wide-angle camera gets closer', nearestFittingDistanceCm(wideAt40, 40) < nearestFittingDistanceCm(headAt40, 40),
     `needs ${nearestFittingDistanceCm(wideAt40, 40).toFixed(0)} cm`);
+}
+
+console.log('\ngeometry provenance — never convert from a stand-in\n');
+
+{
+  const geo = (cfg: unknown) => sessionGeometry(cfg);
+
+  const real = geo({
+    positionAnchor: { distanceCm: 38.4, distanceSource: 'blind-spot' },
+    distanceCalibration: { distanceCm: 38.1, pxPerCm: 55.6, method: 'blind-spot' },
+    faceDistance: 40,
+  });
+  check('a measured session is measured', real.measured);
+  check('and reports where they actually sat, not the target',
+    close(real.distanceCm, 38.4, 1e-9), `${real.distanceCm} cm, target was 40`);
+  check('degrees come out', angularErrorDegOrNull(47.5, real) != null);
+
+  // The hole this closes: the anchor stores the *configured target* when nothing
+  // measured the participant, tagged distanceSource: 'assumed'. Treating that as
+  // a measurement reports 40 cm for someone who may have sat at 35.
+  const assumed = geo({
+    positionAnchor: { distanceCm: 40, distanceSource: 'assumed' },
+    faceDistance: 40,
+  });
+  check('an assumed anchor is NOT a measurement', !assumed.measured);
+  check('and yields no angular figure at all',
+    angularErrorDegOrNull(47.5, assumed) === null,
+    'a dash cannot be averaged or plotted; a fabricated 1.20° can');
+
+  const noScale = geo({
+    positionAnchor: { distanceCm: 38.4, distanceSource: 'manual' },
+  });
+  check('a measured distance without a measured display scale is still not enough',
+    !noScale.measured && angularErrorDegOrNull(47.5, noScale) === null);
+
+  check('nothing at all yields nothing', angularErrorDegOrNull(47.5, geo(undefined)) === null);
+  check('no error yields nothing', angularErrorDegOrNull(null, real) === null);
+
+  // And the conversion itself, once the inputs are real, must use them both.
+  const atRef = angularErrorDegOrNull(47.5, { distanceCm: 60, pxPerCm: 96 / 2.54, measured: true })!;
+  check('47.5 px at 60 cm on a CSS-reference display is 1.20°', close(atRef, 1.2, 0.005),
+    `${atRef.toFixed(2)}° — the number a fallback used to invent`);
+  const atReal = angularErrorDegOrNull(47.5, { distanceCm: 40, pxPerCm: 55.65, measured: true })!;
+  check('the same error on a real Retina panel at 40 cm is different',
+    Math.abs(atReal - atRef) > 0.01, `${atReal.toFixed(2)}°`);
 }
 
 console.log('\nblind-spot quality gate\n');

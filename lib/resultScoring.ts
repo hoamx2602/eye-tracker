@@ -66,23 +66,54 @@ export interface SessionGeometry {
  */
 export function sessionGeometry(config: unknown): SessionGeometry {
   const c = (config && typeof config === 'object' ? config : {}) as Record<string, unknown>;
-  const pick = (key: string, field: string): number | undefined => {
+  const sub = (key: string): Record<string, unknown> => {
     const obj = c[key];
-    if (!obj || typeof obj !== 'object') return undefined;
-    const v = (obj as Record<string, unknown>)[field];
+    return obj && typeof obj === 'object' ? (obj as Record<string, unknown>) : {};
+  };
+  const num = (obj: Record<string, unknown>, field: string): number | undefined => {
+    const v = obj[field];
     return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined;
   };
 
-  const anchorCm = pick('positionAnchor', 'distanceCm');
-  const calCm = pick('distanceCalibration', 'distanceCm');
-  const target = typeof c.faceDistance === 'number' ? c.faceDistance : undefined;
-  const pxPerCm = pick('distanceCalibration', 'pxPerCm');
+  const anchor = sub('positionAnchor');
+  const cal = sub('distanceCalibration');
 
+  // 'assumed' means the participant was *declared* to be at the configured
+  // target because nothing had measured them. The number that then lands in
+  // positionAnchor.distanceCm is the config value wearing a measurement's
+  // clothes, and treating it as one is how a session recorded at 35 cm comes to
+  // be reported as 40. The source field exists precisely to say so; honour it.
+  const anchorCm = anchor.distanceSource !== 'assumed' ? num(anchor, 'distanceCm') : undefined;
+  const calCm = cal.method !== 'assumed' ? num(cal, 'distanceCm') : undefined;
+  const pxPerCm = num(cal, 'pxPerCm');
+  const target = typeof c.faceDistance === 'number' ? c.faceDistance : undefined;
+
+  const measuredCm = anchorCm ?? calCm;
   return {
-    distanceCm: anchorCm ?? calCm ?? target ?? 60,
+    // The fallback is for labelling a row, never for deriving a number from.
+    // `measured` is what guards that, and angularErrorDegOrNull enforces it.
+    distanceCm: measuredCm ?? target ?? 60,
     pxPerCm: pxPerCm ?? CSS_REFERENCE_PX_PER_CM,
-    measured: (anchorCm ?? calCm) != null && pxPerCm != null,
+    measured: measuredCm != null && pxPerCm != null,
   };
+}
+
+/**
+ * Visual angle, or nothing.
+ *
+ * Converting a pixel error to degrees needs a real distance and a real display
+ * scale. When either is missing, the honest output is not a number computed
+ * from a stand-in — it is no number. A fabricated 1.20° is worse than a dash,
+ * because a dash cannot be averaged, plotted, or compared against a run that
+ * was actually measured.
+ */
+export function angularErrorDegOrNull(
+  meanErrorPx: number | null | undefined,
+  geometry: SessionGeometry,
+): number | null {
+  if (meanErrorPx == null || !Number.isFinite(meanErrorPx)) return null;
+  if (!geometry.measured) return null;
+  return angularErrorDeg(meanErrorPx, geometry.distanceCm, geometry.pxPerCm);
 }
 
 /** Clamp a value between min and max. */

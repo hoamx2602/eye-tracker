@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import SessionAnalytics from '@/components/SessionAnalytics';
 import type { TestTrajectorySegment } from '@/components/SessionAnalytics';
-import { angularErrorDeg, sessionGeometry } from '@/lib/resultScoring';
+import { angularErrorDegOrNull, sessionGeometry } from '@/lib/resultScoring';
 
 type CalibrationSample = {
   screenX?: number;
@@ -294,10 +294,13 @@ export default function AdminSessionDetailPage() {
                 <>
                   {session.meanErrorPx.toFixed(2)} px
                   <span className="text-slate-400 text-xs ml-1">
-                    / {(() => {
+                    {(() => {
                       const g = sessionGeometry(session.config);
-                      return angularErrorDeg(session.meanErrorPx!, g.distanceCm, g.pxPerCm).toFixed(2);
-                    })()}°
+                      const deg = angularErrorDegOrNull(session.meanErrorPx, g);
+                      return deg == null
+                        ? ' · distance not measured'
+                        : ` / ${deg.toFixed(2)}° @ ${g.distanceCm.toFixed(0)}cm`;
+                    })()}
                   </span>
                 </>
               ) : '—'}
@@ -367,6 +370,7 @@ export default function AdminSessionDetailPage() {
             meanErrorPx={session.meanErrorPx}
             faceDistanceCm={sessionGeometry(session.config).distanceCm}
             pxPerCm={sessionGeometry(session.config).pxPerCm}
+            geometryMeasured={sessionGeometry(session.config).measured}
             testTrajectories={session.testTrajectories ?? (session.config && typeof session.config === 'object' && Array.isArray((session.config as Record<string, unknown>).testTrajectories) ? (session.config as { testTrajectories: TestTrajectorySegment[] }).testTrajectories : undefined)}
           />
         </div>
