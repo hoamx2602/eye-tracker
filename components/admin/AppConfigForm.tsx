@@ -312,6 +312,32 @@ export default function AppConfigForm() {
                   can vary by a third.
                 </p>
               </div>
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-slate-400">Head rotation tolerance</span>
+                  <span className="font-mono">
+                    {(20 * (localConfig.headRotationTolerance ?? 1)).toFixed(0)}/
+                    {(20 * (localConfig.headRotationTolerance ?? 1)).toFixed(0)}/
+                    {(25 * (localConfig.headRotationTolerance ?? 1)).toFixed(0)}°
+                    <span className="text-slate-500"> (×{(localConfig.headRotationTolerance ?? 1).toFixed(2)})</span>
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={3}
+                  step={0.25}
+                  value={localConfig.headRotationTolerance ?? 1}
+                  onChange={(e) => handleChange('headRotationTolerance', parseFloat(e.target.value))}
+                  className="w-full accent-slate-500 h-1 bg-slate-600 rounded-lg"
+                />
+                <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                  Yaw / pitch / roll, in <strong>degrees of actual head rotation</strong>,
+                  as change from the setup pose. Read from MediaPipe&rsquo;s head-pose
+                  matrix, so ×1 really is 20°. The head-positioning screen prints
+                  the live figures as <span className="font-mono">turn y·p·r</span>.
+                </p>
+              </div>
             </section>
 
             <section>

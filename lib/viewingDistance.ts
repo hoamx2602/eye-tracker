@@ -69,7 +69,11 @@ export const MAX_TARGET_DISTANCE_CM = 90;
 const MIN_PLAUSIBLE_CM = 15;
 const MAX_PLAUSIBLE_CM = 120;
 
-const STORAGE_KEY = 'eyetracker.distanceCalibration.v1';
+// v2: K is now anchored on the outer-eye-corner span rather than the face
+// silhouette, so a value stored by an older build is wrong by the ratio between
+// the two — about 1.6×. Bumping the key discards it instead of restoring it
+// confidently after a page reload.
+const STORAGE_KEY = 'eyetracker.distanceCalibration.v2';
 
 // ─── Blind spot → distance ───────────────────────────────────────────────────
 
@@ -206,20 +210,36 @@ function median(sortedAsc: number[]): number {
 // ─── Face scale ──────────────────────────────────────────────────────────────
 
 /**
- * Rotation-corrected face size, as a fraction of frame width.
+ * Face size as a fraction of frame width. Uncorrected, deliberately.
  *
- * Raw face width foreshortens as cos(yaw) when the head turns, so the old check
- * reads a rotated head as a receded one and tells the participant to move
- * closer when they have not moved at all. Dividing it out restores a quantity
- * that depends on distance alone.
+ * This used to divide by cos(yaw) to undo the foreshortening of a turned head,
+ * on the reasoning that otherwise a participant who merely looks sideways is
+ * told they have moved away. The reasoning is sound; the correction was not,
+ * because the yaw it leaned on is a heuristic that over-reads by a factor of
+ * three or more. Telemetry from a real session: a head turn that foreshortened
+ * the eye-corner span by 4.8% — about 18° — was reported as 63.6° of yaw, and
+ * dividing by cos of that (clamped at 45°) inflated the apparent face size by
+ * 41%. The participant was told to move back ten centimetres for turning their
+ * head.
  *
- * The correction is clamped at 45°: beyond that the far cheekbone is occluded
- * and the measured width stops following cos(yaw), so amplifying it further
- * would turn a bad estimate into a wild one.
+ * Compare the two errors directly, against the ±8% depth band:
+ *
+ *   real turn   uncorrected error   corrected error
+ *        10°               1.5%              20.2%
+ *        15°               3.4%              36.6%
+ *        20°               6.0%              32.9%
+ *
+ * Doing nothing is better at every angle, and stays inside the band out to 20°
+ * — further than the rotation gate allows anyway. A correction is only worth
+ * applying when it is more accurate than the thing it corrects, and this one
+ * never was.
+ *
+ * What replaces it is ordering: checkAnchor now judges rotation *before* depth,
+ * so a head that has genuinely turned is reported as turned rather than as
+ * mis-placed. That needs no scale factor to be right.
  */
-export function faceScale(faceWidthNorm: number, yawRad = 0): number {
-  const yaw = Math.min(Math.abs(yawRad), Math.PI / 4);
-  return faceWidthNorm / Math.max(Math.cos(yaw), Math.SQRT1_2);
+export function faceScale(faceWidthNorm: number): number {
+  return faceWidthNorm;
 }
 
 // ─── Calibration ─────────────────────────────────────────────────────────────
@@ -390,6 +410,33 @@ export interface DistanceCheck {
 export const ANGULAR_TOLERANCE = 0.05;
 
 /**
+ * Physical floor on every position tolerance, in centimetres.
+ *
+ * A person's ability to hold still is a fixed physical quantity. It does not
+ * shrink because they were asked to sit closer. Seated head sway over a minute
+ * runs 1.0–1.5 cm RMS in young adults with peak excursions of 2–3 cm, and is
+ * 30–60% larger in older people — peaks of 3–4 cm.
+ *
+ * A purely proportional band forgets this. At a 55 cm target, ±5% is ±2.8 cm and
+ * most people can hold it. At 30 cm it becomes ±1.5 cm, which is *smaller than
+ * the natural sway of an elderly participant*: the gate can never go green, and
+ * the failure looks like the participant doing it wrong rather than the test
+ * being physiologically impossible. Moving the flow closer to the camera to gain
+ * accuracy silently halved this band, which is exactly the population it then
+ * excluded.
+ *
+ * Three centimetres, matching the lateral drift allowance (0.31 outer-canthal
+ * widths ≈ 2.84 cm), so the three axes ask for the same physical steadiness
+ * rather than three different amounts.
+ *
+ * This costs angular accuracy at close range, knowingly: ±3 cm at 30 cm is 10%,
+ * not 5%. That is the trade, and it is the right way round. A band nobody can
+ * satisfy yields no data at all, and a test that excludes the old is worse than
+ * one that measures them slightly less precisely.
+ */
+export const POSTURAL_FLOOR_CM = 3;
+
+/**
  * Accepted band around the configured target.
  *
  * Fractional rather than fixed, because the cost of a centimetre is fractional:
@@ -413,7 +460,10 @@ export const ANGULAR_TOLERANCE = 0.05;
  * the same geometry twice.
  */
 export function distanceBandCm(targetCm: number, tolerance = 1): number {
-  return Math.max(0.5, targetCm * ANGULAR_TOLERANCE) * Math.max(1, Math.min(3, tolerance));
+  return (
+    Math.max(POSTURAL_FLOOR_CM, targetCm * ANGULAR_TOLERANCE) *
+    Math.max(1, Math.min(3, tolerance))
+  );
 }
 
 export function checkDistance(

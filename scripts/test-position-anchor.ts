@@ -29,7 +29,9 @@ const close = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol;
 // Focal length in *normalised* units (fraction of frame width per unit of
 // tan-angle). Nothing under test is allowed to know this number.
 const F_N = 1.35;
-const FACE_CM = 14.2;          // this participant, not the nominal 15
+// Outer canthal distance, not bizygomatic width — the segment faceScale is
+// built on. See rigidFaceWidth in eyeTrackingService.
+const FACE_CM = 9.1;          // this participant, not the nominal 15
 const SETUP_CM = 40;
 
 /** Where a head at (x, y, z) centimetres appears, in normalised frame coords. */
@@ -107,8 +109,11 @@ console.log('\npositionAnchor — the gate\n');
   const near = checkAnchor(anchor, observe(0, 0, SETUP_CM * 0.8), tol);
   check('rejects a 20% approach', near.fault === 'too-close', near.message);
 
-  // Lateral: 0.2 face widths ≈ 2.8 cm for this participant.
+  // Lateral: 0.31 outer-canthal widths ≈ 2.8 cm for this participant.
   check('accepts 2 cm of sway', checkAnchor(anchor, observe(2, 0, SETUP_CM), tol).ok);
+  // The physical tolerance must not have moved when the width unit did.
+  check('the drift band is still ~2.8 cm', Math.abs(tol.driftFaceWidths * FACE_CM - 2.84) < 0.05,
+    `${(tol.driftFaceWidths * FACE_CM).toFixed(2)} cm`);
   const left = checkAnchor(anchor, observe(6, 0, SETUP_CM), tol);
   check('rejects 6 cm of sway', !left.ok, `${left.fault}: ${left.message}`);
   check('sway instruction opposes the drift',
@@ -118,10 +123,72 @@ console.log('\npositionAnchor — the gate\n');
   const down = checkAnchor(anchor, observe(0, 5, SETUP_CM), tol);
   check('rejects vertical slump', !down.ok, `${down.fault}: ${down.message}`);
 
-  const turned = checkAnchor(anchor, observe(0, 0, SETUP_CM, { yaw: (20 * Math.PI) / 180, pitch: 0, roll: 0 }), tol);
+  const rot = (yawDeg: number, pitchDeg: number, rollDeg: number) =>
+    checkAnchor(anchor, observe(0, 0, SETUP_CM, {
+      yaw: (yawDeg * Math.PI) / 180,
+      pitch: (pitchDeg * Math.PI) / 180,
+      roll: (rollDeg * Math.PI) / 180,
+    }), tol);
+
+  // Each axis is judged in ITS OWN units, and the three are not comparable.
+  //
+  //   roll   a genuine angle — atan2 across the eye-corner line.
+  //   yaw    an estimator reading that over-states real rotation by ~2.6×,
+  //          because it scales the nose's offset from landmarks that sit
+  //          several centimetres behind the nose tip.
+  //   pitch  its own scale again, with a large constant offset that the
+  //          live-against-anchor comparison cancels.
+  //
+  // So the tests check each axis against its own gate rather than asserting an
+  // ordering between three different units.
+  const turned = rot(tol.yawDeg + 10, 0, 0);
   check('rejects a turned head', turned.fault === 'turned', turned.message);
-  check('accepts a small head turn',
-    checkAnchor(anchor, observe(0, 0, SETUP_CM, { yaw: (5 * Math.PI) / 180, pitch: 0, roll: 0 }), tol).ok);
+  check('accepts a small head turn', rot(tol.yawDeg - 10, 0, 0).ok);
+  check('names which way to turn back',
+    rot(tol.yawDeg + 10, 0, 0).message !== rot(-(tol.yawDeg + 10), 0, 0).message,
+    `${rot(tol.yawDeg + 10, 0, 0).message} vs ${rot(-(tol.yawDeg + 10), 0, 0).message}`);
+
+  check('pitch has its own bound', !rot(0, tol.pitchDeg + 5, 0).ok, rot(0, tol.pitchDeg + 5, 0).message);
+  check('and a nod within it passes', rot(0, tol.pitchDeg - 5, 0).ok);
+  check('a large tilt is still caught', !rot(0, 0, tol.rollDeg + 10).ok,
+    rot(0, 0, tol.rollDeg + 10).message);
+  check('and roll is in true degrees, so 20° of tilt is 20° of tilt',
+    rot(0, 0, 20).ok, `gate is ${tol.rollDeg}°`);
+
+  // The yaw estimator over-reads by roughly 2.6×, so the gate has to be stated
+  // in its units or it stops people at about 4.6° of real rotation.
+  check('the yaw gate leaves room for a real head turn', tol.yawDeg >= 20,
+    `${tol.yawDeg} estimator-degrees ≈ ${(tol.yawDeg / 2.6).toFixed(0)}° of actual turn`);
+
+  // Each axis is judged alone, so a small movement on every axis at once must
+  // not add up into a rejection the way a max-of-three would suggest.
+  check('small movements on all three axes together still pass', rot(10, 10, 10).ok);
+
+  // The depth allowance has a physical floor for the same reason the distance
+  // band does: sitting closer does not make a person steadier.
+  {
+    const near = captureAnchor(anchorSig, { faceWidthCm: FACE_CM, distanceCm: 30, distanceSource: 'manual' });
+    // 2.8 cm of depth change at a 30 cm setup — 9.3%, past the 8% percentage
+    // band but inside the 3 cm floor.
+    const drifted = { ...anchorSig, faceScale: anchorSig.faceScale * (30 / 32.8) };
+    check('a near participant is judged on centimetres, not percent',
+      checkAnchor(near, drifted, tol).ok,
+      '2.8 cm at a 30 cm setup is 9.3% — the floor admits it');
+    const farOut = { ...anchorSig, faceScale: anchorSig.faceScale * (30 / 35) };
+    check('but the floor is a floor, not an amnesty', !checkAnchor(near, farOut, tol).ok,
+      `${checkAnchor(near, farOut, tol).message}`);
+  }
+
+  // Rotation outranks depth, because a turned head foreshortens the measured
+  // face width and therefore corrupts the depth reading. Reporting depth first
+  // handed a distance instruction to someone who had only glanced sideways.
+  const turnedAndClose = checkAnchor(
+    anchor,
+    observe(0, 0, SETUP_CM * 0.85, { yaw: (tol.yawDeg + 15) * Math.PI / 180, pitch: 0, roll: 0 }),
+    tol,
+  );
+  check('a turned head is reported as turned, not as mis-placed',
+    turnedAndClose.fault === 'turned', turnedAndClose.message);
 
   // Depth is reported before drift: it breaks the mapping hardest and is the
   // least visible to the participant.
@@ -160,6 +227,7 @@ console.log('\nface width from a card in the face plane\n');
   check('rejects a zero-width card', Number.isNaN(faceWidthCmFromCard(0, 100, 8.56)));
   check('accepts a plausible face', isPlausibleFaceWidthCm(FACE_CM));
   check('rejects an implausible face', !isPlausibleFaceWidthCm(45));
+  check('rejects a bizygomatic width mistaken for the eye span', !isPlausibleFaceWidthCm(14.2));
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : '\nall position-anchor tests passed\n');

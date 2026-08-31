@@ -23,10 +23,10 @@ import { CARD_WIDTH_MM } from '@/lib/screenScale';
  * centimetres, and — combined with one absolute distance ever — what lets the
  * camera's focal length be measured once instead of once per participant.
  *
- * Against the cheek, at eye level, specifically. The face width is measured
- * between the cheekbones, so the cancellation above only holds if the card sits
- * at that same depth. The forehead is 1–2 cm forward of the cheekbones, which is
- * a 2.5–5% error in W_face and therefore in every distance derived from it —
+ * Against the cheek, at eye level, specifically. The width being measured is the
+ * span between the outer eye corners, so the cancellation above only holds if
+ * the card sits at that same depth. The forehead is 1–2 cm forward of it, which
+ * is a 2.5–5% error in W_face and therefore in every distance derived from it —
  * and, once F is cached, in every later session on this machine too.
  *
  * The card is located by dragging a box rather than by detecting it. Bank cards
@@ -205,9 +205,9 @@ export default function FaceCardStep({
           <div className="absolute inset-x-0 bottom-0 bg-black/70 px-6 py-3 text-center">
             <p className="text-white text-sm font-bold">Hold the card flat against your cheek</p>
             <p className="text-gray-400 text-xs mt-0.5 max-w-md mx-auto">
-              At eye level, beside your face, flat of the card toward the camera.
-              Not on your forehead — your brow sits forward of your cheekbones,
-              and that alone is a 5% error.
+              At eye level, beside your eyes, flat of the card toward the camera.
+              Not on your forehead — your brow sits forward of your eyes, and that
+              alone is a 5% error.
             </p>
           </div>
         )}

@@ -16,7 +16,9 @@ import {
 } from '../lib/screenScale';
 import { angularErrorDegOrNull, sessionGeometry } from '../lib/resultScoring';
 import {
+  ANGULAR_TOLERANCE,
   BLIND_SPOT_ECCENTRICITY_DEG,
+  POSTURAL_FLOOR_CM,
   FRAME_EDGE_MARGIN,
   MIN_TARGET_DISTANCE_CM,
   faceFitsInFrame,
@@ -167,20 +169,31 @@ console.log('\nhead rotation\n');
     distanceCm: 40, faceScale: faceScale(trueWidth), pxPerCm: PX_PER_CM, method: 'blind-spot',
   })!;
 
-  const yaw = (20 * Math.PI) / 180;
-  const observed = trueWidth * Math.cos(yaw); // what the camera actually sees
+  // A turned head does read as slightly further away, and that is accepted
+  // rather than corrected. The correction that used to live here divided by
+  // cos(yaw) using a heuristic yaw that over-reads threefold, so it turned a
+  // small honest error into a large invented one.
+  for (const trueDeg of [10, 15, 20]) {
+    const observed = trueWidth * Math.cos((trueDeg * Math.PI) / 180);
+    const err = Math.abs(distanceFromFace(cal, faceScale(observed)) - 40) / 40;
+    check(`a real ${trueDeg}° turn stays inside the ±8% depth band uncorrected`,
+      err < 0.08, `${(err * 100).toFixed(1)}%`);
+  }
 
-  const naive = distanceFromFace(cal, observed);
-  const corrected = distanceFromFace(cal, faceScale(observed, yaw));
-  check('uncorrected width reads a turned head as further away', naive > 42,
-    `${naive.toFixed(1)} cm at 20° yaw (truth 40)`);
-  check('yaw correction restores the true distance', close(corrected, 40, 0.01),
-    `${corrected.toFixed(2)} cm`);
+  // What the correction did instead, measured from a real session: an 18° turn
+  // (4.8% of foreshortening) was reported as 63.6° of yaw.
+  const observed18 = trueWidth * Math.cos((18 * Math.PI) / 180);
+  const overRead = Math.min((63.6 * Math.PI) / 180, Math.PI / 4);
+  const wouldHaveBeen = observed18 / Math.max(Math.cos(overRead), Math.SQRT1_2);
+  const oldErr = Math.abs(distanceFromFace(cal, wouldHaveBeen) - 40) / 40;
+  const newErr = Math.abs(distanceFromFace(cal, faceScale(observed18)) - 40) / 40;
+  check('the correction was worse than doing nothing', oldErr > newErr * 3,
+    `corrected ${(oldErr * 100).toFixed(0)}% vs uncorrected ${(newErr * 100).toFixed(1)}%`);
+  check('and it alone breached the band', oldErr > 0.08);
+  check('while doing nothing does not', newErr < 0.08);
 
-  // Past the clamp the correction must stop growing rather than diverge.
-  const extreme = faceScale(0.1, (80 * Math.PI) / 180);
-  check('correction is clamped at large yaw', extreme <= 0.1 / Math.SQRT1_2 + 1e-9,
-    `factor ${(extreme / 0.1).toFixed(3)}`);
+  check('faceScale is now the measured width, untouched',
+    close(faceScale(0.1234), 0.1234, 1e-12));
 }
 
 console.log('\ndistance gate\n');
@@ -195,12 +208,23 @@ console.log('\ndistance gate\n');
   // Band is fractional — tighter up close, where a centimetre costs more angular
   // error — and sized by what the reported science can absorb, not by how badly
   // the sensor used to mismeasure.
-  check('band is 5% at the 30 cm target', close(distanceBandCm(30), 1.5, 1e-9));
   check('band is 5% at the 60 cm target', close(distanceBandCm(60), 3, 1e-9));
   check('tolerance widens the band', close(distanceBandCm(60, 2), 6, 1e-9));
   check('tolerance is clamped', close(distanceBandCm(60, 99), distanceBandCm(60, 3), 1e-9));
-  check('the noise floor only binds at absurdly near targets',
-    close(distanceBandCm(5), 0.5, 1e-9));
+
+  // Below ~60 cm the physical floor takes over, and it must: a proportional band
+  // keeps shrinking as the participant sits closer while their postural sway
+  // does not. Seated head sway peaks at 2–3 cm in young adults and 3–4 cm in
+  // older ones, so a ±1.5 cm band at a 30 cm target is smaller than the natural
+  // movement of the people it is meant to admit.
+  check('the physical floor holds at close targets',
+    close(distanceBandCm(30), POSTURAL_FLOOR_CM, 1e-9),
+    `±${distanceBandCm(30)} cm, not ±${(30 * ANGULAR_TOLERANCE).toFixed(1)} cm`);
+  check('a 30 cm target is no harder to hold than a 55 cm one',
+    distanceBandCm(30) >= distanceBandCm(55) * 0.9,
+    `±${distanceBandCm(30).toFixed(1)} vs ±${distanceBandCm(55).toFixed(1)} cm`);
+  check('the floor never makes a far target tighter than the proportional band',
+    distanceBandCm(90) > POSTURAL_FLOOR_CM);
 
   // The band exists to bound how much the *task* may change between sessions,
   // not only the error on a number. Saccadic targets sit at fixed viewport
@@ -212,8 +236,17 @@ console.log('\ndistance gate\n');
   // The band this replaced: max(3, 40·0.1) · 2 = ±8 cm.
   check('the old ±8 cm band let the same test vary by ~48%',
     Math.abs(spreadOver(8) - 0.48) < 0.03, `${(spreadOver(8) * 100).toFixed(0)}%`);
-  check('the new band holds it under 12%', spreadOver(distanceBandCm(40)) < 0.12,
-    `±${distanceBandCm(40).toFixed(1)} cm → ${(spreadOver(distanceBandCm(40)) * 100).toFixed(0)}%`);
+  // The physical floor costs some of that back, knowingly. ±3 cm at a 40 cm
+  // target is 16% of amplitude rather than the 10% a pure ±2 cm band would give
+  // — but ±2 cm is below the postural sway of an older participant, so the
+  // tighter band buys its precision by excluding them entirely. Three times
+  // better than what it replaced, and achievable, beats five times better and
+  // impossible.
+  const spread = spreadOver(distanceBandCm(40));
+  check('the new band is far tighter than the old one', spread < spreadOver(8) / 2.5,
+    `±${distanceBandCm(40).toFixed(1)} cm → ${(spread * 100).toFixed(0)}% vs the old 48%`);
+  check('and it is still achievable by a participant with normal sway',
+    distanceBandCm(40) >= 3, 'seated head sway peaks at 3–4 cm in older adults');
 
   for (const target of SUPPORTED_TARGET_DISTANCES_CM) {
     const onTarget = checkDistance(cal, scaleAt(target), target);

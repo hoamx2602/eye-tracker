@@ -72,22 +72,113 @@ export interface AnchorTolerance {
   /** Allowed depth change, percent of the setup distance. */
   depthPct: number;
   /**
-   * Allowed in-plane drift, in face widths. An adult face is ~15 cm across, so
-   * 0.2 is about 3 cm — roughly where parallax starts to matter at 40 cm.
+   * Floor on the depth allowance in centimetres, whichever is larger.
+   *
+   * The percentage alone shrinks as the participant sits closer: 8% is 4.4 cm at
+   * 55 cm but only 2.4 cm at 30 cm. Postural sway does not shrink to match — it
+   * is 2–3 cm peak in young adults and 3–4 cm in older ones — so a purely
+   * proportional band becomes unsatisfiable at exactly the distances the flow
+   * now asks for, for exactly the participants least able to hold still.
+   */
+  depthFloorCm: number;
+  /**
+   * Allowed in-plane drift, in face widths — where a "face width" is the outer
+   * canthal distance, about 9 cm in adults. 0.31 is therefore about 2.8 cm,
+   * roughly where parallax starts to matter at 40 cm.
    */
   driftFaceWidths: number;
-  /** Allowed head rotation change, degrees. */
-  rotationDeg: number;
+  /**
+   * Allowed head rotation change, degrees, per axis.
+   *
+   * One number for all three was wrong, because the three do not cost the same.
+   *
+   *   yaw    the far eye foreshortens and eventually occludes, and the iris
+   *          ellipse compresses horizontally. Information is genuinely lost.
+   *
+   *   pitch  the upper lid covers more or less of the iris, which drags the
+   *          fitted iris centre vertically — the fastest-changing of the three.
+   *          Its estimator is also the least trustworthy: faceCenterY comes from
+   *          HEAD_TOP, which sits on the hairline and moves with hair.
+   *
+   *   roll   purely in-plane. Nothing is occluded and nothing is foreshortened;
+   *          the iris-offset vector simply rotates in image coordinates, and the
+   *          regressor carries a roll feature to absorb it. Its estimator is the
+   *          soundest of the three, being an atan2 on two well-separated points.
+   *
+   * So roll gets far more room than the other two. Policing a head tilt as
+   * harshly as a head turn rejects participants for the one movement that costs
+   * almost nothing.
+   *
+   * Constant per-person bias in these estimates does not matter here: the check
+   * is live-against-anchor, so a deviated septum or an asymmetric hairline
+   * cancels. Only noise and scale error survive, which is why the two heuristic
+   * axes are not given the tightest bounds.
+   */
+  yawDeg: number;
+  pitchDeg: number;
+  rollDeg: number;
 }
 
 export const DEFAULT_ANCHOR_TOLERANCE: AnchorTolerance = {
   depthPct: 8,
-  driftFaceWidths: 0.2,
-  rotationDeg: 10,
+  depthFloorCm: 3,
+  // 0.31, not the 0.2 it was, and this is not a loosening.
+  //
+  // The unit changed underneath it. Drift is expressed in face widths, and the
+  // face width moved from the silhouette (~14 cm) to the outer canthal distance
+  // (~9 cm) when the distance model stopped using a measurement that grows when
+  // the head turns. Left at 0.2 the same number would have meant 1.8 cm instead
+  // of 2.8 — a 36% tightening nobody asked for, arriving silently as a side
+  // effect of an unrelated fix.
+  //
+  // 0.2 × 14.2 = 2.84 cm. 0.31 × 9.1 = 2.84 cm. The physical tolerance is
+  // exactly what it was.
+  driftFaceWidths: 0.31,
+  // These are in ESTIMATOR degrees, not anatomical ones, and the two are not
+  // the same number.
+  //
+  // calculateGeometricHeadPose reads yaw from how far the nose sits off the
+  // line between the face-edge landmarks, scaled by 2π. Those landmarks sit on
+  // the sides of the head, several centimetres behind the nose tip, so the
+  // ratio is large and the estimate over-reads: a simulated 10° head turn comes
+  // out as 26°, a factor of about 2.6. A "12°" gate was therefore stopping
+  // people at roughly 4.6° of real rotation — which is about as still as a
+  // person can be asked to sit.
+  //
+  // The scale is deliberately NOT corrected inside the estimator. It feeds the
+  // regression feature vector as well as this check, the true factor depends on
+  // how far an individual's nose protrudes past their own cheekbones, and the
+  // pose telemetry now printing to the console will measure it better than any
+  // anthropometric table. So the estimator keeps its units and the thresholds
+  // are stated in them.
+  //
+  // Real degrees now, not estimator units.
+  //
+  // These used to be stated in the geometric heuristic's own scale because that
+  // scale was wrong by a per-person factor — 2.6× in simulation, nearly 4× for
+  // one participant, whose 12° head turn was reported as 49°. A threshold in
+  // units that mean a different thing for every face cannot be set correctly for
+  // anyone.
+  //
+  // eyeTrackingService.headPose now reads MediaPipe's transformation matrix,
+  // which the landmarker has always been producing, so these are degrees of
+  // actual head rotation. Twenty of them is a deliberate glance away, not a
+  // shift in the chair.
+  //
+  // They can also afford to be generous because rotation no longer corrupts
+  // anything else: the cos(yaw) correction is gone from faceScale, and rotation
+  // is judged before depth, so a turn that slips past here cannot resurface as a
+  // bogus distance instruction.
+  yawDeg: 20,
+  pitchDeg: 20,
+  rollDeg: 25,
 };
 
-/** Typical adult bizygomatic width, used only to phrase drift in cm when unmeasured. */
-export const NOMINAL_FACE_WIDTH_CM = 15;
+/**
+ * Typical adult outer canthal distance, used only to phrase drift in cm when it
+ * was never measured. Matches the segment `faceScale` is built on.
+ */
+export const NOMINAL_FACE_WIDTH_CM = 9;
 
 export function captureAnchor(
   sig: HeadSignature,
@@ -151,9 +242,17 @@ export interface AnchorCheck {
 /**
  * Compare the live head against the anchor.
  *
- * Depth is checked first and rotation last, deliberately: depth drift breaks the
- * mapping most and is the least obvious to the participant, whereas a head that
- * has merely turned is often about to turn back on its own.
+ * Rotation is checked FIRST, and this order matters more than it looks.
+ *
+ * It used to be last, on the reasoning that depth drift breaks the mapping most.
+ * But a turned head foreshortens the measured face width, so it *also* changes
+ * the depth reading — which meant a participant who glanced sideways was told
+ * "Move Back (10cm)". They were being handed a distance instruction for a
+ * rotation, and following it made things worse.
+ *
+ * A turned head corrupts the depth measurement, so depth is not worth judging
+ * until rotation is known to be within bounds. Report the cause, not the
+ * symptom.
  */
 export function checkAnchor(
   anchor: PositionAnchor | null,
@@ -175,7 +274,37 @@ export function checkAnchor(
     return { fault: 'unknown', ok: false, message: 'No Face Detected', deviation: dev };
   }
 
-  const depthLimit = tol.depthPct / 100;
+  // Per axis, and named. "Face the Screen" against a max over three axes told
+  // the participant neither which way they had moved nor by how much, so a head
+  // tilt and a head turn produced the same unactionable instruction.
+  if (Math.abs(dev.yawDeg) > tol.yawDeg) {
+    return {
+      fault: 'turned',
+      ok: false,
+      message: dev.yawDeg > 0 ? 'Turn Back To The Left' : 'Turn Back To The Right',
+      deviation: dev,
+    };
+  }
+  if (Math.abs(dev.pitchDeg) > tol.pitchDeg) {
+    return {
+      fault: 'turned',
+      ok: false,
+      message: dev.pitchDeg > 0 ? 'Lift Your Chin' : 'Lower Your Chin',
+      deviation: dev,
+    };
+  }
+  if (Math.abs(dev.rollDeg) > tol.rollDeg) {
+    return { fault: 'turned', ok: false, message: 'Straighten Your Head', deviation: dev };
+  }
+
+
+  // Percentage or floor, whichever is more forgiving. Below about 38 cm the
+  // floor takes over, which is where a proportional band would otherwise fall
+  // under the participant's own postural sway.
+  const pctLimit = tol.depthPct / 100;
+  const floorLimit =
+    anchor.distanceCm && anchor.distanceCm > 0 ? tol.depthFloorCm / anchor.distanceCm : 0;
+  const depthLimit = Math.max(pctLimit, floorLimit);
   if (dev.depthRatio > 1 + depthLimit) {
     return { fault: 'too-far', ok: false, message: withCm('Move Closer', dev.depthCm), deviation: dev };
   }
@@ -196,11 +325,6 @@ export function checkAnchor(
     return dev.verticalFaceWidths > 0
       ? { fault: 'moved-down', ok: false, message: withCm('Sit Up', drift), deviation: dev }
       : { fault: 'moved-up', ok: false, message: withCm('Lower Your Head', drift), deviation: dev };
-  }
-
-  const rot = Math.max(Math.abs(dev.yawDeg), Math.abs(dev.pitchDeg), Math.abs(dev.rollDeg));
-  if (rot > tol.rotationDeg) {
-    return { fault: 'turned', ok: false, message: 'Face the Screen', deviation: dev };
   }
 
   return { fault: 'ok', ok: true, message: 'Perfect! Hold Steady...', deviation: dev };
@@ -231,9 +355,18 @@ export function faceWidthCmFromCard(
   return cardWidthCm * (facePxWidth / cardPxWidth);
 }
 
-/** Sanity band for a measured face width — bizygomatic width across adults and children. */
+/**
+ * Sanity band for the measured facial width.
+ *
+ * The quantity is the **outer canthal distance** — corner of one eye to corner
+ * of the other — not the bizygomatic width it used to be. That changed when the
+ * distance model moved off the face silhouette, which is not a rigid segment and
+ * grows rather than foreshortens when the head turns. Roughly 90 mm in adults;
+ * the band spans children through large adults with room for a hurried card
+ * measurement.
+ */
 export function isPlausibleFaceWidthCm(cm: number): boolean {
-  return Number.isFinite(cm) && cm >= 10 && cm <= 20;
+  return Number.isFinite(cm) && cm >= 6 && cm <= 13;
 }
 
 /**

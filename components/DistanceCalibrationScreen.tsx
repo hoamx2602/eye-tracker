@@ -168,7 +168,7 @@ export default function DistanceCalibrationScreen({
   /** True only while a sweep is actually running — see the sampling effect. */
   const [measuring, setMeasuring] = useState(false);
 
-  const liveScale = faceWidthNorm != null ? toFaceScale(faceWidthNorm, yawRad) : null;
+  const liveScale = faceWidthNorm != null ? toFaceScale(faceWidthNorm) : null;
 
   /**
    * Face size *at the moment the distance is being measured*.

@@ -204,6 +204,8 @@ export interface AppConfig {
   faceWidthScale: number;
   /** Widen acceptable distance band (1 = strict, 2 = 2x band for cameras that auto-zoom). Default 2 to cope with Center Stage / Studio Effects. */
   headDistanceTolerance: number;
+  /** Multiplier on the per-axis head-rotation tolerances (lib/positionAnchor.ts). */
+  headRotationTolerance: number;
 
   // Eye Movement Exercises (additional calibration patterns for better accuracy)
   enableExercises: boolean;
@@ -295,6 +297,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   // measured rather than guessed. Widen it only for a rig that genuinely cannot
   // hold position, and knowing it widens the task, not just the tolerance.
   headDistanceTolerance: 1,
+  // Multiplier on yaw 12° / pitch 15° / roll 25°. The three differ because the
+  // three cost different amounts — see AnchorTolerance. Raise this if
+  // participants are being sent back for movements that are not actually
+  // breaking the mapping; the head-positioning readout prints the live figures.
+  headRotationTolerance: 1,
 
   // Exercises
   enableExercises: true,

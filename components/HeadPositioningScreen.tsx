@@ -25,7 +25,9 @@ function describeHeadDebug(d: NonNullable<HeadValidationResult['debug']>): strin
         ? `${Math.abs(d.lateralCm).toFixed(1)}cm`
         : `${d.driftFaceWidths!.toFixed(2)} face-widths`
       : '—';
-    return `vs setup pose · depth ${depth} · drift ${drift}`;
+    const deg = (v: number | undefined) => (Number.isFinite(v) ? `${v!.toFixed(0)}°` : '—');
+    const turn = `y ${deg(d.yawDeg)} p ${deg(d.pitchDeg)} r ${deg(d.rollDeg)}`;
+    return `vs setup pose · depth ${depth} · drift ${drift} · turn ${turn}`;
   }
   const measured = d.measuredDistanceCm != null ? ` · at ${d.measuredDistanceCm.toFixed(0)}cm` : '';
   return `faceWidth: ${d.faceWidth.toFixed(3)} (min ${d.minFaceWidth.toFixed(2)}) · target ${d.targetDistanceCm}cm${measured}`;

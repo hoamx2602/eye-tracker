@@ -30,7 +30,7 @@ import {
   getPatternDisplayName,
   type EyeMovementKind
 } from './types';
-import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
+import { eyeTrackingService, HEAD_CENTRE_TOLERANCE_X, HEAD_CENTRE_TOLERANCE_Y, HeadValidationResult } from './services/eyeTrackingService';
 import { HybridRegressor, GazeSmoother, DataCleaner } from './services/mathUtils';
 import { sessionsApi, uploadApi, neurologicalRunsApi, getNeurologicalConfig } from './services/api';
 import CalibrationLayer from './components/CalibrationLayer';
@@ -63,9 +63,9 @@ import { offlineBackendUrl, offlineHandlingEnabled, offlinePersonalizationEnable
 import { lockCameraAutoAdjustments, describeCameraLock, type CameraLockResult } from '@/lib/cameraLock';
 import { FixationGate, type GateSample, type DotConvergence } from '@/lib/fixationGate';
 import DistanceCalibrationScreen from '@/components/DistanceCalibrationScreen';
-import { faceScale as toFaceScale, distanceFromFace, loadCalibration, saveCalibration, type DistanceCalibration } from '@/lib/viewingDistance';
+import { faceScale as toFaceScale, distanceFromFace, faceScaleAtDistance, loadCalibration, saveCalibration, type DistanceCalibration } from '@/lib/viewingDistance';
 import { cameraKey as buildCameraKey } from '@/lib/cameraFocal';
-import { captureAnchor, type PositionAnchor } from '@/lib/positionAnchor';
+import { captureAnchor, DEFAULT_ANCHOR_TOLERANCE, type AnchorTolerance, type PositionAnchor } from '@/lib/positionAnchor';
 import { loadScreenScale } from '@/lib/screenScale';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
@@ -89,6 +89,61 @@ import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracti
  * The switch is deliberately exhaustive with no `default`, so adding a state to
  * AppState fails the build here until someone decides what it should do.
  */
+/**
+ * How long a pose failure must persist before the run stops.
+ *
+ * This is a noise floor, not a grace period. Leaving the setup pose stops the
+ * test immediately by design — the mapping was fitted at that pose and anything
+ * recorded away from it is worth nothing — and the only reason the check is not
+ * literally instantaneous is that a single frame is not evidence. MediaPipe
+ * drops or corrupts an occasional detection under motion blur, a lighting step
+ * or a hand passing the face, and aborting a whole test on one bad frame would
+ * be reacting to the sensor rather than to the participant.
+ *
+ * Roughly four frames at 30 fps. Below human perception as a delay, well above
+ * the length of a single-frame artefact.
+ *
+ * It was briefly 3 s, to spare people who struggle to hold still. That turned
+ * out to be treating a symptom: the real cause was `roll` mixing frame-width and
+ * frame-height units, which reported a 6° head tilt as 10.6° and rejected people
+ * for a movement they could not feel. With the angle measured correctly the gate
+ * fires on genuine displacement only, and waiting is no longer a kindness — it
+ * is just three seconds of unusable recording.
+ */
+const OUT_OF_POSE_CONFIRM_MS = 150;
+/**
+ * How much longer a rotation fault must persist before it counts.
+ *
+ * Rotation is the one fault that routinely corrects itself: people glance at the
+ * keyboard, tilt while thinking, and come back. Depth and drift do not do that.
+ * Ten times 150 ms is a second and a half — long enough that a passing tilt is
+ * ignored, short enough that a participant who has genuinely turned away is
+ * still caught well before a trial completes.
+ */
+const TURN_CONFIRM_MULTIPLIER = 10;
+
+/**
+ * Per-frame head-pose telemetry to the console.
+ *
+ * On by default while the position gates are being tuned: the thresholds are
+ * only meaningful next to the numbers they are judging, and without them a
+ * participant being rejected has no way to tell a real movement from an
+ * estimator artefact. Set NEXT_PUBLIC_POSE_TELEMETRY=0 to silence it.
+ */
+const POSE_TELEMETRY =
+  (process.env.NEXT_PUBLIC_POSE_TELEMETRY ?? '1').trim() !== '0';
+
+/**
+ * How long the position hold tolerates a dropout before starting over.
+ *
+ * A blink is 100–400 ms and takes the landmarks with it; a tremor, a swallow or
+ * a single missed detection are the same order. Restarting the countdown on the
+ * first bad frame made the setup step disproportionately hard for exactly the
+ * people least able to hold still, which for a concussion assessment is close to
+ * the opposite of what is wanted.
+ */
+const HOLD_DROPOUT_ALLOWANCE_MS = 600;
+
 function cameraNeededFor(
   status: AppState,
   neuroPhase: string,
@@ -208,6 +263,7 @@ function App() {
   const [stableFrameCount, setStableFrameCount] = useState(0);
   const headPosStartTimeRef = useRef<number | null>(null);
   const lastHeadDebugLogRef = useRef<number>(0);
+  const lastPoseLogRef = useRef<number>(0);
   /**
    * Where to go back to once the participant has returned to the setup pose.
    *
@@ -217,6 +273,8 @@ function App() {
    */
   const resumeStatusRef = useRef<AppState | null>(null);
   const headInvalidSinceRef = useRef<number | null>(null); // debounce: head invalid start time
+  /** Last frame that passed while holding position — see HOLD_DROPOUT_ALLOWANCE_MS. */
+  const lastHeldValidAtRef = useRef<number>(0);
   
   const hybridRegressorRef = useRef<HybridRegressor>(new HybridRegressor());
   const [calibPhase, setCalibPhase] = useState<CalibrationPhase>(CalibrationPhase.INITIAL_MAPPING);
@@ -272,6 +330,18 @@ function App() {
   }, []);
 
   useEffect(() => { statusRef.current = status; }, [status]);
+  useEffect(() => {
+    // Only the rotation axes scale here. Depth and drift are already expressed
+    // in units that mean the same thing at every distance, and have their own
+    // knob in headDistanceTolerance.
+    const k = Math.max(0.5, Math.min(3, config.headRotationTolerance ?? 1));
+    anchorToleranceRef.current = {
+      ...DEFAULT_ANCHOR_TOLERANCE,
+      yawDeg: DEFAULT_ANCHOR_TOLERANCE.yawDeg * k,
+      pitchDeg: DEFAULT_ANCHOR_TOLERANCE.pitchDeg * k,
+      rollDeg: DEFAULT_ANCHOR_TOLERANCE.rollDeg * k,
+    };
+  }, [config.headRotationTolerance]);
   useEffect(() => {
     if (status !== 'CALIBRATION' && status !== 'TRACKING') setLightLevel(null);
   }, [status]);
@@ -364,6 +434,14 @@ function App() {
    * a calibration.
    */
   const positionAnchorRef = useRef<PositionAnchor | null>(null);
+  /**
+   * Anchor tolerances, scaled by the admin config.
+   *
+   * These used to be unreachable: validateHeadPosition accepted an override and
+   * nothing ever passed one, so the defaults were effectively hard-coded and a
+   * participant rejected for a slight head tilt had no knob to turn.
+   */
+  const anchorToleranceRef = useRef<AnchorTolerance>(DEFAULT_ANCHOR_TOLERANCE);
   /**
    * Physical face width in cm, from the card-at-cheek step. Feeds the anchor so
    * drift is reported in real centimetres rather than against a nominal 15 cm.
@@ -1051,8 +1129,11 @@ function App() {
    * calling it only where landmarks exist meant walking away never stopped
    * anything.
    *
-   * 500 ms of debounce so a blink, a hand across the face, or a single dropped
-   * detection does not abort a run.
+   * Fires as soon as the failure is confirmed — see OUT_OF_POSE_CONFIRM_MS,
+   * which is a single-frame noise filter rather than time granted to the
+   * participant. Once the pose is left, every further frame is recorded against
+   * a mapping that no longer describes where the eyes are; there is nothing to
+   * be gained by waiting for them to notice.
    */
   const enforceSetupPose = useCallback((now: number, validation: HeadValidationResult) => {
     const poseGated =
@@ -1068,7 +1149,18 @@ function App() {
       headInvalidSinceRef.current = now;
       return;
     }
-    if (now - headInvalidSinceRef.current <= 500) return;
+    // A turned head gets longer to correct itself than a drifted one.
+    //
+    // Depth and lateral drift are postural: once someone has slumped or leaned
+    // they stay there, so confirming quickly is right. A glance away or a head
+    // tilt is usually already on its way back before anyone could act on it, and
+    // 150 ms is four or five frames — short enough that a momentary tilt cost
+    // the participant the whole run.
+    const confirmMs =
+      validation.debug?.anchorFault === 'turned'
+        ? OUT_OF_POSE_CONFIRM_MS * TURN_CONFIRM_MULTIPLIER
+        : OUT_OF_POSE_CONFIRM_MS;
+    if (now - headInvalidSinceRef.current <= confirmMs) return;
 
     headInvalidSinceRef.current = null;
     resumeStatusRef.current = statusRef.current;
@@ -1212,6 +1304,7 @@ function App() {
                 configRef.current.headDistanceTolerance ?? 1,
                 distanceCalRef.current,
                 positionAnchorRef.current,
+                anchorToleranceRef.current,
               );
               if (validation.debug?.rawFaceWidth != null) {
                 lastFaceWidthRef.current = validation.debug.rawFaceWidth;
@@ -1224,6 +1317,39 @@ function App() {
               setHeadValidation(validation);
               headValidationRef.current = validation;
               isHeadValidRef.current = validation.valid;
+
+              // Pose telemetry, throttled to ~3 Hz.
+              //
+              // Deliberately prints the *raw* pose beside the deviation from the
+              // anchor. The two together are what separate "the participant
+              // moved" from "the estimator moved" — and the estimator is a
+              // heuristic whose yaw and pitch are known to pick up roll, so a
+              // reading that jumps when the head only tilts is a measurement
+              // fault, not a posture fault.
+              if (
+                POSE_TELEMETRY &&
+                (statusRef.current === 'HEAD_POSITIONING' ||
+                  statusRef.current === 'CALIBRATION' ||
+                  statusRef.current === 'NEURO_FLOW') &&
+                now - lastPoseLogRef.current > 333
+              ) {
+                lastPoseLogRef.current = now;
+                const raw = eyeTrackingService.headPose(landmarks);
+                const geo = eyeTrackingService.calculateGeometricHeadPose(landmarks);
+                const sig = eyeTrackingService.headSignature(landmarks);
+                const d = validation.debug;
+                const deg = (r: number) => ((r * 180) / Math.PI).toFixed(1).padStart(6);
+                const n = (v: number | undefined, dp = 2) =>
+                  v == null || !Number.isFinite(v) ? '  —' : v.toFixed(dp).padStart(6);
+                console.log(
+                  `[pose:${eyeTrackingService.poseSource}] y${deg(raw.yaw)} p${deg(raw.pitch)} r${deg(raw.roll)}` +
+                  ` (geo y${deg(geo.yaw)})` +
+                  ` | vs anchor y${n(d?.yawDeg, 1)} p${n(d?.pitchDeg, 1)} r${n(d?.rollDeg, 1)}` +
+                  ` | faceScale ${n(sig?.faceScale, 4)} depth ${n(d?.depthRatio, 3)}` +
+                  ` | drift ${n(d?.driftFaceWidths, 3)}` +
+                  ` | ${validation.valid ? 'OK  ' : (d?.anchorFault ?? 'fail')} ${validation.message}`,
+                );
+              }
 
               // Debug log (throttled) during Head Positioning so user can see values in Console
               if (statusRef.current === 'HEAD_POSITIONING' && validation.debug && now - lastHeadDebugLogRef.current > 500) {
@@ -1250,6 +1376,7 @@ function App() {
               
               if (statusRef.current === 'HEAD_POSITIONING') {
                   if (validation.valid) {
+                      lastHeldValidAtRef.current = now;
                       setStableFrameCount(c => c + 1);
                       if (!headPosStartTimeRef.current) {
                           headPosStartTimeRef.current = now;
@@ -1306,7 +1433,20 @@ function App() {
                               startActualCalibration();
                           }
                       }
-                  } else {
+                  } else if (now - lastHeldValidAtRef.current > HOLD_DROPOUT_ALLOWANCE_MS) {
+                      // Only give up on the countdown after a *sustained* dropout.
+                      //
+                      // It used to restart on a single bad frame, which quietly
+                      // excluded anyone who cannot hold perfectly still: a blink
+                      // at the wrong moment, a tremor, one dropped detection, and
+                      // the two seconds began again. For some people that is not
+                      // merely annoying, it never terminates.
+                      //
+                      // Costs nothing in accuracy. The countdown can only *finish*
+                      // inside the valid branch above, so the anchor is still
+                      // captured from a frame that passed every check — the
+                      // allowance decides how patient the wait is, never what
+                      // counts as being in position.
                       setStableFrameCount(0);
                       headPosStartTimeRef.current = null;
                       setPositionHoldTime(null);
@@ -1489,58 +1629,67 @@ function App() {
       const valid = isHeadValidRef.current;
       const color = valid ? '#22c55e' : '#ef4444';
 
-      // Target box (matches frontend HeadPoseStep proportions)
-      const bw = 0.26, bh = 0.48;
-      const bx = (1 - bw) / 2 * W;
-      const by = (1 - bh) / 2 * H;
-      const boxW = bw * W;
-      const boxH = bh * H;
+      // One box. Inside it is in position; that is the whole instruction.
+      //
+      // Two earlier versions were wrong in opposite ways. The first drew a fixed
+      // 26%×48% rectangle that no check referenced and that a face at a normal
+      // working distance could not fit inside even in principle. The second drew
+      // every criterion faithfully — an expected outline, a live outline, a drift
+      // circle, two markers — which was true and unusable, because a participant
+      // being asked to hold still should have one thing to look at, not five.
+      //
+      // So: the box is the target face size grown by the position tolerance. A
+      // face inside it is within both. Which of the underlying checks is
+      // unhappy is already spelled out in words underneath — the picture does
+      // not need to say it twice.
+      const lmNow = currentFaceLandmarksRef.current;
+      const sig = lmNow ? eyeTrackingService.headSignature(lmNow) : null;
+      const bounds = lmNow ? eyeTrackingService.faceBounds(lmNow) : null;
+      const anchor = positionAnchorRef.current;
+      const cal = distanceCalRef.current;
 
-      // Rounded target box
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = valid ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)';
-      roundedRect(ctx, bx, by, boxW, boxH, 16);
-      ctx.stroke();
+      // Where the face should sit, and how wide it should look there.
+      //   with an anchor  the pose the mapping was fitted at — the only target
+      //                   that matters once calibration has happened
+      //   without one     frame centre, at the configured distance
+      const targetNx = anchor ? anchor.cx : 0.5;
+      const targetNy = anchor ? anchor.cy : 0.5;
+      const targetScale = anchor
+        ? anchor.faceScale
+        : cal
+          ? faceScaleAtDistance(cal, configRef.current.faceDistance)
+          : null;
 
-      // Corner brackets
-      const cLen = 25;
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = color;
-      ctx.lineCap = 'round';
-      // TL
-      ctx.beginPath();
-      ctx.moveTo(bx, by + cLen); ctx.lineTo(bx, by); ctx.lineTo(bx + cLen, by);
-      ctx.stroke();
-      // TR
-      ctx.beginPath();
-      ctx.moveTo(bx + boxW - cLen, by); ctx.lineTo(bx + boxW, by); ctx.lineTo(bx + boxW, by + cLen);
-      ctx.stroke();
-      // BL
-      ctx.beginPath();
-      ctx.moveTo(bx, by + boxH - cLen); ctx.lineTo(bx, by + boxH); ctx.lineTo(bx + cLen, by + boxH);
-      ctx.stroke();
-      // BR
-      ctx.beginPath();
-      ctx.moveTo(bx + boxW - cLen, by + boxH); ctx.lineTo(bx + boxW, by + boxH); ctx.lineTo(bx + boxW, by + boxH - cLen);
-      ctx.stroke();
+      // Mirrored, to match the video underneath.
+      const tx = (1 - targetNx) * W;
+      const ty = targetNy * H;
 
-      // Crosshairs
-      ctx.globalAlpha = 0.12;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(W / 2, by); ctx.lineTo(W / 2, by + boxH);
-      ctx.moveTo(bx, H / 2); ctx.lineTo(bx + boxW, H / 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
+      if (bounds && sig && sig.faceScale > 0 && targetScale) {
+        // The live silhouette rescaled to the size it would be at the target:
+        // the right shape for this face, the right size for this distance, with
+        // no constant standing in for either.
+        const k = targetScale / sig.faceScale;
+        const faceW = (bounds.maxX - bounds.minX) * W * k;
+        const faceH = (bounds.maxY - bounds.minY) * H * k;
 
-      // Center dot
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.4;
-      ctx.beginPath();
-      ctx.arc(W / 2, H / 2, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
+        // Grown by however far the face centre is allowed to wander.
+        const padX = anchor
+          ? DEFAULT_ANCHOR_TOLERANCE.driftFaceWidths * targetScale * W
+          : HEAD_CENTRE_TOLERANCE_X * W;
+        const padY = anchor
+          ? DEFAULT_ANCHOR_TOLERANCE.driftFaceWidths * targetScale * W
+          : HEAD_CENTRE_TOLERANCE_Y * H;
+
+        const boxW = faceW + padX * 2;
+        const boxH = faceH + padY * 2;
+
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.9;
+        roundedRect(ctx, tx - boxW / 2, ty - boxH / 2, boxW, boxH, 28);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
 
       // Draw face mesh: all 478 landmarks — always green; only the box shows pass/fail (red/green)
       const lm = currentFaceLandmarksRef.current;
@@ -1659,10 +1808,31 @@ function App() {
         configRef.current.outlierMethod,
         configRef.current.outlierThreshold,
       );
-      processCalibBuffer(cleanBuffer, rawCollectionBufferRef.current);
+      // Through a ref, not the closure.
+      //
+      // This callback is useCallback(…, []), so it is created once and keeps
+      // whatever `processCalibBuffer` binding existed on the first render — a
+      // render where calibPoints is still [] and currentCalibIndex is 0. When
+      // the timer fired it therefore looked up calibPoints[0] of an empty array
+      // and dereferenced undefined. calibPhase was captured just as stale, which
+      // is worse than a crash: a validation dot recorded as a training dot fails
+      // silently and poisons the fit.
+      processCalibBufferRef.current(cleanBuffer, rawCollectionBufferRef.current);
     }, captureTime);
     timerRef.current.push(tEnd);
   }, []);
+
+  /**
+   * The current processCalibBuffer, for callers frozen in a stable closure.
+   *
+   * Deliberately without a dependency array: it must be refreshed on *every*
+   * render, because the function it points at closes over three pieces of state
+   * — calibPoints, currentCalibIndex and calibPhase — that all change during
+   * calibration.
+   */
+  const processCalibBufferRef = useRef<(buffer: number[][], rawFeatBuffer?: EyeFeatures[]) => void>(
+    () => {},
+  );
 
   // Mirror into refs for the frame loop, which is a stable callback.
   useEffect(() => { calibPointsRef.current = calibPoints; }, [calibPoints]);
@@ -1792,6 +1962,16 @@ function App() {
   const processCalibBuffer = (buffer: number[][], rawFeatBuffer?: EyeFeatures[]) => {
      const point = calibPoints[currentCalibIndex];
 
+     // Belt and braces. The stale-closure route that used to get here is gone,
+     // but a dot timer can still outlive the state it belongs to — the run being
+     // aborted mid-capture, or the phase advancing underneath it — and losing one
+     // dot's data is a far better outcome than taking the whole calibration down
+     // with a TypeError.
+     if (!point) {
+       console.warn('[calibration] buffer arrived for a dot that no longer exists — discarded');
+       return;
+     }
+
      if (buffer.length > 2) {
         // Average raw EyeFeatures first (when available), then recompute the feature vector
         // from the averaged coordinates. This is the correct approach: avg(lx) * avg(yaw)
@@ -1863,6 +2043,8 @@ function App() {
           setRetryCount(c => c + 1); 
       }
   };
+
+  useEffect(() => { processCalibBufferRef.current = processCalibBuffer; });
 
   const processExerciseData = () => {
     const data = exerciseDataRef.current;
@@ -3396,6 +3578,10 @@ function App() {
         neuroConfigSnapshot={neuroConfigSnapshot}
         neuroHeadPose={neuroHeadPose}
         gazePos={gazePos}
+        // Gaze prediction is gated on head validity, so gazePos stops updating
+        // rather than going blank when the participant leaves the pose. Without
+        // this flag every test keeps recording that frozen value as a measurement.
+        gazeValid={headValidation?.valid ?? false}
         gazeModelReady={gazeModelReady}
         neuroTestResults={neuroTestResults}
         onExitRun={async () => setShowNeuroExitConfirm(true)}
