@@ -225,10 +225,13 @@ export default function DistanceCalibrationScreen({
           }
         }
       }
-      // No usable focal length: somebody has to supply an absolute distance, and
-      // it has to be supplied from roughly where they will sit. Walk them there
-      // first — see the flow note above for why measuring from the wrong place
-      // is not merely less precise.
+      // No usable focal length: somebody has to measure one absolute distance.
+      //
+      // That happens on the seat step, not on a screen after it. The seat step is
+      // where the approximate reading is shown, so it is where anyone can see the
+      // reading is wrong — and a correction belongs where the error is visible,
+      // not two screens later. They are the same act anyway: sit somewhere,
+      // measure, type it. Splitting it across two screens added a screen.
       setStep(measuredFaceWidthCm != null ? 'approach' : 'manual');
     },
     [pxPerCm, cameraKey, anchorScale],
@@ -365,7 +368,7 @@ export default function DistanceCalibrationScreen({
   const TITLES: Record<Step, [string, string]> = {
     card: ['Screen Size', 'Hold a bank card against the screen and match the rectangle'],
     'face-card': ['Face Size', 'Hold the same card flat against your cheek'],
-    approach: ['Take Your Seat', `Get roughly ${targetDistanceCm} cm away before we measure`],
+    approach: ['Take Your Seat', 'Sit where you like, measure once, and the camera is calibrated for good'],
     blindspot: ['Viewing Distance', 'Cover your right eye and stare at the white square'],
     manual: ['Calibrate This Camera', 'One measurement, once per machine — every later session reuses it'],
     position: ['Sit At The Target', `Move until you are ${targetDistanceCm} cm from the screen`],
@@ -405,11 +408,10 @@ export default function DistanceCalibrationScreen({
           faceWidthCm={faceWidthCm}
           liveScale={liveScale}
           targetDistanceCm={targetDistanceCm}
-          onDone={() => {
-            // Only the samples taken from here on describe where they will
-            // actually sit, so the ones from the card step are discarded.
+          onMeasured={(actualCm) => completeBootstrap(actualCm, 'manual')}
+          onUseBlindSpot={() => {
             scaleSamplesRef.current = [];
-            setStep('manual');
+            setStep('blindspot');
           }}
         />
       )}
@@ -520,7 +522,7 @@ function CardStep({
   );
 }
 
-// ─── Step 1b: take your seat ─────────────────────────────────────────────────
+// ─── Step 1b: take your seat, and measure once ───────────────────────────────
 
 /**
  * Get roughly to the target before anything absolute is measured.
@@ -540,66 +542,78 @@ function ApproachStep({
   faceWidthCm,
   liveScale,
   targetDistanceCm,
-  onDone,
+  onMeasured,
+  onUseBlindSpot,
 }: {
   faceWidthCm: number | null;
   liveScale: number | null;
   targetDistanceCm: number;
-  onDone: () => void;
+  /** The measured distance IS the bootstrap — see the note above. */
+  onMeasured: (actualCm: number) => void;
+  onUseBlindSpot: () => void;
 }) {
   const approx = liveScale != null ? approximateDistanceCm(faceWidthCm, liveScale) : NaN;
   const known = Number.isFinite(approx);
-  const errorFrac = known ? (approx - targetDistanceCm) / targetDistanceCm : NaN;
-  const close = known && Math.abs(errorFrac) <= APPROACH_TOLERANCE;
-
-  const instruction = !known
-    ? 'Looking for your face…'
-    : errorFrac > APPROACH_TOLERANCE
-      ? 'Move Closer'
-      : errorFrac < -APPROACH_TOLERANCE
-        ? 'Move Back'
-        : 'Close Enough';
+  const [text, setText] = useState('');
+  const typed = Number(text);
+  const valid = Number.isFinite(typed) && typed >= MIN_MANUAL_CM && typed <= MAX_MANUAL_CM;
 
   return (
     <>
-      <div className="relative w-full max-w-3xl h-56 rounded-2xl border-2 border-gray-700 bg-black shadow-2xl flex flex-col items-center justify-center gap-4">
-        <p className={`text-6xl font-black tabular-nums ${close ? 'text-green-400' : 'text-amber-400'}`}>
+      <div className="relative w-full max-w-3xl h-56 rounded-2xl border-2 border-gray-700 bg-black shadow-2xl flex flex-col items-center justify-center gap-3">
+        <p className="text-6xl font-black tabular-nums text-amber-400">
           ≈{known ? approx.toFixed(0) : '—'}
           <span className="text-2xl font-normal text-gray-500 ml-2">cm</span>
         </p>
         <p className="text-gray-500 text-xs max-w-md text-center px-6">
-          Approximate — your face has been measured but this camera has not, so
-          this can be out by a fifth either way. Precise measurement comes next.
+          A guess, not a measurement — this camera has not been calibrated yet, so
+          it can be out by a fifth either way.
         </p>
+        {known && valid && (
+          <p className="text-gray-600 text-xs font-mono">
+            guess is {(approx / typed).toFixed(2)}× your real distance
+          </p>
+        )}
       </div>
 
-      <div className="text-center bg-gray-900 bg-opacity-90 px-6 py-3 rounded-xl border border-gray-800 w-full max-w-lg">
-        <p className={`text-xl font-bold ${close ? 'text-green-400' : 'text-amber-400'}`}>{instruction}</p>
-        <p className="text-gray-400 text-xs mt-2">
-          Sit as you will sit for the whole test, about {targetDistanceCm} cm from
-          the screen. The next step measures from wherever you settle, so settling
-          first is the point.
+      <div className="text-center bg-gray-900 bg-opacity-90 px-6 py-4 rounded-xl border border-gray-800 w-full max-w-lg">
+        <p className="text-sm text-gray-300">
+          Sit however you like. Measure from your eye to the middle of the screen,
+          stay exactly there, and type it in.
+        </p>
+        <div className="flex items-center justify-center gap-2 mt-3">
+          <input
+            type="number"
+            inputMode="decimal"
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            min={MIN_MANUAL_CM}
+            max={MAX_MANUAL_CM}
+            className="w-28 bg-gray-900 border-2 border-gray-700 focus:border-cyan-500 outline-none rounded-lg px-2 py-2 text-3xl font-black text-center tabular-nums text-white"
+            aria-label="Measured distance in centimetres"
+          />
+          <span className="text-xl text-gray-500">cm</span>
+        </div>
+        <button
+          type="button"
+          disabled={!valid || liveScale == null}
+          onClick={() => onMeasured(typed)}
+          className="mt-4 px-8 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-30 text-white font-bold uppercase tracking-wider text-sm"
+        >
+          Use This Measurement
+        </button>
+        <p className="text-[11px] text-gray-500 mt-3 leading-snug">
+          Once per machine. Every later session on this computer reuses it, and
+          nobody has to measure anything again.
         </p>
         <button
           type="button"
-          disabled={!close}
-          onClick={onDone}
-          className="mt-4 px-8 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-30 text-white font-bold uppercase tracking-wider text-sm"
+          onClick={onUseBlindSpot}
+          className="mt-3 block mx-auto text-xs text-gray-500 hover:text-gray-300 underline"
         >
-          Continue
+          No tape measure — use the blind-spot task instead
         </button>
-        {/* An estimate this rough must not be able to strand anyone: a camera
-            outside the assumed range would otherwise fail a check it was never
-            accurate enough to make. */}
-        {!close && known && (
-          <button
-            type="button"
-            onClick={onDone}
-            className="mt-3 block mx-auto text-xs text-gray-500 hover:text-gray-300 underline"
-          >
-            I am already at the right distance — continue anyway
-          </button>
-        )}
       </div>
     </>
   );
