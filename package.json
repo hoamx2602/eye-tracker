@@ -16,7 +16,8 @@
     "test:gate": "tsx scripts/test-fixation-gate.ts",
     "test:distance": "tsx scripts/test-viewing-distance.ts",
     "test:anchor": "tsx scripts/test-position-anchor.ts",
-    "test:focal": "tsx scripts/test-camera-focal.ts"
+    "test:focal": "tsx scripts/test-camera-focal.ts",
+    "test:iris": "tsx scripts/test-iris-depth.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.998.0",

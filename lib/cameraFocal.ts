@@ -44,7 +44,16 @@
 
 import type { DistanceCalibration } from './viewingDistance';
 
-const STORAGE_KEY = 'eyetracker.cameraFocal.v1';
+// v2 fixes two unsafe assumptions in v1:
+//
+//   * a single localStorage slot could only remember one optical profile;
+//   * the cache key ignored an exposed zoom/crop setting, so changing framing
+//     could silently reuse a focal length measured with different optics.
+//
+// Deliberately do not migrate v1. A stale focal length looks valid while making
+// every distance wrong by one constant factor, so measuring once more is safer
+// than guessing which framing produced the old value.
+const STORAGE_KEY = 'eyetracker.cameraFocal.v2';
 
 /**
  * Plausible range for F, in frame widths.
@@ -71,6 +80,13 @@ export interface CameraFocal {
   measuredAt: string;
 }
 
+export interface CameraFramingSettings {
+  /** WebRTC PTZ zoom, when the browser/driver exposes it. */
+  zoom?: number;
+  /** Whether the driver crops or scales frames to satisfy the requested size. */
+  resizeMode?: string;
+}
+
 /**
  * Identity of the camera and framing this F belongs to.
  *
@@ -79,10 +95,37 @@ export interface CameraFocal {
  * deliberately *not* in the key — F is in frame widths precisely so that 720p
  * and 1080p of the same crop share a value.
  */
-export function cameraKey(deviceId: string | undefined, width?: number, height?: number): string {
+export function cameraKey(
+  deviceId: string | undefined,
+  width?: number,
+  height?: number,
+  framing: CameraFramingSettings = {},
+): string {
   const id = deviceId && deviceId.length ? deviceId.slice(0, 16) : 'default';
   const aspect = width && height ? (width / height).toFixed(2) : 'unknown';
-  return `${id}@${aspect}`;
+  const zoom = Number.isFinite(framing.zoom) ? Number(framing.zoom).toFixed(3) : 'hidden';
+  const resizeMode = framing.resizeMode?.trim() || 'unknown';
+  return `${id}@${aspect}:z${zoom}:r${resizeMode}`;
+}
+
+/**
+ * Can a focal length safely survive closing and reopening the camera stream?
+ *
+ * macOS can apply Center Stage and Manual Framing after WebRTC capture. Those
+ * controls change effective focal length while `deviceId`, resolution and even
+ * `getSettings().zoom` may remain unchanged. The browser therefore has no
+ * observable key with which to distinguish the two optical profiles. Reusing a
+ * cached F on Apple platforms would be confident but uncheckable, so it is
+ * intentionally session-only there.
+ *
+ * Other platforms keep the existing persistent behaviour. Their observable
+ * zoom is now part of `cameraKey`; opaque vendor effects remain a reason to use
+ * the in-flow "re-measure" action, but do not justify penalising every fixed UVC
+ * webcam with a fresh measurement on every run.
+ */
+export function canPersistFocalForPlatform(platform: string | undefined): boolean {
+  const value = platform ?? '';
+  return !/(Mac|iPhone|iPad)/i.test(value);
 }
 
 /** Horizontal field of view in degrees, for display. F is otherwise unreadable. */
@@ -209,15 +252,21 @@ export function calibrateFromFocal(params: {
   f: number;
   faceWidthCm: number;
   faceScale: number;
+  irisScale?: number;
+  cameraKey?: string;
   pxPerCm: number;
 }): DistanceCalibration | null {
-  const { f, faceWidthCm, faceScale, pxPerCm } = params;
+  const { f, faceWidthCm, faceScale, irisScale, cameraKey, pxPerCm } = params;
   const k = kFromFocal(f, faceWidthCm);
   if (!(k > 0) || !(faceScale > 0)) return null;
+  const distanceCm = k / faceScale;
+  const irisK = irisScale != null && irisScale > 0 ? distanceCm * irisScale : NaN;
   return {
     k,
-    distanceCm: k / faceScale,
+    distanceCm,
     faceScale,
+    ...(Number.isFinite(irisK) ? { irisK, irisScale } : {}),
+    ...(cameraKey ? { cameraKey } : {}),
     method: 'camera-focal',
     faceWidthCm,
     pxPerCm,
@@ -230,35 +279,53 @@ export function calibrateFromFocal(params: {
 // participants — that is the entire benefit. localStorage rather than
 // sessionStorage for the same reason the screen scale uses it.
 
-export function loadFocal(key: string): CameraFocal | null {
-  if (typeof window === 'undefined') return null;
+function loadFocalRecords(): Record<string, CameraFocal> {
+  if (typeof window === 'undefined') return {};
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as CameraFocal;
-    if (!parsed || !isPlausibleFocal(parsed.f)) return null;
-    // An F from different optics is worse than none: it looks valid and is
-    // wrong by an unknown factor, on every session until someone notices.
-    if (parsed.cameraKey !== key) return null;
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, CameraFocal>;
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') return {};
     return parsed;
   } catch {
-    return null;
+    return {};
   }
+}
+
+export function loadFocal(key: string): CameraFocal | null {
+  const parsed = loadFocalRecords();
+  const record = parsed[key];
+  if (!record || !isPlausibleFocal(record.f)) return null;
+  // An F from different optics is worse than none: it looks valid and is
+  // wrong by an unknown factor, on every session until someone notices.
+  return record.cameraKey === key ? record : null;
 }
 
 export function saveFocal(focal: CameraFocal): boolean {
   if (!isPlausibleFocal(focal.f)) return false;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(focal));
+    const records = loadFocalRecords();
+    records[focal.cameraKey] = focal;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
     return true;
   } catch {
     return false;
   }
 }
 
-export function clearFocal(): void {
+export function clearFocal(key?: string): void {
   try {
-    window.localStorage.removeItem(STORAGE_KEY);
+    if (!key) {
+      window.localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+    const records = loadFocalRecords();
+    delete records[key];
+    if (Object.keys(records).length) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    } else {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
   } catch {
     /* ignore */
   }

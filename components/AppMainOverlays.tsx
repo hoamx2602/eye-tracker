@@ -94,7 +94,7 @@ type AppMainOverlaysProps = {
   exerciseRetryCount?: number;
   onAssessmentContinue?: () => void;
   onAssessmentRedo?: () => void;
-  /** Present while status is DISTANCE_CALIBRATION; drives the card + blind-spot flow. */
+  /** Present while status is DISTANCE_CALIBRATION; captures actual eye-to-screen distance. */
   distanceCalibrationProps?: DistanceCalibrationScreenProps | null;
 };
 

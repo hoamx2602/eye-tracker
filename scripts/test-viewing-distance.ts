@@ -346,6 +346,18 @@ console.log('\ngeometry provenance — never convert from a stand-in\n');
   check('a measured distance without a measured display scale is still not enough',
     !noScale.measured && angularErrorDegOrNull(47.5, noScale) === null);
 
+  const explicitFallback = geo({
+    positionAnchor: { distanceCm: 38.4, distanceSource: 'manual' },
+    distanceCalibration: {
+      distanceCm: 38.4,
+      pxPerCm: 96 / 2.54,
+      screenScaleMeasured: false,
+      method: 'manual',
+    },
+  });
+  check('an explicit CSS-reference fallback never masquerades as measured px/cm',
+    !explicitFallback.measured && angularErrorDegOrNull(47.5, explicitFallback) === null);
+
   check('nothing at all yields nothing', angularErrorDegOrNull(47.5, geo(undefined)) === null);
   check('no error yields nothing', angularErrorDegOrNull(null, real) === null);
 

@@ -12,6 +12,7 @@ import {
   type FaceBounds,
 } from "../lib/viewingDistance";
 import { checkAnchor, type HeadSignature, type PositionAnchor, type AnchorTolerance } from "../lib/positionAnchor";
+import { irisDiameterNorm } from "../lib/irisDepth";
 
 /**
  * Smallest fraction of frame width the face may span.
@@ -119,6 +120,8 @@ export interface HeadValidationResult {
     faceWidth: number;
     /** Face width before the FOV fudge — what the distance calibration consumes. */
     rawFaceWidth?: number;
+    /** MediaPipe iris major-axis diameter in fractions of frame width. */
+    irisDiameterNorm?: number;
     minFaceWidth: number;
     maxFaceWidth: number;
     targetDistanceCm: number;
@@ -428,8 +431,15 @@ export class EyeTrackingService {
     // relied on over-reads by a factor of three. A turned head is caught by the
     // orientation gate below instead, which needs no scale factor to be right.
     const scaleInvariant = faceScale(rawFaceWidth);
+    const irisScale = irisDiameterNorm(landmarks, this.frameAspect);
     const distCheck = distanceCalibration
-      ? checkDistance(distanceCalibration, scaleInvariant, D, tol)
+      ? checkDistance(
+          distanceCalibration,
+          scaleInvariant,
+          D,
+          tol,
+          Number.isFinite(irisScale) ? irisScale : undefined,
+        )
       : null;
 
     // Face-size band. This checks IMAGE QUALITY, not distance.
@@ -451,6 +461,7 @@ export class EyeTrackingService {
     const debug = {
       faceWidth,
       rawFaceWidth,
+      ...(Number.isFinite(irisScale) ? { irisDiameterNorm: irisScale } : {}),
       minFaceWidth,
       maxFaceWidth,
       targetDistanceCm: D,

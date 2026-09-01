@@ -36,6 +36,8 @@
  * common factor; only comparisons against published norms are shifted.
  */
 
+import { distanceFromIris, fuseViewingDistance, irisKFromCalibration } from './irisDepth';
+
 /**
  * Angular eccentricity of the blind spot, temporal side. 13.5° is the value the
  * virtual-chinrest paper assumes and validates against; individual optic discs
@@ -73,7 +75,7 @@ const MAX_PLAUSIBLE_CM = 120;
 // silhouette, so a value stored by an older build is wrong by the ratio between
 // the two — about 1.6×. Bumping the key discards it instead of restoring it
 // confidently after a page reload.
-const STORAGE_KEY = 'eyetracker.distanceCalibration.v2';
+const STORAGE_KEY = 'eyetracker.distanceCalibration.v3';
 
 // ─── Blind spot → distance ───────────────────────────────────────────────────
 
@@ -252,6 +254,16 @@ export interface DistanceCalibration {
   /** Face scale observed at that distance. */
   faceScale: number;
   /**
+   * Subject-specific Depth-from-Iris constant (`distance × iris diameter in
+   * frame widths`). Present when the 478-landmark iris contour was visible at
+   * the absolute anchor.
+   */
+  irisK?: number;
+  /** Iris diameter observed at the anchor, in fractions of frame width. */
+  irisScale?: number;
+  /** Camera + observable framing profile that produced this calibration. */
+  cameraKey?: string;
+  /**
    * How the absolute distance was obtained.
    *
    * 'assumed' means the participant was declared to be at the configured target
@@ -277,6 +289,8 @@ export interface DistanceCalibration {
    * drift in centimetres it had not measured.
    */
   faceWidthCm?: number;
+  /** False when pxPerCm is the CSS reference fallback rather than a measurement. */
+  screenScaleMeasured?: boolean;
   pxPerCm: number;
   measuredAt: string;
 }
@@ -284,31 +298,59 @@ export interface DistanceCalibration {
 export function calibrate(params: {
   distanceCm: number;
   faceScale: number;
+  irisScale?: number;
+  cameraKey?: string;
   pxPerCm: number;
+  screenScaleMeasured?: boolean;
   method: DistanceCalibration['method'];
   spreadCm?: number;
   faceWidthCm?: number;
 }): DistanceCalibration | null {
-  const { distanceCm, faceScale: s, pxPerCm, method, spreadCm, faceWidthCm } = params;
+  const {
+    distanceCm,
+    faceScale: s,
+    irisScale,
+    cameraKey,
+    pxPerCm,
+    screenScaleMeasured,
+    method,
+    spreadCm,
+    faceWidthCm,
+  } = params;
   if (!(distanceCm > 0) || !(s > 0) || !Number.isFinite(distanceCm) || !Number.isFinite(s)) {
     return null;
   }
+  const irisK = irisScale != null ? irisKFromCalibration(distanceCm, irisScale) : NaN;
   return {
     k: distanceCm * s,
     distanceCm,
     faceScale: s,
+    ...(Number.isFinite(irisK) ? { irisK, irisScale } : {}),
+    ...(cameraKey ? { cameraKey } : {}),
     method,
     spreadCm,
     ...(faceWidthCm != null ? { faceWidthCm } : {}),
+    ...(screenScaleMeasured != null ? { screenScaleMeasured } : {}),
     pxPerCm,
     measuredAt: new Date().toISOString(),
   };
 }
 
-/** Live distance in cm from the current face scale. */
-export function distanceFromFace(cal: DistanceCalibration, scale: number): number {
-  if (!(scale > 0)) return NaN;
-  return cal.k / scale;
+/**
+ * Live distance in cm, fusing face span with calibrated Depth-from-Iris when
+ * the current iris contour is available. The face-only call remains backwards
+ * compatible for reports and stored sessions that predate iris calibration.
+ */
+export function distanceFromFace(
+  cal: DistanceCalibration,
+  scale: number,
+  irisScale?: number,
+): number {
+  const faceCm = scale > 0 ? cal.k / scale : NaN;
+  const irisCm = cal.irisK != null && irisScale != null
+    ? distanceFromIris(cal.irisK, irisScale)
+    : NaN;
+  return fuseViewingDistance(faceCm, irisCm).distanceCm;
 }
 
 /** Face scale that corresponds to a target distance — for drawing setup guides. */
@@ -471,10 +513,11 @@ export function checkDistance(
   scale: number,
   targetCm: number,
   tolerance = 1,
+  irisScale?: number,
 ): DistanceCheck {
   const bandCm = distanceBandCm(targetCm, tolerance);
   if (!cal) return { verdict: 'unknown', distanceCm: NaN, targetCm, bandCm };
-  const distanceCm = distanceFromFace(cal, scale);
+  const distanceCm = distanceFromFace(cal, scale, irisScale);
   if (!Number.isFinite(distanceCm)) {
     return { verdict: 'unknown', distanceCm: NaN, targetCm, bandCm };
   }
@@ -488,13 +531,15 @@ export function checkDistance(
 // only for the current session — a stored value from the previous participant
 // would be confidently, invisibly wrong.
 
-export function loadCalibration(): DistanceCalibration | null {
+export function loadCalibration(expectedCameraKey?: string): DistanceCalibration | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = window.sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as DistanceCalibration;
-    return parsed && parsed.k > 0 ? parsed : null;
+    if (!parsed || !(parsed.k > 0)) return null;
+    if (expectedCameraKey && parsed.cameraKey !== expectedCameraKey) return null;
+    return parsed;
   } catch {
     return null;
   }

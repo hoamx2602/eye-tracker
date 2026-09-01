@@ -63,12 +63,17 @@ import { offlineBackendUrl, offlineHandlingEnabled, offlinePersonalizationEnable
 import { lockCameraAutoAdjustments, describeCameraLock, type CameraLockResult } from '@/lib/cameraLock';
 import { FixationGate, type GateSample, type DotConvergence } from '@/lib/fixationGate';
 import DistanceCalibrationScreen from '@/components/DistanceCalibrationScreen';
-import { faceScale as toFaceScale, distanceFromFace, faceScaleAtDistance, loadCalibration, saveCalibration, type DistanceCalibration } from '@/lib/viewingDistance';
-import { cameraKey as buildCameraKey, fovDegFromFocal, loadFocal } from '@/lib/cameraFocal';
+import { faceScale as toFaceScale, clearCalibration, distanceFromFace, faceScaleAtDistance, saveCalibration, type DistanceCalibration } from '@/lib/viewingDistance';
+import { cameraKey as buildCameraKey, canPersistFocalForPlatform, fovDegFromFocal, loadFocal } from '@/lib/cameraFocal';
 import { captureAnchor, DEFAULT_ANCHOR_TOLERANCE, type AnchorTolerance, type PositionAnchor } from '@/lib/positionAnchor';
 import { loadScreenScale } from '@/lib/screenScale';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
+
+interface CameraStartProfile {
+  key: string;
+  allowPersistentFocal: boolean;
+}
 
 /**
  * How long to let the camera's auto-exposure converge before pinning it.
@@ -451,10 +456,13 @@ function App() {
   const faceWidthCmRef = useRef<number | null>(null);
   /** Which camera and framing is running — selects the cached focal length. */
   const [cameraKey, setCameraKey] = useState<string>(() => buildCameraKey(undefined));
+  /** False where the OS can change crop/zoom without exposing it to WebRTC. */
 
   /** Live raw face width (fraction of frame), fed to the distance calibration UI. */
   const lastFaceWidthRef = useRef<number | null>(null);
   const [liveFaceWidth, setLiveFaceWidth] = useState<number | null>(null);
+  const lastIrisDiameterRef = useRef<number | null>(null);
+  const [liveIrisDiameter, setLiveIrisDiameter] = useState<number | null>(null);
   const collectionBufferRef = useRef<number[][]>([]);
   /** Parallel raw-features buffer — same lifecycle as collectionBufferRef. Used to store
    *  EyeFeatures per frame so the averaged result can be saved in TrainingSample.rawEyeFeatures,
@@ -591,19 +599,12 @@ function App() {
             if (heatmapRef.current) heatmapRef.current.reset();
             trackingHistoryRef.current = [];
           } else if (parsed.screen === 'calibration') {
-            // Landing straight on /calibration (reload, or a deep link) must
-            // still go through the measurement step — jumping to head
-            // positioning here was silently skipping it for the whole flow,
-            // which left every session on the uncalibrated fallback band.
-            const restored = loadCalibration();
-            if (restored) {
-              distanceCalRef.current = restored;
-              // Recover the measured face width too. Losing it across a reload
-              // left the anchor reporting drift against a nominal 15 cm face
-              // while looking exactly as authoritative as a measured one.
-              faceWidthCmRef.current = restored.faceWidthCm ?? null;
-            }
-            setStatus(restored ? 'HEAD_POSITIONING' : 'DISTANCE_CALIBRATION');
+            // A reload/deep link must ask for the actual distance again. A
+            // restored K belongs to an earlier pose and potentially an earlier
+            // participant or Center Stage crop, so it is not a valid shortcut.
+            distanceCalRef.current = null;
+            faceWidthCmRef.current = null;
+            setStatus('DISTANCE_CALIBRATION');
           } else if (parsed.screen === 'choice') {
             setStatus('IDLE');
           } else if (parsed.screen === 'neuro_pre' || parsed.screen === 'neuro_post' || parsed.screen === 'neuro_done' || parsed.screen === 'neuro_test') {
@@ -807,8 +808,8 @@ function App() {
     };
   }, []);
 
-  const startCamera = async () => {
-    if (!videoRef.current) return;
+  const startCamera = async (): Promise<CameraStartProfile | null> => {
+    if (!videoRef.current) return null;
 
     // Absolute safeguard: Do not start the camera on non-eye-tracking pages.
     const p = typeof window !== 'undefined' ? window.location.pathname : '/';
@@ -823,7 +824,7 @@ function App() {
        // request sees "already tried", returns immediately, and the camera never
        // starts — a black preview with no error anywhere.
        hasTriedStartCameraNeuroRef.current = false;
-       return;
+       return null;
     }
 
     if (zoomLockIntervalRef.current) {
@@ -849,12 +850,11 @@ function App() {
       };
       const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
       const videoTrack = stream.getVideoTracks()[0];
+      let profile: CameraStartProfile = {
+        key: buildCameraKey(undefined),
+        allowPersistentFocal: true,
+      };
       if (videoTrack) {
-        // Which optics are in play. A focal length cached against a different
-        // device or a different sensor crop must not be reused — it would look
-        // valid and be wrong by an unknown factor on every session.
-        const st = videoTrack.getSettings();
-        setCameraKey(buildCameraKey(st.deviceId, st.width, st.height));
         const caps = videoTrack.getCapabilities() as { zoom?: { min?: number; max?: number } };
         const minZoom = typeof caps?.zoom?.min === 'number' ? caps.zoom.min : null;
         if (minZoom !== null) {
@@ -881,6 +881,43 @@ function App() {
             }
           }, 2000);
         }
+
+        // Build the profile only after the best-effort zoom lock. Building it
+        // before applyConstraints() keyed the cache to the framing we requested,
+        // then measured under the framing the driver actually settled on.
+        const settled = videoTrack.getSettings() as MediaTrackSettings & {
+          zoom?: number;
+          resizeMode?: string;
+        };
+        const key = buildCameraKey(settled.deviceId, settled.width, settled.height, {
+          zoom: settled.zoom,
+          resizeMode: settled.resizeMode,
+        });
+        const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+        const platform = nav.userAgentData?.platform || nav.platform || nav.userAgent;
+        profile = {
+          key,
+          allowPersistentFocal: canPersistFocalForPlatform(platform),
+        };
+        setCameraKey(key);
+
+        // A calibration belongs to the exact optical profile that produced it.
+        // On macOS, Center Stage/Manual Framing is opaque to WebRTC, so even an
+        // apparently identical key is not enough after a stream is reopened.
+        const prior = distanceCalRef.current;
+        const profileChanged = prior?.cameraKey !== key;
+        if (
+          parsed.screen === 'calibration' &&
+          (profileChanged || !profile.allowPersistentFocal)
+        ) {
+          distanceCalRef.current = null;
+          faceWidthCmRef.current = null;
+          clearCalibration();
+          if (statusRef.current === 'HEAD_POSITIONING') {
+            statusRef.current = 'DISTANCE_CALIBRATION';
+            setStatus('DISTANCE_CALIBRATION');
+          }
+        }
       }
       videoRef.current.srcObject = stream;
       streamRef.current = stream;
@@ -899,6 +936,7 @@ function App() {
       //
       // It now fires from the anchor capture instead: see lockCameraForSession.
       processVideo();
+      return profile;
     } catch (err) {
       console.error('[Camera] getUserMedia failed:', err);
       // Exit fullscreen so the user can see the in-app error, then send
@@ -908,6 +946,7 @@ function App() {
       }
       pathSyncSourceRef.current = 'internal';
       router.push('/setup');
+      return null;
     }
   };
 
@@ -1314,6 +1353,12 @@ function App() {
                 // it — a setState per frame during tracking would be wasteful.
                 if (statusRef.current === 'DISTANCE_CALIBRATION') {
                   setLiveFaceWidth(validation.debug.rawFaceWidth);
+                }
+              }
+              if (validation.debug?.irisDiameterNorm != null) {
+                lastIrisDiameterRef.current = validation.debug.irisDiameterNorm;
+                if (statusRef.current === 'DISTANCE_CALIBRATION') {
+                  setLiveIrisDiameter(validation.debug.irisDiameterNorm);
                 }
               }
               setHeadValidation(validation);
@@ -3095,17 +3140,10 @@ function App() {
     // as long as they then stay there.
     positionAnchorRef.current = null;
     resumeStatusRef.current = null;
-    // Measure the real viewing distance before anything depends on it. Reuse a
-    // measurement already taken this session (e.g. the participant went back a
-    // step) rather than putting them through the blind-spot task again.
-    const existing = distanceCalRef.current ?? loadCalibration();
-    if (existing) {
-      distanceCalRef.current = existing;
-      faceWidthCmRef.current = existing.faceWidthCm ?? faceWidthCmRef.current;
-      setStatus('HEAD_POSITIONING');
-    } else {
-      setStatus('DISTANCE_CALIBRATION');
-    }
+    // Every run anchors the live face/iris scale to a distance the participant
+    // just measured. Reusing a previous K would silently assume the same person,
+    // pose and OS-level camera crop — exactly the failure this step prevents.
+    setStatus('DISTANCE_CALIBRATION');
   };
 
   const handleDistanceCalibrated = useCallback(
@@ -3337,21 +3375,25 @@ function App() {
     const rows: Record<string, unknown>[] = [];
 
     (window as unknown as Record<string, unknown>).__eyeDiag = async (trueCm?: number) => {
-      const samples: { canthal: number; reported: number }[] = [];
+      const samples: { canthal: number; iris: number; reported: number }[] = [];
       const cal = distanceCalRef.current;
       const started = performance.now();
       while (performance.now() - started < 2000) {
         const lm = currentFaceLandmarksRef.current;
         if (lm) {
           const canthal = eyeTrackingService.rigidFaceWidth(lm);
+          const iris = lastIrisDiameterRef.current ?? NaN;
           samples.push({
             canthal,
-            reported: cal && canthal > 0 ? distanceFromFace(cal, toFaceScale(canthal)) : NaN,
+            iris,
+            reported: cal && canthal > 0
+              ? distanceFromFace(cal, toFaceScale(canthal), iris)
+              : NaN,
           });
         }
         await new Promise((r) => setTimeout(r, 33));
       }
-      const med = (pick: (s: { canthal: number; reported: number }) => number) => {
+      const med = (pick: (s: { canthal: number; iris: number; reported: number }) => number) => {
         const v = samples.map(pick).filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b);
         return v.length ? v[v.length >> 1] : NaN;
       };
@@ -3366,6 +3408,7 @@ function App() {
       const row = {
         trueCm: trueCm ?? null,
         canthalScale: +med((x) => x.canthal).toFixed(5),
+        irisScale: +med((x) => x.iris).toFixed(5),
         reportedCm: +med((x) => x.reported).toFixed(1),
         frames: samples.length,
       };
@@ -3391,7 +3434,8 @@ function App() {
         display: scale ? { pxPerCm: +scale.pxPerCm.toFixed(2), measuredAt: scale.measuredAt } : null,
         sessionCalibration: cal
           ? { k: +cal.k.toFixed(5), method: cal.method, distanceCm: +cal.distanceCm.toFixed(1),
-              faceWidthCm: cal.faceWidthCm, spreadCm: cal.spreadCm }
+              faceWidthCm: cal.faceWidthCm, irisK: cal.irisK, cameraKey: cal.cameraKey,
+              spreadCm: cal.spreadCm }
           : null,
         pose: pose
           ? { yaw: +((pose.yaw * 180) / Math.PI).toFixed(1),
@@ -3545,10 +3589,9 @@ function App() {
         distanceCalibrationProps={{
           targetDistanceCm: config.faceDistance,
           faceWidthNorm: liveFaceWidth,
-          yawRad: rawFeatures?.headPose.yaw ?? 0,
+          irisDiameterNorm: liveIrisDiameter,
           onComplete: handleDistanceCalibrated,
           distanceTolerance: config.headDistanceTolerance ?? 1,
-          videoRef,
           cameraKey,
         }}
         headPosCanvasRef={headPosCanvasRef}

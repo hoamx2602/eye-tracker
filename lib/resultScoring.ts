@@ -86,6 +86,10 @@ export function sessionGeometry(config: unknown): SessionGeometry {
   const anchorCm = anchor.distanceSource !== 'assumed' ? num(anchor, 'distanceCm') : undefined;
   const calCm = cal.method !== 'assumed' ? num(cal, 'distanceCm') : undefined;
   const pxPerCm = num(cal, 'pxPerCm');
+  // New card-free sessions retain a CSS-reference fallback for legacy fields,
+  // but mark it explicitly so a plausible-looking px/cm value cannot turn an
+  // eye-to-screen measurement into a falsely "measured" visual angle.
+  const screenScaleWasMeasured = cal.screenScaleMeasured !== false;
   const target = typeof c.faceDistance === 'number' ? c.faceDistance : undefined;
 
   const measuredCm = anchorCm ?? calCm;
@@ -94,7 +98,7 @@ export function sessionGeometry(config: unknown): SessionGeometry {
     // `measured` is what guards that, and angularErrorDegOrNull enforces it.
     distanceCm: measuredCm ?? target ?? 60,
     pxPerCm: pxPerCm ?? CSS_REFERENCE_PX_PER_CM,
-    measured: measuredCm != null && pxPerCm != null,
+    measured: measuredCm != null && pxPerCm != null && screenScaleWasMeasured,
   };
 }
 

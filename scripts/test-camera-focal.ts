@@ -18,6 +18,7 @@ import {
   NOMINAL_FOCAL,
   approximateDistanceCm,
   calibrateFromFocal,
+  canPersistFocalForPlatform,
   cameraKey,
   checkFocalAgainst,
   clearFocal,
@@ -211,6 +212,12 @@ console.log('\ncache identity and staleness\n');
     'F is in frame widths, so resolution does not change it');
   check('a different sensor crop gets a different key',
     cameraKey('abcdef0123456789xyz', 1280, 960) !== key);
+  check('an exposed zoom level gets a different optical key',
+    cameraKey('abcdef0123456789xyz', 1920, 1080, { zoom: 1 }) !==
+      cameraKey('abcdef0123456789xyz', 1920, 1080, { zoom: 1.5 }));
+  check('resizeMode is part of the optical key',
+    cameraKey('abcdef0123456789xyz', 1920, 1080, { resizeMode: 'none' }) !==
+      cameraKey('abcdef0123456789xyz', 1920, 1080, { resizeMode: 'crop-and-scale' }));
   check('a different device gets a different key',
     cameraKey('9999999999999999zzz', 1920, 1080) !== key);
   check('a missing deviceId still produces a stable key',
@@ -232,6 +239,14 @@ console.log('\ncache identity and staleness\n');
   check('refuses to save an implausible focal length',
     !saveFocal({ ...record, f: 99 }));
 
+  const zoomedKey = cameraKey('abcdef0123456789xyz', 1920, 1080, { zoom: 1.5 });
+  check('stores a second optical profile without overwriting the first',
+    saveFocal({ ...record, cameraKey: zoomedKey, f: F_TRUE * 1.5 }) &&
+      loadFocal(key)?.f === F_TRUE && loadFocal(zoomedKey)?.f === F_TRUE * 1.5);
+  clearFocal(zoomedKey);
+  check('clears only the selected optical profile',
+    loadFocal(zoomedKey) === null && loadFocal(key)?.f === F_TRUE);
+
   clearFocal();
   check('clears', loadFocal(key) === null);
 
@@ -246,6 +261,15 @@ console.log('\ncache identity and staleness\n');
   check('flags a gross mismatch', !flagged.ok, flagged.message.slice(0, 60) + '…');
   check('no cached value means nothing to disagree with',
     checkFocalAgainst(null, F_TRUE).ok);
+}
+
+console.log('\nopaque OS framing policy\n');
+
+{
+  check('macOS focal cache is session-only', !canPersistFocalForPlatform('macOS'));
+  check('legacy MacIntel platform is session-only', !canPersistFocalForPlatform('MacIntel'));
+  check('iPad desktop-class browser is session-only', !canPersistFocalForPlatform('iPad'));
+  check('a fixed Linux UVC camera keeps persistent profiles', canPersistFocalForPlatform('Linux x86_64'));
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : '\nall camera-focal tests passed\n');
