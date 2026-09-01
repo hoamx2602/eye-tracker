@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { createPortal } from 'react-dom';
-import { angularErrorDeg } from '@/lib/resultScoring';
 
 // Re-use the exact same visualization + metrics components from the user-facing results screen
 import NeurologicalResultParamsDrawer from '@/components/neurological/results/NeurologicalResultParamsDrawer';
@@ -40,6 +39,19 @@ type SymptomPayload = {
 };
 
 type NeuroRunDetail = {
+  /**
+   * Calibration quality, computed server-side from the geometry the session was
+   * actually recorded at. Deliberately not derived here: this shape has never
+   * carried `session.config`, so anything computed on the client would fall
+   * back to defaults and disagree with the runs list.
+   */
+  calibration: {
+    meanErrorPx: number;
+    /** Null when the geometry needed to convert it was never measured. */
+    angularErrorDeg: number | null;
+    distanceCm: number | null;
+    pxPerCm: number | null;
+  } | null;
   id: string;
   sessionId: string;
   status: string | null;
@@ -641,9 +653,26 @@ export default function AdminNeuroRunDetailPage() {
               <dt className="text-xs text-slate-500 uppercase">Calibration mean error</dt>
               <dd className="text-sm text-slate-200 mt-0.5 tabular-nums">
                 {run.session.meanErrorPx.toFixed(1)} px
-                <span className="text-slate-400 text-xs ml-1">
-                  / {angularErrorDeg(run.session.meanErrorPx).toFixed(2)}°
-                </span>
+                {run.calibration?.angularErrorDeg != null ? (
+                  <>
+                    <span className="text-slate-400 text-xs ml-1">
+                      / {run.calibration.angularErrorDeg.toFixed(2)}°
+                    </span>
+                    {/* The geometry the degrees were computed from. A degree
+                        figure without the distance it was measured at cannot be
+                        compared with another one, and printing it unlabelled is
+                        how the same session came to read 1.20° here and
+                        something else on the runs list. */}
+                    <span className="text-xs ml-1 text-slate-500">
+                      @ {run.calibration.distanceCm!.toFixed(0)} cm ·{' '}
+                      {run.calibration.pxPerCm!.toFixed(1)} px/cm
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-slate-500 text-xs ml-1">
+                    — no measured distance, so no angular figure
+                  </span>
+                )}
                 <span className="text-slate-500 text-xs ml-1">(affects gaze accuracy)</span>
               </dd>
             </div>

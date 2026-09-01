@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminCookieName, verifyAdminToken } from '@/lib/admin-auth';
 import { prisma } from '@/lib/prisma';
+import { calibrationForSession } from '@/lib/sessionCalibration';
 
 async function requireAdmin(request: NextRequest) {
   const cookieName = getAdminCookieName();
@@ -37,7 +38,12 @@ export async function GET(
       },
     });
     if (!run) return NextResponse.json({ error: 'Run not found' }, { status: 404 });
-    return NextResponse.json(run);
+    // Attached here rather than derived on the client. The page used to call
+    // sessionGeometry() on `run.session.config` — a field this route has never
+    // selected — so it silently fell back to 60 cm and the CSS reference pixel
+    // and disagreed with the runs list about the same session.
+    const calibration = await calibrationForSession(run.session?.id);
+    return NextResponse.json({ ...run, calibration });
   } catch (e) {
     console.error('[api/admin/neurological-runs/[id] GET]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

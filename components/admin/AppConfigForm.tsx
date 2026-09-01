@@ -243,10 +243,16 @@ export default function AppConfigForm() {
                   <span className="text-slate-400">Distance to screen (cm)</span>
                   <span className="font-mono">{localConfig.faceDistance} cm</span>
                 </div>
+                {/* Floor is 20, not 30. Whether a given machine can serve 20 cm is a
+                    separate question the runtime answers with a measured number —
+                    the head has to fit a 16:9 frame, and a 65° webcam at 20 cm
+                    sees about 14 cm of height against a ~22 cm head. Setting a
+                    target this camera cannot reach fails loudly during head
+                    positioning, naming the distance it can. */}
                 <input
                   type="range"
-                  min="40"
-                  max="90"
+                  min="20"
+                  max="60"
                   step="5"
                   value={localConfig.faceDistance}
                   onChange={(e) => handleChange('faceDistance', parseInt(e.target.value, 10))}
@@ -270,18 +276,67 @@ export default function AppConfigForm() {
               </div>
               <div>
                 <div className="flex justify-between text-xs mb-1">
-                  <span className="text-slate-400">Distance tolerance (×)</span>
-                  <span className="font-mono">×{(localConfig.headDistanceTolerance ?? 2).toFixed(1)}</span>
+                  <span className="text-slate-400">Distance tolerance</span>
+                  <span className="font-mono">
+                    ±{(localConfig.faceDistance * 0.05 * (localConfig.headDistanceTolerance ?? 1)).toFixed(1)} cm
+                    <span className="text-slate-500"> (×{(localConfig.headDistanceTolerance ?? 1).toFixed(2)})</span>
+                  </span>
                 </div>
                 <input
                   type="range"
                   min={1}
                   max={3}
                   step={0.25}
-                  value={localConfig.headDistanceTolerance ?? 2}
+                  value={localConfig.headDistanceTolerance ?? 1}
                   onChange={(e) => handleChange('headDistanceTolerance', parseFloat(e.target.value))}
                   className="w-full accent-slate-500 h-1 bg-slate-600 rounded-lg"
                 />
+                {/* The band is not only a measurement tolerance. Stimuli sit at
+                    fixed viewport fractions, so how far the participant sits
+                    decides the amplitude they actually perform — widening this
+                    widens the task, and with it what pre and post can be
+                    compared against. */}
+                {localConfig.faceDistance < 30 && (
+                  <p className="text-[11px] text-amber-400/90 mt-1.5 leading-snug">
+                    Below 30 cm the screen subtends more than the comfortable
+                    range of eye rotation, so participants turn their head to
+                    reach the corners — which the position anchor then rejects.
+                    It also needs a wide-angle camera: at 20 cm the head only
+                    fits a frame of about 78° or more.
+                  </p>
+                )}
+                <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                  ×1 is ±5% of the target — 10% on BCEA, and about 10% on the
+                  saccade amplitude the participant actually performs. Widening it
+                  lets the same test differ between sessions: at ×3 the amplitude
+                  can vary by a third.
+                </p>
+              </div>
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-slate-400">Head rotation tolerance</span>
+                  <span className="font-mono">
+                    {(20 * (localConfig.headRotationTolerance ?? 1)).toFixed(0)}/
+                    {(20 * (localConfig.headRotationTolerance ?? 1)).toFixed(0)}/
+                    {(25 * (localConfig.headRotationTolerance ?? 1)).toFixed(0)}°
+                    <span className="text-slate-500"> (×{(localConfig.headRotationTolerance ?? 1).toFixed(2)})</span>
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={3}
+                  step={0.25}
+                  value={localConfig.headRotationTolerance ?? 1}
+                  onChange={(e) => handleChange('headRotationTolerance', parseFloat(e.target.value))}
+                  className="w-full accent-slate-500 h-1 bg-slate-600 rounded-lg"
+                />
+                <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                  Yaw / pitch / roll, in <strong>degrees of actual head rotation</strong>,
+                  as change from the setup pose. Read from MediaPipe&rsquo;s head-pose
+                  matrix, so ×1 really is 20°. The head-positioning screen prints
+                  the live figures as <span className="font-mono">turn y·p·r</span>.
+                </p>
               </div>
             </section>
 
@@ -296,6 +351,25 @@ export default function AppConfigForm() {
                 <option value={RegressionMethod.HYBRID}>Hybrid (Ridge + kNN)</option>
                 <option value={RegressionMethod.RIDGE}>Ridge regression</option>
               </select>
+            </section>
+
+            <section className="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-cyan-300">Wait for the eye to settle</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Record each calibration dot once gaze has actually arrived, instead of after a fixed
+                    wait. Turn off to restore the old fixed-timer behaviour.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleChange('gazeContingentCalibration', !localConfig.gazeContingentCalibration)}
+                  className={`relative w-12 h-6 rounded-full transition flex-shrink-0 ml-4 ${localConfig.gazeContingentCalibration ? 'bg-cyan-500' : 'bg-slate-600'}`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${localConfig.gazeContingentCalibration ? 'left-7' : 'left-1'}`} />
+                </button>
+              </div>
             </section>
 
             <section className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">

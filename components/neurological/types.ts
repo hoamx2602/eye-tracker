@@ -23,6 +23,16 @@ export interface GazeSample {
   y: number;
   /** Optional: head pose at sample time */
   head?: { yaw?: number; pitch?: number; roll?: number };
+  /**
+   * False when the head was outside the setup pose at this instant.
+   *
+   * The x/y are then a *stale repeat* of the last valid estimate, not a
+   * measurement — gaze prediction is gated on head validity and simply stops
+   * updating. Left unflagged, a stretch of these reads as a flawlessly steady
+   * fixation. Samples are kept rather than dropped so the gap stays visible in
+   * the timeline; anything computing a metric must filter on this.
+   */
+  valid?: boolean;
 }
 
 /** Payload passed to onTestComplete. testId + timing required; rest per-test. */

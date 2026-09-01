@@ -19,6 +19,7 @@ import StopSaveModal from './StopSaveModal';
 import CapturedImageModal from './CapturedImageModal';
 import TrackingToolbar from './TrackingToolbar';
 import HeadPositioningScreen from './HeadPositioningScreen';
+import DistanceCalibrationScreen, { type DistanceCalibrationScreenProps } from './DistanceCalibrationScreen';
 
 import SetupGuideScreen from './SetupGuideScreen';
 import EyeSpinner from './ui/EyeSpinner';
@@ -31,6 +32,7 @@ type CapturedImage = {
 type AppMainOverlaysProps = {
   status: AppState;
   currentScreen?: string;
+  currentNeuroTestId?: string | null;
   headPosCanvasRef: React.RefObject<HTMLCanvasElement>;
   headValidation: HeadValidationResult | null;
   positionHoldTime: number | null;
@@ -93,12 +95,16 @@ type AppMainOverlaysProps = {
   exerciseRetryCount?: number;
   onAssessmentContinue?: () => void;
   onAssessmentRedo?: () => void;
+  /** Present while status is DISTANCE_CALIBRATION; captures actual eye-to-screen distance. */
+  distanceCalibrationProps?: DistanceCalibrationScreenProps | null;
 };
 
 export default function AppMainOverlays(props: AppMainOverlaysProps) {
   const {
     status,
     currentScreen,
+    currentNeuroTestId,
+    distanceCalibrationProps,
     headPosCanvasRef,
     headValidation,
     positionHoldTime,
@@ -251,6 +257,10 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
         </div>
       )}
 
+      {status === 'DISTANCE_CALIBRATION' && distanceCalibrationProps && (
+        <DistanceCalibrationScreen {...distanceCalibrationProps} />
+      )}
+
       {status === 'HEAD_POSITIONING' && (
         <HeadPositioningScreen
           headPosCanvasRef={headPosCanvasRef}
@@ -262,7 +272,21 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
 
 
 
-      {((status === 'CALIBRATION' || status === 'TRACKING') && headValidation && !headValidation.valid) && (
+      {/* Also during neurological tests, except Head Orientation: turning the
+          head is the task there, so the centered-head guide would contradict
+          the instruction and cover the camera preview.
+
+          Gaze prediction is gated on head validity, so leaving the pose froze the
+          cursor with no explanation, and a few seconds later the test vanished.
+          From the participant's side that is indistinguishable from the app
+          breaking — and it is the single reason the check felt hair-trigger.
+          Told what to do, most people correct within a second and never reach
+          the grace period at all. `pointer-events-none` on the guide keeps the
+          test underneath interactive. */}
+      {((status === 'CALIBRATION' ||
+          status === 'TRACKING' ||
+          (status === 'NEURO_FLOW' && currentNeuroTestId !== 'head_orientation')) &&
+        headValidation && !headValidation.valid) && (
         <HeadPositionGuide validation={headValidation} countdown={null} />
       )}
 

@@ -8,7 +8,8 @@ import {
 import {
   computeAllScores,
   eyeTrackingAccuracyScore,
-  angularErrorDeg,
+  angularErrorDegOrNull,
+  sessionGeometry,
   DOMAIN_NAMES,
 } from '@/lib/resultScoring';
 
@@ -119,7 +120,7 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
           <p style={{ fontSize: 11, fontWeight: 600, color: '#9a3412', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Visual Angular</p>
           <p style={{ fontSize: 40, fontWeight: 900, color: '#7c2d12', margin: '6px 0 0', lineHeight: 1 }}>
             {session.meanErrorPx != null 
-              ? angularErrorDeg(session.meanErrorPx, (configSnapshot as any)?.faceDistance ?? 60).toFixed(1) 
+              ? (() => { const g = sessionGeometry(configSnapshot); const d = angularErrorDegOrNull(session.meanErrorPx, g); return d == null ? 'n/a' : d.toFixed(1); })() 
               : '—'}
             <span style={{ fontSize: 18, fontWeight: 600 }}>°</span>
           </p>

@@ -108,6 +108,8 @@ type NeurologicalFlowSectionProps = {
   } | null;
   neuroHeadPose: { pitch: number; yaw: number; roll: number } | null;
   gazePos: { x: number; y: number };
+  /** False while the head is outside the setup pose — gazePos is then stale. */
+  gazeValid: boolean;
   /** HybridRegressor đã train — nếu false, gaze trong neuro là (0,0). */
   gazeModelReady: boolean;
   neuroTestResults: Record<string, TestResultPayload>;
@@ -139,6 +141,7 @@ export default function NeurologicalFlowSection({
   neuroConfigSnapshot,
   neuroHeadPose,
   gazePos,
+  gazeValid,
   gazeModelReady,
   neuroTestResults,
   neuroResultsLoading,
@@ -208,7 +211,7 @@ export default function NeurologicalFlowSection({
         </NeuroPanelLayoutContext.Provider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'visual_search' && (
-        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
+        <NeuroGazeProvider gaze={gazePos} gazeValid={gazeValid} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="visual_search"
             testLabel={TEST_LABELS.visual_search}
@@ -233,7 +236,7 @@ export default function NeurologicalFlowSection({
         </NeuroGazeProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'memory_cards' && (
-        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
+        <NeuroGazeProvider gaze={gazePos} gazeValid={gazeValid} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="memory_cards"
             testLabel={TEST_LABELS.memory_cards}
@@ -257,7 +260,7 @@ export default function NeurologicalFlowSection({
         </NeuroGazeProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'anti_saccade' && (
-        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
+        <NeuroGazeProvider gaze={gazePos} gazeValid={gazeValid} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="anti_saccade"
             testLabel={TEST_LABELS.anti_saccade}
@@ -285,7 +288,7 @@ export default function NeurologicalFlowSection({
         </NeuroGazeProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'saccadic' && (
-        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
+        <NeuroGazeProvider gaze={gazePos} gazeValid={gazeValid} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="saccadic"
             testLabel={TEST_LABELS.saccadic}
@@ -301,7 +304,7 @@ export default function NeurologicalFlowSection({
         </NeuroGazeProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'fixation_stability' && (
-        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
+        <NeuroGazeProvider gaze={gazePos} gazeValid={gazeValid} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="fixation_stability"
             testLabel={TEST_LABELS.fixation_stability}
@@ -317,7 +320,7 @@ export default function NeurologicalFlowSection({
         </NeuroGazeProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'peripheral_vision' && (
-        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
+        <NeuroGazeProvider gaze={gazePos} gazeValid={gazeValid} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="peripheral_vision"
             testLabel={TEST_LABELS.peripheral_vision}

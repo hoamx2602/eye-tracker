@@ -11,7 +11,13 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:seed": "tsx scripts/seed-admin.ts"
+    "db:seed": "tsx scripts/seed-admin.ts",
+    "accuracy:compare": "tsx scripts/compare-gaze-accuracy.ts",
+    "test:gate": "tsx scripts/test-fixation-gate.ts",
+    "test:distance": "tsx scripts/test-viewing-distance.ts",
+    "test:anchor": "tsx scripts/test-position-anchor.ts",
+    "test:focal": "tsx scripts/test-camera-focal.ts",
+    "test:iris": "tsx scripts/test-iris-depth.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.998.0",

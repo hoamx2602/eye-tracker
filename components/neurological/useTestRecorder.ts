@@ -2,6 +2,7 @@
 
 import { useRef, useCallback } from 'react';
 import { useTestRunner } from './TestRunnerContext';
+import { useNeuroGaze } from './NeuroGazeContext';
 import type { TestEvent, GazeSample } from './types';
 
 /**
@@ -11,6 +12,12 @@ import type { TestEvent, GazeSample } from './types';
  */
 export function useTestRecorder() {
   const { testId, config, completeTest } = useTestRunner();
+  // Read here rather than asking every test to pass it. A test that forgets
+  // would silently record stale gaze as real, which is the failure this exists
+  // to prevent — so it must not be something a caller can forget.
+  const { gazeValid } = useNeuroGaze();
+  const gazeValidRef = useRef(gazeValid);
+  gazeValidRef.current = gazeValid;
   const startTimeRef = useRef<number>(0);
   const eventsRef = useRef<TestEvent[]>([]);
   const gazeSamplesRef = useRef<GazeSample[]>([]);
@@ -35,18 +42,25 @@ export function useTestRecorder() {
       x,
       y,
       head,
+      valid: gazeValidRef.current,
     });
   }, []);
 
   const completeWithRecordedData = useCallback(
     (extra?: { metrics?: Record<string, unknown>; [key: string]: unknown }) => {
       const endTime = performance.now();
+      const samples = gazeSamplesRef.current;
+      // How much of this test ran with the participant out of the setup pose.
+      // Surfaced on the payload so a trial that looks clean but was recorded
+      // through a stale-gaze window can be spotted without opening the samples.
+      const invalid = samples.reduce((n, s) => n + (s.valid === false ? 1 : 0), 0);
       completeTest({
         testId,
         startTime: startTimeRef.current,
         endTime,
         events: [...eventsRef.current],
-        gazeSamples: [...gazeSamplesRef.current],
+        gazeSamples: [...samples],
+        ...(samples.length ? { invalidGazeFraction: invalid / samples.length } : {}),
         ...extra,
       });
     },

@@ -155,6 +155,183 @@ def test_full_pipeline_with_stub_model() -> None:
           f" -> comp {val['overall_px']:.1f} px | batches {model.batch_sizes[:3]}...")
 
 
+def test_head_comp_gain_auto_selects_and_rejects() -> None:
+    """
+    "auto" must pick the gain that minimises held-out error — full compensation
+    when the geometry is right, and *off* when the correction only hurts. The
+    second case is the real-session failure mode (135 px compensated vs 123 px
+    raw) that a hard-coded gain=1.0 could not detect.
+    """
+    script, meta = _build_script_and_meta()
+    meta["head_comp_gain"] = "auto"
+    with tempfile.TemporaryDirectory() as td:
+        video_path = str(Path(td) / "session.mp4")
+        _write_video(len(script), video_path)
+        report = reprocess(video_path, meta, model=StubModel(script))
+
+    sel = report["head"]["gain_selection"]
+    assert sel["mode"] == "auto"
+    assert report["head"]["gain"] == 1.0, sel        # geometry is exact here
+    assert sel["sweep_px"]["0.0"] > sel["sweep_px"]["1.0"], sel
+
+    # Now invert the head signal so the compensator pushes the wrong way. A
+    # fixed gain would make the report worse; "auto" must fall back to 0.
+    bad_script = [
+        None if g is None else _Gaze(g.yaw, g.pitch, g.bbox_area, g.quality,
+                                     -g.head_u, -g.head_v, g.head_w)
+        for g in script
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        video_path = str(Path(td) / "session.mp4")
+        _write_video(len(bad_script), video_path)
+        bad = reprocess(video_path, meta, model=StubModel(bad_script))
+
+    assert bad["head"]["gain"] == 0.0, bad["head"]["gain_selection"]
+    assert bad["head"]["compensation_applied"] is False
+    print(f"  good geometry -> gain {report['head']['gain']}, "
+          f"mirrored head -> gain {bad['head']['gain']}")
+
+
+def test_detection_downscale_maps_boxes_back() -> None:
+    """
+    Detection runs on a shrunk frame; the boxes it returns must land on the same
+    pixels of the full-resolution frame. A wrong factor here silently shifts
+    every face crop — and therefore every gaze estimate — without failing.
+    """
+    from app.imaging import downscale_for_detection
+
+    # 1080p in, 640 wide out, aspect preserved.
+    frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    small, scale = downscale_for_detection(frame, 640)
+    assert small.shape[1] == 640, small.shape
+    assert small.shape[0] == 360, small.shape
+    assert np.allclose(scale, [3.0, 3.0, 3.0, 3.0]), scale
+
+    # A box in small-image coords must map back to the same fraction of the frame.
+    box_small = np.array([160.0, 90.0, 320.0, 270.0])
+    box_full = box_small * scale
+    assert np.allclose(box_full, [480.0, 270.0, 960.0, 810.0]), box_full
+
+    # Frames at or below the cap are passed through untouched — same object, no
+    # interpolation, unit factors.
+    small2, scale2 = downscale_for_detection(frame[:, :640], 640)
+    assert small2 is frame[:, :640].base or small2.shape == (1080, 640, 3)
+    assert np.allclose(scale2, 1.0), scale2
+
+    # An aspect ratio whose scaled height rounds must still map back exactly,
+    # which is why the factors are per-axis rather than shared.
+    odd = np.zeros((577, 1000, 3), dtype=np.uint8)
+    s_odd, sc_odd = downscale_for_detection(odd, 640)
+    assert np.isclose(s_odd.shape[1] * sc_odd[0], 1000.0), sc_odd
+    assert np.isclose(s_odd.shape[0] * sc_odd[1], 577.0), sc_odd
+    assert sc_odd[0] != sc_odd[1], "rounded height should give distinct x/y factors"
+    print(f"  1920x1080 -> {small.shape[1]}x{small.shape[0]}, factors {scale[:2]}")
+
+
+def _build_multipose_script() -> tuple[list[_Gaze | None], dict]:
+    """
+    Calibration spanning three head positions, validation at a fourth the mapper
+    has never seen. This is the setup a multi-head-pose calibration protocol
+    would produce, and the only one in which head position can be identified as
+    a mapper input at all.
+    """
+    rng = np.random.default_rng(7)
+    cx_cm, cy_cm = W_PX / 2 / PPCM, H_PX / 2 / PPCM
+    script: list[_Gaze | None] = []
+    cal_dots, val_dots = [], []
+    frame_ms = 1000.0 / FPS
+
+    def emit(targets, dots_out, head_cm):
+        hu, hv, hw = _observed_head(*head_cm)
+        hx, hy = head_cm
+        for (tx, ty) in targets:
+            t0 = len(script) * frame_ms
+            for _ in range(FRAMES_PER_DOT):
+                yaw = np.arctan(((tx / PPCM) - (cx_cm + hx)) / Z_CM) + rng.normal(0, 2e-4)
+                pitch = np.arctan(((ty / PPCM) - (cy_cm + hy)) / Z_CM) + rng.normal(0, 2e-4)
+                script.append(_Gaze(yaw=yaw, pitch=pitch, head_u=hu, head_v=hv, head_w=hw))
+            t1 = len(script) * frame_ms - frame_ms
+            dots_out.append({"screen_x": tx, "screen_y": ty, "t_start_ms": t0, "t_end_ms": t1})
+            script.extend([None] * GAP_FRAMES)
+
+    for head in [(0.0, 0.0), (-3.5, 0.0), (3.5, 1.5)]:
+        emit(CAL_TARGETS, cal_dots, head)
+    emit(VAL_TARGETS, val_dots, HEAD_VAL_CM)
+
+    meta = {
+        "screen": {"width_px": W_PX, "height_px": H_PX, "width_cm": W_CM,
+                   "viewing_distance_cm": Z_CM},
+        "camera_hfov_deg": HFOV,
+        "calibration_dots": cal_dots,
+        "validation_dots": val_dots,
+        # Isolate the mapper: no geometric compensation to share the credit.
+        "head_compensation": False,
+    }
+    return script, meta
+
+
+def test_head_aware_mapping_selected_only_when_it_earns_it() -> None:
+    """
+    Head position becomes a mapper input only when calibration actually spans
+    several head poses — the single-pose case leaves the head columns constant,
+    where fitting them would be fitting noise.
+    """
+    # Single pose: head columns carry no information, so CV must reject them.
+    script, meta = _build_script_and_meta()
+    meta["head_compensation"] = False
+    with tempfile.TemporaryDirectory() as td:
+        video_path = str(Path(td) / "session.mp4")
+        _write_video(len(script), video_path)
+        single = reprocess(video_path, meta, model=StubModel(script))
+    assert single["calibration"]["use_head"] is False, single["calibration"]
+
+    # Three poses: head position is identifiable and should be picked up.
+    script, meta = _build_multipose_script()
+    with tempfile.TemporaryDirectory() as td:
+        video_path = str(Path(td) / "session.mp4")
+        _write_video(len(script), video_path)
+        multi = reprocess(video_path, meta, model=StubModel(script))
+
+    assert multi["calibration"]["use_head"] is True, multi["calibration"]
+
+    # And it must pay off on validation dots recorded at an unseen head position.
+    single_err = single["validation"]["overall_px"]
+    multi_err = multi["validation"]["overall_px"]
+    assert multi_err < 0.5 * single_err, (multi_err, single_err)
+    print(f"  single-pose {single_err:.1f} px (head=False) -> "
+          f"multi-pose {multi_err:.1f} px (head=True)")
+
+
+def test_response_mapping_matches_report() -> None:
+    """
+    /process delegates to reprocess() and flattens the report. Guard the wire
+    shape so the flattening can't silently drop a field the browser reads.
+    """
+    from app.schemas import response_from_report
+
+    script, meta = _build_script_and_meta()
+    with tempfile.TemporaryDirectory() as td:
+        video_path = str(Path(td) / "session.mp4")
+        _write_video(len(script), video_path)
+        report = reprocess(video_path, meta, model=StubModel(script), include_trace=True)
+
+    resp = response_from_report(report, include_trace=True)
+    assert resp.calibration_loocv_px == report["calibration"]["loocv_px"]
+    assert resp.calibration_dots_used == report["calibration"]["dots_used"]
+    assert resp.head_compensation_applied is report["head"]["compensation_applied"]
+    assert resp.head_comp_gain == report["head"]["gain"]
+    assert resp.head_comp_gain_selection == report["head"]["gain_selection"]
+    assert resp.validation is not None
+    assert resp.validation.overall_px == report["validation"]["overall_px"]
+    assert resp.biomarkers.saccade_count == report["biomarkers"]["saccade_count"]
+    assert resp.biomarkers.bcea_deg2 == report["biomarkers"]["bcea_deg2"]
+    # Trace carries only the frames that mapped to a real screen point.
+    mapped = [r for r in report["debug_trace"] if r["x"] is not None]
+    assert len(resp.gaze_trace) == len(mapped)
+    assert resp.gaze_trace[0].t_ms == mapped[0]["t"]
+    print(f"  {len(resp.gaze_trace)} trace samples, gain {resp.head_comp_gain}")
+
+
 def test_pipeline_head_comp_disabled() -> None:
     script, meta = _build_script_and_meta()
     meta["head_compensation"] = False

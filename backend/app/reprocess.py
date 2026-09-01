@@ -19,7 +19,10 @@ Usage
       "calibration_outlier_sigma": 2.5,
       "head_compensation": true,          # parallax compensation (default true)
       "camera_hfov_deg": 60,              # webcam horizontal FOV assumption
-      "head_comp_gain": 1.0,              # 0 disables; tune from validation A/B
+      "head_comp_gain": "auto",           # default: pick the gain that minimises
+                                          # held-out validation error. A number
+                                          # forces it (0 disables); "auto" with no
+                                          # validation dots falls back to 0.
       "personalize": false,               # experimental per-subject fine-tuning;
                                           # kept only if it beats the baseline
       "glasses": true,
@@ -47,6 +50,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("reprocess")
 
 _TRACE_QUALITY_GATE = 0.4
+
+# Candidate head-compensation gains tried when "head_comp_gain" is "auto".
+# Coarse on purpose: the choice only has to answer "full / partial / off", and a
+# finer grid would start fitting the handful of validation dots.
+_GAIN_GRID = (0.0, 0.25, 0.5, 0.75, 1.0)
 
 
 def _dots(raw: list[dict]) -> list[CalibrationDot]:
@@ -111,7 +119,8 @@ def reprocess(
         "head": {
             "compensation_applied": analysis["compensator"] is not None,
             "hfov_deg": meta.get("camera_hfov_deg", DEFAULT_HFOV_DEG),
-            "gain": meta.get("head_comp_gain", 1.0),
+            "gain": analysis["head_comp_gain"],
+            "gain_selection": analysis["head_comp_gain_selection"],
             "motion": analysis["head_motion"],
         },
         "calibration": {
@@ -120,6 +129,7 @@ def reprocess(
             "region_errors_px": mapper.region_errors_px,
             "degree": mapper.degree,
             "alpha": mapper.alpha,
+            "use_head": mapper.use_head,
             "dots_used": mapper.n_dots_used,
             "dots_total": mapper.n_dots_total,
         },
@@ -168,39 +178,85 @@ def _analyze(frames: dict, meta: dict, geo: ScreenGeometry, cal_dots: list[Calib
     Reused for the baseline and (when personalizing) the fine-tuned pass.
     """
     quality = frames.get("quality")
+    head = {k: frames[k] for k in ("head_u", "head_v", "head_w") if k in frames}
     mapper = fit_mapper(
         cal_dots,
         frames["t_ms"], frames["yaw"], frames["pitch"],
         frame_quality=quality,
+        # Let CV decide whether head position earns its place as a mapper input.
+        # When it does, head_comp's geometric correction is redundant and the
+        # gain sweep below settles on 0 by itself.
+        frame_head=head if len(head) == 3 and meta.get("head_aware_mapping", True) else None,
         outlier_sigma=meta.get("calibration_outlier_sigma", 2.5),
     )
 
     # Head-translation (parallax) compensation: reference = head position during
     # the calibration windows; every mapped point is shifted by the displacement
     # since then. Disable per session with "head_compensation": false.
-    compensator = None
-    head = {k: frames[k] for k in ("head_u", "head_v", "head_w") if k in frames}
-    if meta.get("head_compensation", True) and len(head) == 3:
-        compensator = build_compensator(
+    comp_enabled = meta.get("head_compensation", True) and len(head) == 3
+
+    def _build(gain: float):
+        if not comp_enabled or gain == 0.0:
+            return None
+        return build_compensator(
             [(d.t_start_ms, d.t_end_ms) for d in cal_dots],
             frames["t_ms"], head["head_u"], head["head_v"], head["head_w"],
             viewing_distance_cm=geo.viewing_distance_cm,
             screen_width_px=geo.width_px,
             screen_width_cm=geo.width_cm,
             hfov_deg=meta.get("camera_hfov_deg", DEFAULT_HFOV_DEG),
-            gain=meta.get("head_comp_gain", 1.0),
+            gain=gain,
         )
 
-    # Held-out validation (truthful accuracy; raw-vs-compensated A/B).
-    validation = None
-    if meta.get("validation_dots"):
-        rep = evaluate_mapper(
+    def _evaluate(compensator):
+        """Held-out validation for one compensator (None = raw mapping)."""
+        return evaluate_mapper(
             mapper, _dots(meta["validation_dots"]),
             frames["t_ms"], frames["yaw"], frames["pitch"], geo,
             frame_quality=quality,
             compensator=compensator,
-            frame_head=head if compensator is not None else None,
+            # Always supply head arrays: the compensator needs them, and so does
+            # the mapper itself when CV made it head-aware.
+            frame_head=head if len(head) == 3 else None,
         )
+
+    # Gain selection. The compensator assumes a webcam HFOV and an un-mirrored
+    # recording; either assumption being wrong makes it *add* error, which is
+    # exactly what the first real session showed (135 px compensated vs 123 px
+    # raw). Rather than trusting a constant, pick the gain that minimises
+    # held-out validation error — the same number the report publishes. With no
+    # validation dots there is nothing to verify against, so the correction is
+    # left off rather than applied on faith.
+    gain_req = meta.get("head_comp_gain", "auto")
+    gain_selection = None
+    if not comp_enabled:
+        gain = 0.0
+    elif gain_req != "auto":
+        gain = float(gain_req)
+    elif not meta.get("validation_dots"):
+        gain = 0.0
+        gain_selection = {"mode": "auto", "chosen": 0.0, "reason": "no validation dots to verify against"}
+    else:
+        sweep = {g: _evaluate(_build(g)).overall_px for g in _GAIN_GRID}
+        finite = {g: e for g, e in sweep.items() if np.isfinite(e)}
+        gain = min(finite, key=finite.get) if finite else 0.0
+        gain_selection = {
+            "mode": "auto",
+            "chosen": gain,
+            "sweep_px": {str(g): float(e) for g, e in sweep.items()},
+            "reason": "minimised held-out validation error",
+        }
+        logger.info(
+            "Head-comp gain auto-selected: %.2f (sweep px: %s)",
+            gain, {g: round(float(e), 1) for g, e in sweep.items()},
+        )
+
+    compensator = _build(gain)
+
+    # Held-out validation (truthful accuracy; raw-vs-compensated A/B).
+    validation = None
+    if meta.get("validation_dots"):
+        rep = _evaluate(compensator)
         logger.info("\n%s", rep.summary())
         validation = {
             "n_points": rep.n_points,
@@ -211,7 +267,9 @@ def _analyze(frames: dict, meta: dict, geo: ScreenGeometry, cal_dots: list[Calib
             "per_point": [asdict(p) for p in rep.per_point],
         }
 
-    mapped = mapper.map(frames["yaw"], frames["pitch"])
+    mapped = mapper.map(
+        frames["yaw"], frames["pitch"], head=head if mapper.use_head else None,
+    )
     x_px, y_px = mapped[:, 0], mapped[:, 1]
     head_motion = None
     if compensator is not None:
@@ -230,6 +288,7 @@ def _analyze(frames: dict, meta: dict, geo: ScreenGeometry, cal_dots: list[Calib
     return {
         "frames": frames, "mapper": mapper, "compensator": compensator,
         "validation": validation, "head_motion": head_motion,
+        "head_comp_gain": gain, "head_comp_gain_selection": gain_selection,
         "x_px": x_px, "y_px": y_px,
     }
 
