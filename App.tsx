@@ -64,7 +64,7 @@ import { lockCameraAutoAdjustments, describeCameraLock, type CameraLockResult } 
 import { FixationGate, type GateSample, type DotConvergence } from '@/lib/fixationGate';
 import DistanceCalibrationScreen from '@/components/DistanceCalibrationScreen';
 import { faceScale as toFaceScale, distanceFromFace, faceScaleAtDistance, loadCalibration, saveCalibration, type DistanceCalibration } from '@/lib/viewingDistance';
-import { cameraKey as buildCameraKey } from '@/lib/cameraFocal';
+import { cameraKey as buildCameraKey, fovDegFromFocal, loadFocal } from '@/lib/cameraFocal';
 import { captureAnchor, DEFAULT_ANCHOR_TOLERANCE, type AnchorTolerance, type PositionAnchor } from '@/lib/positionAnchor';
 import { loadScreenScale } from '@/lib/screenScale';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
@@ -330,6 +330,8 @@ function App() {
   }, []);
 
   useEffect(() => { statusRef.current = status; }, [status]);
+
+
   useEffect(() => {
     // Only the rotation axes scale here. Depth and drift are already expressed
     // in units that mean the same thing at every distance, and have their own
@@ -3317,6 +3319,96 @@ function App() {
   // recorded calibration video + its meta.json (per-dot windows on the video
   // clock) so they can be dropped into backend/data and run through
   // `python -m app.reprocess`. Off by default — zero effect on normal sessions.
+  /**
+   * One console call that captures everything needed to diagnose a wrong
+   * distance, so nobody has to be walked through reading six numbers off four
+   * screens one at a time.
+   *
+   *     await __eyeDiag(40)   // sit at a tape-measured 40 cm, then call it
+   *
+   * Samples for two seconds and reports medians, because every live quantity
+   * here jitters and a single frame proves nothing. Call it at two or three
+   * measured distances; the collected rows are what separate a camera that hides
+   * movement from a scale constant that is simply wrong, and neither can be told
+   * from the other with one reading.
+   */
+  useEffect(() => {
+    if (!POSE_TELEMETRY || typeof window === 'undefined') return;
+    const rows: Record<string, unknown>[] = [];
+
+    (window as unknown as Record<string, unknown>).__eyeDiag = async (trueCm?: number) => {
+      const samples: { canthal: number; reported: number }[] = [];
+      const cal = distanceCalRef.current;
+      const started = performance.now();
+      while (performance.now() - started < 2000) {
+        const lm = currentFaceLandmarksRef.current;
+        if (lm) {
+          const canthal = eyeTrackingService.rigidFaceWidth(lm);
+          samples.push({
+            canthal,
+            reported: cal && canthal > 0 ? distanceFromFace(cal, toFaceScale(canthal)) : NaN,
+          });
+        }
+        await new Promise((r) => setTimeout(r, 33));
+      }
+      const med = (pick: (s: { canthal: number; reported: number }) => number) => {
+        const v = samples.map(pick).filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b);
+        return v.length ? v[v.length >> 1] : NaN;
+      };
+
+      const track = (videoRef.current?.srcObject as MediaStream | undefined)?.getVideoTracks?.()[0];
+      const st = track?.getSettings?.() ?? {};
+      const focal = loadFocal(cameraKey);
+      const scale = loadScreenScale();
+      const lm = currentFaceLandmarksRef.current;
+      const pose = lm ? eyeTrackingService.headPose(lm) : null;
+
+      const row = {
+        trueCm: trueCm ?? null,
+        canthalScale: +med((x) => x.canthal).toFixed(5),
+        reportedCm: +med((x) => x.reported).toFixed(1),
+        frames: samples.length,
+      };
+      rows.push(row);
+
+      const out = {
+        rows,
+        camera: {
+          key: cameraKey,
+          resolution: `${st.width ?? '?'}x${st.height ?? '?'}`,
+          deviceId: (st.deviceId ?? '').slice(0, 12),
+          focal: focal
+            ? {
+                f: +focal.f.toFixed(4),
+                fovDeg: +fovDegFromFocal(focal.f).toFixed(1),
+                method: focal.method,
+                measuredAt: focal.measuredAt,
+                bootstrapDistanceCm: focal.bootstrapDistanceCm,
+                faceWidthCm: focal.faceWidthCm,
+              }
+            : null,
+        },
+        display: scale ? { pxPerCm: +scale.pxPerCm.toFixed(2), measuredAt: scale.measuredAt } : null,
+        sessionCalibration: cal
+          ? { k: +cal.k.toFixed(5), method: cal.method, distanceCm: +cal.distanceCm.toFixed(1),
+              faceWidthCm: cal.faceWidthCm, spreadCm: cal.spreadCm }
+          : null,
+        pose: pose
+          ? { yaw: +((pose.yaw * 180) / Math.PI).toFixed(1),
+              pitch: +((pose.pitch * 180) / Math.PI).toFixed(1),
+              roll: +((pose.roll * 180) / Math.PI).toFixed(1),
+              source: eyeTrackingService.poseSource }
+          : null,
+        config: { faceDistance: configRef.current.faceDistance },
+      };
+      console.log('%c=== EYE DIAG — copy everything below ===', 'font-weight:bold');
+      console.log(JSON.stringify(out, null, 2));
+      return out;
+    };
+
+    return () => { delete (window as unknown as Record<string, unknown>).__eyeDiag; };
+  }, [cameraKey]);
+
   const maybeExportOfflineMeta = (videoBlob: Blob | null) => {
     try {
       if (typeof window === 'undefined') return;

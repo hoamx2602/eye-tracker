@@ -361,12 +361,25 @@ export function faceWidthCmFromCard(
  * The quantity is the **outer canthal distance** — corner of one eye to corner
  * of the other — not the bizygomatic width it used to be. That changed when the
  * distance model moved off the face silhouette, which is not a rigid segment and
- * grows rather than foreshortens when the head turns. Roughly 90 mm in adults;
- * the band spans children through large adults with room for a hurried card
- * measurement.
+ * grows rather than foreshortens when the head turns. Roughly 90 mm in adults,
+ * 83–98 mm across the adult range, about 75 mm in young children.
+ *
+ * The band was 6–13 cm, which is not a sanity check: it is wider than any human
+ * head and accepts a reading 30% wrong without a word. That error is not
+ * hypothetical. The card is measured against the *outer eye corners*, which sit
+ * back inside the orbit, so a card held forward of that plane makes the face
+ * read narrow — and every distance the session reports afterwards read long — by
+ * exactly the fraction the card was out of place.
+ *
+ * 7.5–11 cm spans young children through large adults and nothing else. It
+ * catches a card held grossly out of plane, which at a 40 cm working distance
+ * means about 11 cm forward or more. It cannot catch a subtler misplacement, and
+ * no band on a single number can: 7 cm of error still lands inside the range of
+ * real human faces. That is a limit of checking one measurement against a
+ * population, not something a tighter band would fix.
  */
 export function isPlausibleFaceWidthCm(cm: number): boolean {
-  return Number.isFinite(cm) && cm >= 6 && cm <= 13;
+  return Number.isFinite(cm) && cm >= 7.5 && cm <= 11;
 }
 
 /**

@@ -227,6 +227,20 @@ console.log('\nface width from a card in the face plane\n');
   check('rejects a zero-width card', Number.isNaN(faceWidthCmFromCard(0, 100, 8.56)));
   check('accepts a plausible face', isPlausibleFaceWidthCm(FACE_CM));
   check('rejects an implausible face', !isPlausibleFaceWidthCm(45));
+  // The band has to be tight enough to catch a misplaced card. A card held
+  // forward of the outer-eye-corner plane makes the face read narrow by exactly
+  // the fraction it was out of place, and that fraction lands in every distance
+  // the session reports afterwards.
+  check('accepts a young child', isPlausibleFaceWidthCm(7.6));
+  check('accepts a large adult', isPlausibleFaceWidthCm(10.5));
+  check('catches a card held ~11 cm forward at 40 cm', !isPlausibleFaceWidthCm(9.1 / 1.3),
+    `${(9.1 / 1.3).toFixed(1)} cm — a 30% error the old 6–13 band passed silently`);
+  // And the honest limit: a 20% error still lands inside the range of real human
+  // faces, so no band on a single number can catch it. Worth stating so nobody
+  // mistakes this for a guarantee.
+  check('but a 20% error is indistinguishable from a small face',
+    isPlausibleFaceWidthCm(9.1 / 1.2),
+    `${(9.1 / 1.2).toFixed(1)} cm — inside the real human range, so the band cannot object`);
   check('rejects a bizygomatic width mistaken for the eye span', !isPlausibleFaceWidthCm(14.2));
 }
 
