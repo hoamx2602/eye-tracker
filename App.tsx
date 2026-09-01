@@ -67,6 +67,7 @@ import { faceScale as toFaceScale, clearCalibration, distanceFromFace, faceScale
 import { cameraKey as buildCameraKey, canPersistFocalForPlatform, fovDegFromFocal, loadFocal } from '@/lib/cameraFocal';
 import { captureAnchor, DEFAULT_ANCHOR_TOLERANCE, type AnchorTolerance, type PositionAnchor } from '@/lib/positionAnchor';
 import { loadScreenScale } from '@/lib/screenScale';
+import { angularErrorDeg, TARGET_VALIDATION_ANGULAR_ERROR_DEG } from '@/lib/resultScoring';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
 
@@ -2353,7 +2354,17 @@ function App() {
   const completeCalibrationAndStartTracking = (errors: number[], testTrajectories?: { patternName: string; points: { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }[] }[]) => {
     const avgError = errors.length > 0 ? errors.reduce((a, b) => a + b, 0) / errors.length : 0;
     setAccuracyScore(avgError);
-    const isAccuracyGood = avgError < 300;
+    // Report the error in degrees where the geometry allows it, and in pixels
+    // where it does not — a pixel figure means something different on every
+    // display. Neither is a pass mark: validation accuracy also reflects how
+    // well the participant could hold still and attend, which is not grounds
+    // for refusing to run the tests. 2° is the target, not a gate.
+    const geometry = distanceCalRef.current;
+    const viewingDistanceCm = positionAnchorRef.current?.distanceCm ?? geometry?.distanceCm ?? configRef.current.faceDistance;
+    const angularError = errors.length > 0 && geometry?.screenScaleMeasured
+      ? angularErrorDeg(avgError, viewingDistanceCm, geometry.pxPerCm)
+      : null;
+    const isAccuracyGood = errors.length === 0 || (angularError != null && angularError <= TARGET_VALIDATION_ANGULAR_ERROR_DEG);
     setLoadingMsg('Saving samples');
     setStatus('LOADING_MODEL');
 
@@ -2540,9 +2551,14 @@ function App() {
         }
         setLastSavedCounts({ samples: sampleCount, images: imageCount });
         setSessionSaveStatus('saved');
-        const statusMsg = isAccuracyGood
-          ? `Calibration Success! Mean Error: ${Math.round(avgError)}px`
-          : errors.length > 0 ? `Calibration Complete (Accuracy: ${Math.round(avgError)}px)` : 'Calibration complete (test mode)';
+        const accuracyText = angularError != null
+          ? `${angularError.toFixed(2)}° @ ${viewingDistanceCm.toFixed(0)}cm`
+          : `${Math.round(avgError)}px`;
+        const statusMsg = errors.length === 0
+          ? 'Calibration complete (test mode)'
+          : isAccuracyGood
+            ? `Calibration Success! Mean Error: ${accuracyText}`
+            : `Calibration Complete (Accuracy: ${accuracyText})`;
         setLoadingMsg(statusMsg);
         setTimeout(() => {
           pathSyncSourceRef.current = 'internal';
@@ -3274,10 +3290,10 @@ function App() {
     smootherRef.current.reset();
     validationErrorsRef.current = [];
     dotConvergenceRef.current = [];
-    // The anchor describes where *this* calibration happened, so it must not
-    // outlive it — a stale anchor would police the new session against the old
-    // session's chair position.
-    positionAnchorRef.current = null;
+    // The anchor is captured on the last stable frame of head positioning, which
+    // is the frame before this runs. Clearing it here threw that capture away
+    // and left the rest of the session with no pose to police. A stale anchor
+    // from an earlier run is already cleared in handleStartProcess.
     setAccuracyScore(null);
     trackingHistoryRef.current = []; 
     setCapturedImages([]); // Reset images

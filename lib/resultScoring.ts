@@ -11,6 +11,16 @@
 const LENIENT_MODE = typeof process !== 'undefined' && (process.env.NEXT_PUBLIC_LENIENT_SCORING === 'true' || process.env.NEXT_PUBLIC_LENIENT_SCORING === '1');
 
 /**
+ * Target mean validation error, degrees of visual angle.
+ *
+ * A reference point for reading a result, not a gate on running the tests.
+ * Validation error mixes tracker accuracy with how steadily the participant
+ * could sit and attend, so refusing to test someone who lands above it would
+ * exclude exactly the people the assessment exists for.
+ */
+export const TARGET_VALIDATION_ANGULAR_ERROR_DEG = 2;
+
+/**
  * The CSS reference pixel: 1/96 inch. A fallback, not a measurement.
  *
  * The spec defines it as a *reference* density, and real displays are not

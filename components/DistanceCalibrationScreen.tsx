@@ -1,8 +1,15 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CSS_REFERENCE_PX_PER_CM } from '@/lib/resultScoring';
-import { loadScreenScale } from '@/lib/screenScale';
+import {
+  CARD_ASPECT,
+  CARD_WIDTH_MM,
+  MAX_PX_PER_CM,
+  MIN_PX_PER_CM,
+  loadScreenScale,
+  saveScreenScale,
+  type ScreenScale,
+} from '@/lib/screenScale';
 import {
   calibrate,
   checkDistance,
@@ -16,7 +23,7 @@ const MIN_MANUAL_CM = 15;
 const MAX_MANUAL_CM = 120;
 const SAMPLE_WINDOW = 30;
 
-type Step = 'manual' | 'position';
+type Step = 'screen' | 'manual' | 'position';
 
 export interface DistanceCalibrationScreenProps {
   /** Target distance (cm) from the admin config — what this screen enforces. */
@@ -43,7 +50,12 @@ function median(values: number[], fallback: number | null | undefined): number {
 }
 
 /**
- * Viewing-distance setup with one explicit source of truth: a real measurement.
+ * Physical-geometry setup with two explicit sources of truth:
+ *
+ * 1. Match an ISO ID-1 card directly against an on-screen rectangle. This gives
+ *    CSS pixels per physical centimetre without depending on camera framing.
+ * 2. Enter the measured eye-to-screen distance while the camera records the
+ *    participant-specific face and iris scale at that pose.
  *
  * The participant measures from their eye to the middle of the screen and types
  * that value. At that pose we capture the apparent face and iris scale:
@@ -52,8 +64,8 @@ function median(values: number[], fallback: number | null | undefined): number {
  *     K_iris = distance × irisScale
  *
  * Every later frame derives distance from those session-specific constants.
- * There is no card, population face-size assumption, cached focal length, or
- * hidden Center Stage dependency in this flow.
+ * The card is never detected by the camera, so Center Stage, card tilt and
+ * bounding-box dragging cannot corrupt the display measurement.
  */
 export default function DistanceCalibrationScreen({
   targetDistanceCm,
@@ -63,9 +75,10 @@ export default function DistanceCalibrationScreen({
   cameraKey,
   onComplete,
 }: DistanceCalibrationScreenProps) {
-  const [step, setStep] = useState<Step>('manual');
+  const [step, setStep] = useState<Step>('screen');
   const [calibration, setCalibration] = useState<DistanceCalibration | null>(null);
-  const [screenScale] = useState(() => loadScreenScale());
+  const [savedScreenScale] = useState(() => loadScreenScale());
+  const [screenScale, setScreenScale] = useState<ScreenScale | null>(null);
   const faceSamplesRef = useRef<number[]>([]);
   const irisSamplesRef = useRef<number[]>([]);
 
@@ -84,8 +97,17 @@ export default function DistanceCalibrationScreen({
     }
   }, [liveScale, irisDiameterNorm]);
 
+  const applyScreenMeasurement = useCallback((cardWidthPx: number): boolean => {
+    const measured = saveScreenScale(cardWidthPx);
+    if (!measured) return false;
+    setScreenScale(measured);
+    setStep('manual');
+    return true;
+  }, []);
+
   const applyMeasurement = useCallback(
     (distanceCm: number): boolean => {
+      if (!screenScale) return false;
       const faceScale = median(faceSamplesRef.current, liveScale);
       const irisScale = median(irisSamplesRef.current, irisDiameterNorm);
       const cal = calibrate({
@@ -93,11 +115,8 @@ export default function DistanceCalibrationScreen({
         faceScale,
         ...(Number.isFinite(irisScale) ? { irisScale } : {}),
         cameraKey,
-        // Distance tracking does not need screen px/cm. Preserve an existing
-        // display measurement; otherwise mark the reference scale as estimated
-        // so reports cannot present visual angles as physically measured.
-        pxPerCm: screenScale?.pxPerCm ?? CSS_REFERENCE_PX_PER_CM,
-        screenScaleMeasured: screenScale != null,
+        pxPerCm: screenScale.pxPerCm,
+        screenScaleMeasured: true,
         method: 'manual',
       });
       if (!cal) return false;
@@ -115,10 +134,24 @@ export default function DistanceCalibrationScreen({
     setStep('manual');
   }, []);
 
-  const title = step === 'manual' ? 'Viewing Distance' : 'Sit At The Target';
-  const subtitle = step === 'manual'
-    ? 'Enter the actual distance from your eye to the middle of the screen'
-    : `Move until you are ${targetDistanceCm} cm from the screen`;
+  const remeasureScreen = useCallback(() => {
+    faceSamplesRef.current = [];
+    irisSamplesRef.current = [];
+    setCalibration(null);
+    setScreenScale(null);
+    setStep('screen');
+  }, []);
+
+  const title = step === 'screen'
+    ? 'Screen Scale'
+    : step === 'manual'
+      ? 'Viewing Distance'
+      : 'Sit At The Target';
+  const subtitle = step === 'screen'
+    ? 'Match an on-screen rectangle to a bank or ID card'
+    : step === 'manual'
+      ? 'Enter the actual distance from your eye to the middle of the screen'
+      : `Move until you are ${targetDistanceCm} cm from the screen`;
 
   return (
     <div className="fixed inset-0 z-[200] bg-gray-950 flex flex-col items-center justify-center gap-6 p-4 sm:p-8">
@@ -126,6 +159,13 @@ export default function DistanceCalibrationScreen({
         <h2 className="text-xl font-bold text-white uppercase tracking-widest">{title}</h2>
         <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
       </div>
+
+      {step === 'screen' && (
+        <CardScaleStep
+          initialWidthPx={savedScreenScale?.cardWidthPx}
+          onDone={applyScreenMeasurement}
+        />
+      )}
 
       {step === 'manual' && (
         <ManualDistanceStep
@@ -143,10 +183,103 @@ export default function DistanceCalibrationScreen({
           targetDistanceCm={targetDistanceCm}
           tolerance={distanceTolerance}
           onRemeasure={remeasure}
+          onRemeasureScreen={remeasureScreen}
           onCorrect={applyMeasurement}
           onDone={() => onComplete(calibration, null)}
         />
       )}
+    </div>
+  );
+}
+
+function CardScaleStep({
+  initialWidthPx,
+  onDone,
+}: {
+  initialWidthPx?: number;
+  onDone: (cardWidthPx: number) => boolean;
+}) {
+  const physicalCardWidthCm = CARD_WIDTH_MM / 10;
+  const minWidthPx = Math.ceil(physicalCardWidthCm * MIN_PX_PER_CM);
+  const viewportMax = typeof window !== 'undefined' ? window.innerWidth - 48 : 760;
+  const maxWidthPx = Math.max(minWidthPx, Math.min(760, viewportMax, physicalCardWidthCm * MAX_PX_PER_CM));
+  const initial = initialWidthPx ?? Math.min(430, maxWidthPx);
+  const [widthPx, setWidthPx] = useState(Math.max(minWidthPx, Math.min(maxWidthPx, initial)));
+  const [invalid, setInvalid] = useState(false);
+
+  const setClampedWidth = (next: number) => {
+    setInvalid(false);
+    setWidthPx(Math.max(minWidthPx, Math.min(maxWidthPx, next)));
+  };
+
+  const confirm = () => {
+    if (!onDone(widthPx)) setInvalid(true);
+  };
+
+  return (
+    <div className="w-full max-w-4xl flex flex-col items-center gap-5">
+      <div className="text-center max-w-2xl text-sm text-gray-300 leading-relaxed">
+        Đặt một thẻ ngân hàng hoặc căn cước chuẩn ID-1 trực tiếp lên màn hình.
+        Giữ cạnh trái của thẻ trùng với cạnh trái khung, rồi chỉnh chiều rộng
+        khung cho cạnh phải trùng với thẻ. Không đưa thẻ vào camera.
+      </div>
+
+      <div className="w-full min-h-64 rounded-2xl border border-gray-800 bg-black/70 flex items-center justify-center p-6 overflow-hidden">
+        <div
+          className="relative rounded-xl border-2 border-dashed border-cyan-400 bg-cyan-400/10 shadow-[0_0_28px_rgba(34,211,238,0.12)]"
+          style={{ width: `${widthPx}px`, aspectRatio: CARD_ASPECT }}
+          aria-label="Resizable bank-card reference rectangle"
+        >
+          <div className="absolute inset-y-0 left-0 w-0.5 bg-cyan-300" />
+          <div className="absolute inset-y-0 right-0 w-0.5 bg-cyan-300" />
+          <div className="absolute inset-0 flex items-center justify-center text-center px-8 text-cyan-100/70 text-xs font-semibold uppercase tracking-[0.18em]">
+            Match physical card edges
+          </div>
+        </div>
+      </div>
+
+      <div className="w-full max-w-2xl rounded-xl border border-gray-800 bg-gray-900/90 px-5 py-4">
+        <input
+          type="range"
+          min={minWidthPx}
+          max={maxWidthPx}
+          step="0.5"
+          value={widthPx}
+          onChange={(event) => setClampedWidth(Number(event.target.value))}
+          className="w-full accent-cyan-500"
+          aria-label="Adjust the on-screen card width"
+        />
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          {[-10, -1, 1, 10].map((delta) => (
+            <button
+              key={delta}
+              type="button"
+              onClick={() => setClampedWidth(widthPx + delta)}
+              className="min-w-14 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-sm text-gray-200 hover:border-cyan-500 hover:text-white"
+            >
+              {delta > 0 ? '+' : ''}{delta}px
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 text-center text-xs text-gray-500">
+          Dùng thanh trượt để chỉnh nhanh, sau đó dùng ±1 px để căn sát. Giữ nguyên
+          mức zoom và màn hình này cho đến khi hoàn thành bài test.
+        </p>
+        {invalid && (
+          <p className="mt-2 text-center text-xs text-red-400">
+            Kích thước này nằm ngoài phạm vi màn hình hợp lệ. Hãy căn lại theo thẻ.
+          </p>
+        )}
+        <div className="mt-4 text-center">
+          <button
+            type="button"
+            onClick={confirm}
+            className="rounded-lg bg-cyan-600 px-8 py-2 text-sm font-bold uppercase tracking-wider text-white hover:bg-cyan-500"
+          >
+            Card Matches — Continue
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -224,6 +357,7 @@ function PositionStep({
   targetDistanceCm,
   tolerance,
   onRemeasure,
+  onRemeasureScreen,
   onCorrect,
   onDone,
 }: {
@@ -233,6 +367,7 @@ function PositionStep({
   targetDistanceCm: number;
   tolerance: number;
   onRemeasure: () => void;
+  onRemeasureScreen: () => void;
   onCorrect: (actualCm: number) => boolean;
   onDone: () => void;
 }) {
@@ -303,11 +438,9 @@ function PositionStep({
           measured by hand · {calibration.distanceCm.toFixed(1)} cm
           {calibration.irisK != null ? ' · face + iris' : ' · face'}
         </p>
-        {!calibration.screenScaleMeasured && (
-          <p className="text-gray-600 text-[11px] mt-1">
-            Display px/cm was not measured; physical visual-angle scores will remain unavailable.
-          </p>
-        )}
+        <p className="text-gray-500 text-[11px] mt-1 font-mono">
+          display scale · {calibration.pxPerCm.toFixed(2)} px/cm
+        </p>
 
         {!correcting ? (
           <div className="flex items-center justify-center gap-4 mt-3">
@@ -324,6 +457,13 @@ function PositionStep({
               className="text-xs text-gray-500 hover:text-gray-300 underline"
             >
               Measure again
+            </button>
+            <button
+              type="button"
+              onClick={onRemeasureScreen}
+              className="text-xs text-gray-500 hover:text-gray-300 underline"
+            >
+              Recheck card
             </button>
           </div>
         ) : (
