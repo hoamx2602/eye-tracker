@@ -219,9 +219,9 @@ function CardScaleStep({
   return (
     <div className="w-full max-w-4xl flex flex-col items-center gap-5">
       <div className="text-center max-w-2xl text-sm text-gray-300 leading-relaxed">
-        Đặt một thẻ ngân hàng hoặc căn cước chuẩn ID-1 trực tiếp lên màn hình.
-        Giữ cạnh trái của thẻ trùng với cạnh trái khung, rồi chỉnh chiều rộng
-        khung cho cạnh phải trùng với thẻ. Không đưa thẻ vào camera.
+        Hold a bank card or ID-1 identity card flat against the screen. Line its
+        left edge up with the left edge of the rectangle, then adjust the width
+        until the right edges meet. Do not show the card to the camera.
       </div>
 
       <div className="w-full min-h-64 rounded-2xl border border-gray-800 bg-black/70 flex items-center justify-center p-6 overflow-hidden">
@@ -262,12 +262,12 @@ function CardScaleStep({
           ))}
         </div>
         <p className="mt-3 text-center text-xs text-gray-500">
-          Dùng thanh trượt để chỉnh nhanh, sau đó dùng ±1 px để căn sát. Giữ nguyên
-          mức zoom và màn hình này cho đến khi hoàn thành bài test.
+          Use the slider to get close, then ±1 px to finish. Keep this display and
+          this zoom level until the assessment is over.
         </p>
         {invalid && (
           <p className="mt-2 text-center text-xs text-red-400">
-            Kích thước này nằm ngoài phạm vi màn hình hợp lệ. Hãy căn lại theo thẻ.
+            That size is outside the range of a real display. Match the card again.
           </p>
         )}
         <div className="mt-4 text-center">
