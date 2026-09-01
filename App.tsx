@@ -3625,6 +3625,10 @@ function App() {
           onComplete: handleDistanceCalibrated,
           distanceTolerance: config.headDistanceTolerance ?? 1,
           cameraKey,
+          // Only so the optional card-at-cheek step can freeze a frame. The
+          // element is opacity-0 during setup, not display:none, so it is still
+          // decoding frames and drawImage sees them.
+          videoRef,
         }}
         headPosCanvasRef={headPosCanvasRef}
         headValidation={headValidation}

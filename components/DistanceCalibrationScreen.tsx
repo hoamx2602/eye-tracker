@@ -17,13 +17,26 @@ import {
   faceScale as toFaceScale,
   type DistanceCalibration,
 } from '@/lib/viewingDistance';
+import {
+  approximateDistanceCm,
+  calibrateFromFocal,
+  canPersistFocalForPlatform,
+  clearFocal,
+  focalFromCalibration,
+  fovDegFromFocal,
+  isPlausibleFocal,
+  loadFocal,
+  saveFocal,
+  type CameraFocal,
+} from '@/lib/cameraFocal';
+import FaceCardStep from '@/components/FaceCardStep';
 
 /** Bounds on a hand-measured eye-to-screen distance. */
 const MIN_MANUAL_CM = 15;
 const MAX_MANUAL_CM = 120;
 const SAMPLE_WINDOW = 30;
 
-type Step = 'screen' | 'manual' | 'position';
+type Step = 'screen' | 'manual' | 'face-card' | 'position';
 
 export interface DistanceCalibrationScreenProps {
   /** Target distance (cm) from the admin config — what this screen enforces. */
@@ -36,6 +49,11 @@ export interface DistanceCalibrationScreenProps {
   distanceTolerance: number;
   /** Camera/framing identity recorded with the session calibration. */
   cameraKey: string;
+  /**
+   * Live camera feed. Optional: without it the card-at-cheek measurement is not
+   * offered and the screen behaves exactly as it did before.
+   */
+  videoRef?: React.RefObject<HTMLVideoElement>;
   onComplete: (calibration: DistanceCalibration, faceWidthCm: number | null) => void;
 }
 
@@ -66,6 +84,25 @@ function median(values: number[], fallback: number | null | undefined): number {
  * Every later frame derives distance from those session-specific constants.
  * The card is never detected by the camera, so Center Stage, card tilt and
  * bounding-box dragging cannot corrupt the display measurement.
+ *
+ * The same card can optionally do a third job. Held flat against the cheek it
+ * sits at the same depth as the face, so the two pixel widths stand in the same
+ * ratio as the two real widths and the camera cancels out:
+ *
+ *     W_face = W_card · (w_face / w_card)
+ *
+ * That physical face width buys three things. Drift during the session is then
+ * reported in centimetres rather than in face widths. The typed distance gets a
+ * cross-check, because a nominal camera turns W_face into a rough distance on
+ * its own. And it splits the session constant into a camera term and a person
+ * term — K = F · W_face — so a machine that has measured F once can derive the
+ * distance from the cheek card alone, with nothing to type at all.
+ *
+ * It stays optional. Not everyone has a card to hand, the fallback loses nothing
+ * that this session needs, and on Apple platforms F is deliberately not carried
+ * across sessions at all: Center Stage can re-crop the frame after capture, and
+ * a cached F that no longer describes the optics is wrong in a way the browser
+ * cannot detect. See canPersistFocalForPlatform.
  */
 export default function DistanceCalibrationScreen({
   targetDistanceCm,
@@ -73,14 +110,41 @@ export default function DistanceCalibrationScreen({
   irisDiameterNorm,
   distanceTolerance,
   cameraKey,
+  videoRef,
   onComplete,
 }: DistanceCalibrationScreenProps) {
   const [step, setStep] = useState<Step>('screen');
   const [calibration, setCalibration] = useState<DistanceCalibration | null>(null);
   const [savedScreenScale] = useState(() => loadScreenScale());
   const [screenScale, setScreenScale] = useState<ScreenScale | null>(null);
+  /** Physical face width from the card at the cheek; null when it was not used. */
+  const [faceWidthCm, setFaceWidthCm] = useState<number | null>(null);
+  /** The camera term, either read from cache or split out of this measurement. */
+  const [focal, setFocal] = useState<CameraFocal | null>(null);
   const faceSamplesRef = useRef<number[]>([]);
   const irisSamplesRef = useRef<number[]>([]);
+
+  // Whether an F measured here may be believed by a *later* session. On Apple
+  // platforms it may not, so the cheek card still measures a face width and
+  // still cross-checks the typed distance — it just cannot skip the typing.
+  const [focalIsPortable] = useState(() => {
+    if (typeof navigator === 'undefined') return false;
+    const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+    return canPersistFocalForPlatform(
+      nav.userAgentData?.platform || nav.platform || nav.userAgent,
+    );
+  });
+  const cardMeasurementAvailable = videoRef != null;
+
+  /**
+   * Has this camera already been characterised? If so the cheek card is not an
+   * extra step but a shortcut past the tape measure, and the copy has to say so
+   * — an option nobody is told about is not an option.
+   */
+  const [cameraKnown, setCameraKnown] = useState(false);
+  useEffect(() => {
+    setCameraKnown(focalIsPortable && loadFocal(cameraKey) != null);
+  }, [cameraKey, focalIsPortable]);
 
   const liveScale = faceWidthNorm != null ? toFaceScale(faceWidthNorm) : null;
 
@@ -118,14 +182,85 @@ export default function DistanceCalibrationScreen({
         pxPerCm: screenScale.pxPerCm,
         screenScaleMeasured: true,
         method: 'manual',
+        ...(faceWidthCm != null ? { faceWidthCm } : {}),
       });
       if (!cal) return false;
+
+      // A measured distance and a measured face width together split K into the
+      // camera's half: F = K / W_face. That number describes the hardware, not
+      // the person, so caching it is what lets the next participant on this
+      // machine finish the step with the cheek card alone.
+      if (faceWidthCm != null) {
+        const f = focalFromCalibration(cal.k, faceWidthCm);
+        if (isPlausibleFocal(f)) {
+          const record: CameraFocal = {
+            f,
+            cameraKey,
+            method: 'manual',
+            bootstrapDistanceCm: distanceCm,
+            faceWidthCm,
+            measuredAt: new Date().toISOString(),
+          };
+          setFocal(record);
+          if (focalIsPortable && saveFocal(record)) setCameraKnown(true);
+        }
+      }
+
       setCalibration(cal);
       setStep('position');
       return true;
     },
-    [cameraKey, irisDiameterNorm, liveScale, screenScale],
+    [cameraKey, faceWidthCm, focalIsPortable, irisDiameterNorm, liveScale, screenScale],
   );
+
+  /**
+   * The cheek card is done — decide whether a distance still has to be typed.
+   *
+   * If this camera already has an F on file, it does not: K = F · W_face
+   * reconstructs the session constant from optics measured on an earlier run and
+   * a face width measured just now, and neither term is a guess.
+   */
+  const finishFaceCard = useCallback(
+    (measuredFaceWidthCm: number | null) => {
+      setFaceWidthCm(measuredFaceWidthCm);
+      if (measuredFaceWidthCm == null || !screenScale) {
+        setStep('manual');
+        return;
+      }
+      const cached = focalIsPortable ? loadFocal(cameraKey) : null;
+      if (cached) {
+        const irisScale = median(irisSamplesRef.current, irisDiameterNorm);
+        const cal = calibrateFromFocal({
+          f: cached.f,
+          faceWidthCm: measuredFaceWidthCm,
+          faceScale: median(faceSamplesRef.current, liveScale),
+          ...(Number.isFinite(irisScale) ? { irisScale } : {}),
+          cameraKey,
+          pxPerCm: screenScale.pxPerCm,
+          screenScaleMeasured: true,
+        });
+        if (cal) {
+          setFocal(cached);
+          setCalibration(cal);
+          setStep('position');
+          return;
+        }
+      }
+      setStep('manual');
+    },
+    [cameraKey, focalIsPortable, irisDiameterNorm, liveScale, screenScale],
+  );
+
+  /** Throw away the cached optics and derive them again from a typed distance. */
+  const remeasureCamera = useCallback(() => {
+    clearFocal(cameraKey);
+    setCameraKnown(false);
+    setFocal(null);
+    setCalibration(null);
+    faceSamplesRef.current = [];
+    irisSamplesRef.current = [];
+    setStep('manual');
+  }, [cameraKey]);
 
   const remeasure = useCallback(() => {
     faceSamplesRef.current = [];
@@ -142,16 +277,13 @@ export default function DistanceCalibrationScreen({
     setStep('screen');
   }, []);
 
-  const title = step === 'screen'
-    ? 'Screen Scale'
-    : step === 'manual'
-      ? 'Viewing Distance'
-      : 'Sit At The Target';
-  const subtitle = step === 'screen'
-    ? 'Match an on-screen rectangle to a bank or ID card'
-    : step === 'manual'
-      ? 'Enter the actual distance from your eye to the middle of the screen'
-      : `Move until you are ${targetDistanceCm} cm from the screen`;
+  const TITLES: Record<Step, [string, string]> = {
+    screen: ['Screen Scale', 'Match an on-screen rectangle to a bank or ID card'],
+    manual: ['Viewing Distance', 'Enter the actual distance from your eye to the middle of the screen'],
+    'face-card': ['Face Size', 'Hold the same card flat against your cheek'],
+    position: ['Sit At The Target', `Move until you are ${targetDistanceCm} cm from the screen`],
+  };
+  const [title, subtitle] = TITLES[step];
 
   return (
     <div className="fixed inset-0 z-[200] bg-gray-950 flex flex-col items-center justify-center gap-6 p-4 sm:p-8">
@@ -171,7 +303,21 @@ export default function DistanceCalibrationScreen({
         <ManualDistanceStep
           targetDistanceCm={targetDistanceCm}
           faceAvailable={liveScale != null && liveScale > 0}
+          faceWidthCm={faceWidthCm}
+          liveScale={liveScale}
+          focalIsPortable={focalIsPortable}
+          cameraKnown={cameraKnown}
+          onUseCard={cardMeasurementAvailable ? () => setStep('face-card') : undefined}
           onDone={applyMeasurement}
+        />
+      )}
+
+      {step === 'face-card' && videoRef && (
+        <FaceCardStep
+          videoRef={videoRef}
+          faceWidthNorm={faceWidthNorm}
+          onDone={finishFaceCard}
+          onSkip={() => finishFaceCard(null)}
         />
       )}
 
@@ -182,10 +328,13 @@ export default function DistanceCalibrationScreen({
           liveIrisScale={irisDiameterNorm}
           targetDistanceCm={targetDistanceCm}
           tolerance={distanceTolerance}
+          focal={focal}
+          faceWidthCm={faceWidthCm}
           onRemeasure={remeasure}
           onRemeasureScreen={remeasureScreen}
+          onRemeasureCamera={remeasureCamera}
           onCorrect={applyMeasurement}
-          onDone={() => onComplete(calibration, null)}
+          onDone={() => onComplete(calibration, faceWidthCm)}
         />
       )}
     </div>
@@ -284,18 +433,41 @@ function CardScaleStep({
   );
 }
 
+/** How far the typed distance may sit from the camera's rough estimate. */
+const ESTIMATE_DISAGREEMENT = 0.35;
+
 function ManualDistanceStep({
   targetDistanceCm,
   faceAvailable,
+  faceWidthCm,
+  liveScale,
+  focalIsPortable,
+  cameraKnown,
+  onUseCard,
   onDone,
 }: {
   targetDistanceCm: number;
   faceAvailable: boolean;
+  faceWidthCm: number | null;
+  liveScale: number | null;
+  focalIsPortable: boolean;
+  cameraKnown: boolean;
+  onUseCard?: () => void;
   onDone: (distanceCm: number) => boolean;
 }) {
   const [text, setText] = useState(String(targetDistanceCm));
   const value = Number(text);
   const valid = Number.isFinite(value) && value >= MIN_MANUAL_CM && value <= MAX_MANUAL_CM;
+
+  // Once the face width is known, a nominal camera turns it into a distance
+  // that is good to about ±22% — useless as a measurement, but enough to catch
+  // a typo or a tape measure read off the wrong end.
+  const estimate = liveScale != null && liveScale > 0
+    ? approximateDistanceCm(faceWidthCm, liveScale)
+    : NaN;
+  const hasEstimate = Number.isFinite(estimate) && estimate > 0;
+  const disagrees = hasEstimate && valid
+    && Math.abs(value - estimate) / estimate > ESTIMATE_DISAGREEMENT;
 
   return (
     <>
@@ -320,6 +492,11 @@ function ManualDistanceStep({
           <span className="text-2xl text-gray-500">cm</span>
         </div>
         <p className="text-xs text-gray-500">Keep your head still until you continue.</p>
+        {hasEstimate && (
+          <p className={`text-xs font-mono tabular-nums ${disagrees ? 'text-amber-400' : 'text-cyan-300/80'}`}>
+            camera estimate ≈ {estimate.toFixed(0)} cm (±22%) · face {faceWidthCm!.toFixed(1)} cm
+          </p>
+        )}
         <p className="text-xs text-amber-300/80 max-w-lg text-center px-6">
           Center Stage may be on or off, but do not change camera framing after
           this measurement. If framing changes, measure again.
@@ -337,6 +514,13 @@ function ManualDistanceStep({
             Looking for your face… keep both eyes visible to the camera.
           </p>
         )}
+        {disagrees && (
+          <p className="text-amber-400 text-xs mb-3">
+            The camera puts you nearer {estimate.toFixed(0)} cm. One of the two is
+            wrong — check you measured from your eye to the middle of the screen,
+            and that the card box was drawn tight to the card.
+          </p>
+        )}
         <button
           type="button"
           disabled={!valid || !faceAvailable}
@@ -345,6 +529,33 @@ function ManualDistanceStep({
         >
           Use This Distance
         </button>
+
+        {onUseCard && (
+          <div className="mt-4 border-t border-gray-800 pt-3">
+            <button
+              type="button"
+              onClick={onUseCard}
+              className={cameraKnown && faceWidthCm == null
+                ? 'px-6 py-2 rounded-lg border border-cyan-500/60 bg-cyan-500/10 text-cyan-200 text-xs font-bold uppercase tracking-wider hover:bg-cyan-500/20'
+                : 'text-xs text-cyan-400/90 hover:text-cyan-300 underline'}
+            >
+              {faceWidthCm != null
+                ? 'Redo the card-at-cheek measurement'
+                : cameraKnown
+                  ? 'Skip the tape — measure with the card at your cheek'
+                  : 'Measure with the card at your cheek instead'}
+            </button>
+            <p className="mt-2 text-[11px] leading-relaxed text-gray-500">
+              {faceWidthCm != null
+                ? focalIsPortable
+                  ? 'Your face width is measured. Enter one distance now and later sessions on this machine can skip this step entirely.'
+                  : 'Your face width is measured. This Mac re-measures the camera every session — Center Stage can re-crop the frame invisibly — so the distance is still typed.'
+                : cameraKnown
+                  ? 'This machine has already measured its camera. Hold the same card against your cheek and the distance is worked out from it — nothing to type.'
+                  : 'Ten seconds with the same card. It measures your face width, which cross-checks the number above and lets this machine work out its own camera for next time.'}
+            </p>
+          </div>
+        )}
       </div>
     </>
   );
@@ -352,25 +563,32 @@ function ManualDistanceStep({
 
 function PositionStep({
   calibration,
+  focal,
+  faceWidthCm,
   liveScale,
   liveIrisScale,
   targetDistanceCm,
   tolerance,
   onRemeasure,
   onRemeasureScreen,
+  onRemeasureCamera,
   onCorrect,
   onDone,
 }: {
   calibration: DistanceCalibration;
+  focal: CameraFocal | null;
+  faceWidthCm: number | null;
   liveScale: number | null;
   liveIrisScale: number | null;
   targetDistanceCm: number;
   tolerance: number;
   onRemeasure: () => void;
   onRemeasureScreen: () => void;
+  onRemeasureCamera: () => void;
   onCorrect: (actualCm: number) => boolean;
   onDone: () => void;
 }) {
+  const fromCamera = calibration.method === 'camera-focal';
   const [correcting, setCorrecting] = useState(false);
   const [correctionText, setCorrectionText] = useState('');
   const distanceCm = liveScale != null
@@ -435,12 +653,19 @@ function PositionStep({
           {instruction}
         </p>
         <p className="text-cyan-300 text-sm mt-2 font-mono tabular-nums">
-          measured by hand · {calibration.distanceCm.toFixed(1)} cm
+          {fromCamera ? 'camera + cheek card' : 'measured by hand'} · {calibration.distanceCm.toFixed(1)} cm
           {calibration.irisK != null ? ' · face + iris' : ' · face'}
         </p>
-        <p className="text-gray-500 text-[11px] mt-1 font-mono">
+        <p className="text-gray-500 text-[11px] mt-1 font-mono tabular-nums">
           display scale · {calibration.pxPerCm.toFixed(2)} px/cm
+          {faceWidthCm != null && ` · face ${faceWidthCm.toFixed(1)} cm`}
         </p>
+        {focal != null && (
+          <p className="text-gray-500 text-[11px] font-mono tabular-nums">
+            camera · F {focal.f.toFixed(3)} ({fovDegFromFocal(focal.f).toFixed(0)}° FOV)
+            {fromCamera ? ` · from ${new Date(focal.measuredAt).toLocaleDateString()}` : ' · saved for later sessions'}
+          </p>
+        )}
 
         {!correcting ? (
           <div className="flex items-center justify-center gap-4 mt-3">
@@ -465,6 +690,15 @@ function PositionStep({
             >
               Recheck card
             </button>
+            {fromCamera && (
+              <button
+                type="button"
+                onClick={onRemeasureCamera}
+                className="text-xs text-gray-500 hover:text-gray-300 underline"
+              >
+                Measure camera again
+              </button>
+            )}
           </div>
         ) : (
           <div className="mt-3 flex flex-col items-center gap-2">
