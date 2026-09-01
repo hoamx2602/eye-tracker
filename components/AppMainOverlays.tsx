@@ -32,6 +32,7 @@ type CapturedImage = {
 type AppMainOverlaysProps = {
   status: AppState;
   currentScreen?: string;
+  currentNeuroTestId?: string | null;
   headPosCanvasRef: React.RefObject<HTMLCanvasElement>;
   headValidation: HeadValidationResult | null;
   positionHoldTime: number | null;
@@ -102,6 +103,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
   const {
     status,
     currentScreen,
+    currentNeuroTestId,
     distanceCalibrationProps,
     headPosCanvasRef,
     headValidation,
@@ -270,7 +272,10 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
 
 
 
-      {/* Also during the neurological tests, which it never covered.
+      {/* Also during neurological tests, except Head Orientation: turning the
+          head is the task there, so the centered-head guide would contradict
+          the instruction and cover the camera preview.
+
           Gaze prediction is gated on head validity, so leaving the pose froze the
           cursor with no explanation, and a few seconds later the test vanished.
           From the participant's side that is indistinguishable from the app
@@ -278,7 +283,9 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
           Told what to do, most people correct within a second and never reach
           the grace period at all. `pointer-events-none` on the guide keeps the
           test underneath interactive. */}
-      {((status === 'CALIBRATION' || status === 'TRACKING' || status === 'NEURO_FLOW') &&
+      {((status === 'CALIBRATION' ||
+          status === 'TRACKING' ||
+          (status === 'NEURO_FLOW' && currentNeuroTestId !== 'head_orientation')) &&
         headValidation && !headValidation.valid) && (
         <HeadPositionGuide validation={headValidation} countdown={null} />
       )}

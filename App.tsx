@@ -1157,10 +1157,11 @@ function App() {
    *
    *   CALIBRATION   fitting it
    *   TRACKING      using it
-   *   NEURO_FLOW    using it, but only during 'tests' — the pre/post
-   *                 questionnaires are reading and typing, not tracking, and
-   *                 ejecting someone mid-form would throw away answers for no
-   *                 gain.
+   *   NEURO_FLOW    using it, but only during gaze-based tests. Head Orientation
+   *                 is deliberately exempt: yaw, pitch and roll away from the
+   *                 anchor are the signal that test asks the participant to
+   *                 produce. Applying the setup-pose gate there makes the test
+   *                 reject its own correct behaviour.
    *
    * Also held off while an assessment modal is up, for the same reason.
    *
@@ -1177,10 +1178,16 @@ function App() {
    * be gained by waiting for them to notice.
    */
   const enforceSetupPose = useCallback((now: number, validation: HeadValidationResult) => {
+    const isHeadOrientationTest =
+      statusRef.current === 'NEURO_FLOW' &&
+      neuroPhaseRef.current === 'tests' &&
+      currentNeuroTestIdRef.current === 'head_orientation';
     const poseGated =
       statusRef.current === 'CALIBRATION' ||
       statusRef.current === 'TRACKING' ||
-      (statusRef.current === 'NEURO_FLOW' && neuroPhaseRef.current === 'tests');
+      (statusRef.current === 'NEURO_FLOW' &&
+        neuroPhaseRef.current === 'tests' &&
+        !isHeadOrientationTest);
 
     if (!poseGated || assessmentPendingRef.current || validation.valid) {
       headInvalidSinceRef.current = null;
@@ -1526,12 +1533,20 @@ function App() {
           } else {
              currentFaceLandmarksRef.current = null;
              isHeadValidRef.current = false;
+             // Do not let Head Orientation keep sampling the last valid pose
+             // while the face is outside MediaPipe's view. The test remains in
+             // place (it is exempt from the setup-pose gate), but its sampler
+             // sees null and waits for a real detection to return.
+             if (statusRef.current === 'NEURO_FLOW') {
+               setNeuroHeadPose(null);
+             }
              const lost: HeadValidationResult = { valid: false, message: "No Face Detected" };
              setHeadValidation(lost);
              headValidationRef.current = lost;
              // Walking out of frame is leaving the setup pose in its most
-             // extreme form. Without this the gate only ever saw participants
-             // who stayed visible while drifting.
+             // extreme form. Head Orientation is intentionally exempt from the
+             // setup-pose gate; its own UI reports a missing face and simply
+             // records no pose samples until detection returns.
              enforceSetupPose(now, lost);
           }
       }
@@ -3586,6 +3601,7 @@ function App() {
       <AppMainOverlays
         status={status}
         currentScreen={currentScreen}
+        currentNeuroTestId={currentNeuroTestId}
         distanceCalibrationProps={{
           targetDistanceCm: config.faceDistance,
           faceWidthNorm: liveFaceWidth,
