@@ -314,6 +314,45 @@ export default function DistanceCalibrationScreen({
     [completeBootstrap],
   );
 
+  /**
+   * Re-derive the camera constant from a distance the participant just measured.
+   *
+   * The face size on screen right now and a real distance are between them the
+   * whole of a bootstrap — F = K / W_face with K = actual · faceScale — so a
+   * wrong reading can be corrected where it is noticed rather than by restarting
+   * the flow. It also logs the factor it was out by, which is the one number
+   * that says whether this was a stale focal length or something structural.
+   */
+  const correctFromMeasurement = useCallback(
+    (actualCm: number) => {
+      if (pxPerCm == null || faceWidthCm == null) return;
+      const s = anchorScale();
+      const cal = calibrate({ distanceCm: actualCm, faceScale: s, pxPerCm, method: 'manual', faceWidthCm });
+      if (!cal) return;
+      const f = focalFromCalibration(cal.k, faceWidthCm);
+      if (!isPlausibleFocal(f)) return;
+      const previous = focal;
+      const record: CameraFocal = {
+        f,
+        cameraKey,
+        method: 'manual',
+        bootstrapDistanceCm: actualCm,
+        faceWidthCm,
+        measuredAt: new Date().toISOString(),
+      };
+      if (previous) {
+        console.log(
+          `[distance] corrected: the cached focal length was ${(previous.f / f).toFixed(2)}× ` +
+          `too large (${fovDegFromFocal(previous.f).toFixed(0)}° → ` +
+          `${fovDegFromFocal(f).toFixed(0)}° FOV), measured ${previous.measuredAt}`,
+        );
+      }
+      if (saveFocal(record)) setFocal(record);
+      setCalibration(cal);
+    },
+    [pxPerCm, faceWidthCm, anchorScale, cameraKey, focal],
+  );
+
   /** Throw away the cached optics and measure them again from scratch. */
   const remeasureCamera = useCallback(() => {
     clearFocal();
@@ -410,6 +449,7 @@ export default function DistanceCalibrationScreen({
           targetDistanceCm={targetDistanceCm}
           tolerance={distanceTolerance}
           onRemeasureCamera={remeasureCamera}
+          onCorrect={correctFromMeasurement}
           onDone={() => onComplete(calibration, faceWidthCm)}
         />
       )}
@@ -1090,6 +1130,7 @@ function PositionStep({
   targetDistanceCm,
   tolerance,
   onRemeasureCamera,
+  onCorrect,
   onDone,
 }: {
   calibration: DistanceCalibration;
@@ -1098,8 +1139,12 @@ function PositionStep({
   targetDistanceCm: number;
   tolerance: number;
   onRemeasureCamera: () => void;
+  /** Re-derive the camera constant from a distance the participant measured. */
+  onCorrect?: (actualCm: number) => void;
   onDone: () => void;
 }) {
+  const [correcting, setCorrecting] = useState(false);
+  const [correctionText, setCorrectionText] = useState('');
   const distanceCm = liveScale != null ? distanceFromFace(calibration, liveScale) : NaN;
   // Same tolerance the head-positioning gate uses. Anything looser here is a
   // promise this flow cannot keep, since the anchor is locked against the other
@@ -1183,6 +1228,63 @@ function PositionStep({
               re-measure
             </button>
           </p>
+        )}
+        {/* The screen has been showing a number the participant can see is wrong,
+            and offering them nothing to do about it but start the whole
+            calibration again. One correction closes the loop: they already know
+            their real distance, and from it and the face size on screen right
+            now the camera constant follows directly.
+            
+            This is also the only way a stale focal length can be caught. It is
+            cached against a key that cannot see whether the camera has started
+            re-framing itself, so nothing invalidates it — except somebody
+            noticing the reading is wrong, which is exactly what this captures. */}
+        {onCorrect && (
+          <div className="mt-3">
+            {!correcting ? (
+              <button
+                type="button"
+                onClick={() => setCorrecting(true)}
+                className="text-xs text-amber-400/80 hover:text-amber-300 underline"
+              >
+                That&rsquo;s not my actual distance
+              </button>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-xs text-gray-400">
+                  Measure eye to the middle of the screen, stay there, and type it.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    autoFocus
+                    value={correctionText}
+                    onChange={(e) => setCorrectionText(e.target.value)}
+                    className="w-24 bg-gray-900 border-2 border-gray-700 focus:border-amber-500 outline-none rounded-lg px-2 py-1 text-2xl font-black text-center tabular-nums text-white"
+                    aria-label="Actual measured distance"
+                  />
+                  <span className="text-gray-500">cm</span>
+                  <button
+                    type="button"
+                    disabled={!(Number(correctionText) >= 15 && Number(correctionText) <= 120)}
+                    onClick={() => {
+                      onCorrect(Number(correctionText));
+                      setCorrecting(false);
+                    }}
+                    className="px-4 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-30 text-white font-bold uppercase tracking-wider text-xs"
+                  >
+                    Fix
+                  </button>
+                </div>
+                {Number.isFinite(distanceCm) && Number(correctionText) > 0 && (
+                  <p className="text-[11px] text-gray-500 font-mono">
+                    reading is {(distanceCm / Number(correctionText)).toFixed(2)}× your real distance
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         )}
         <button
           type="button"
