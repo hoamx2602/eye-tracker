@@ -272,5 +272,21 @@ console.log('\nopaque OS framing policy\n');
   check('a fixed Linux UVC camera keeps persistent profiles', canPersistFocalForPlatform('Linux x86_64'));
 }
 
+console.log('\nreconstructed calibrations carry the screen-scale provenance\n');
+
+{
+  // sessionGeometry reads a *missing* flag as "measured", so a reconstruction
+  // that stays silent about where pxPerCm came from would let a CSS-reference
+  // fallback present itself as a physically measured display scale — which is
+  // the whole failure that made a results page print 0.00° as an accuracy.
+  const base = { f: F_TRUE, faceWidthCm: 14.2, faceScale: 0.2, pxPerCm: PX_PER_CM };
+  check('a measured screen scale is carried through',
+    calibrateFromFocal({ ...base, screenScaleMeasured: true })?.screenScaleMeasured === true);
+  check('an unmeasured one is carried through as false, not dropped',
+    calibrateFromFocal({ ...base, screenScaleMeasured: false })?.screenScaleMeasured === false);
+  check('and saying nothing still says nothing',
+    calibrateFromFocal(base)?.screenScaleMeasured === undefined);
+}
+
 console.log(failures ? `\n${failures} failure(s)\n` : '\nall camera-focal tests passed\n');
 process.exit(failures ? 1 : 0);

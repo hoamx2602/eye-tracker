@@ -255,8 +255,10 @@ export function calibrateFromFocal(params: {
   irisScale?: number;
   cameraKey?: string;
   pxPerCm: number;
+  /** False when pxPerCm is the CSS reference fallback rather than a measurement. */
+  screenScaleMeasured?: boolean;
 }): DistanceCalibration | null {
-  const { f, faceWidthCm, faceScale, irisScale, cameraKey, pxPerCm } = params;
+  const { f, faceWidthCm, faceScale, irisScale, cameraKey, pxPerCm, screenScaleMeasured } = params;
   const k = kFromFocal(f, faceWidthCm);
   if (!(k > 0) || !(faceScale > 0)) return null;
   const distanceCm = k / faceScale;
@@ -269,6 +271,10 @@ export function calibrateFromFocal(params: {
     ...(cameraKey ? { cameraKey } : {}),
     method: 'camera-focal',
     faceWidthCm,
+    // Carried explicitly, never left undefined: sessionGeometry reads a missing
+    // flag as "measured", so silence here would let a CSS-reference fallback
+    // present itself as a physically measured display scale.
+    ...(screenScaleMeasured != null ? { screenScaleMeasured } : {}),
     pxPerCm,
     measuredAt: new Date().toISOString(),
   };
