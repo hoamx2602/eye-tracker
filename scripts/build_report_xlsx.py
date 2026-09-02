@@ -111,6 +111,52 @@ def render_gaze(test: dict, path: str) -> bool:
     return bool(pts)
 
 
+def render_trajectory(seg: dict, path: str) -> bool:
+    """
+    Target against eye for one Test-mode exercise, X above Y.
+
+    Stacked rather than side by side: the column is 420 px wide, and two panels
+    across that leaves each too narrow to read a lag off. Same green/purple as
+    the results screen so the two are recognisably the same chart.
+    """
+    pts = seg.get("points") or []
+    fig_w = IMG_W_PX / DPI
+    fig, axes = plt.subplots(2, 1, figsize=(fig_w, fig_w * 0.62), dpi=DPI, sharex=True)
+
+    if not pts:
+        for ax in axes:
+            ax.set_xticks([])
+            ax.set_yticks([])
+        axes[0].text(0.5, 0.5, "No trajectory recorded", ha="center", va="center",
+                     color="#94A3B8", fontsize=9, transform=axes[0].transAxes)
+    else:
+        t = np.array([p["t"] for p in pts], dtype=float)
+        t = t - t.min()
+        for ax, axis in zip(axes, ("X", "Y")):
+            tgt = np.array([p[f"target{axis}"] for p in pts], dtype=float)
+            eye = np.array([p[f"gaze{axis}"] for p in pts], dtype=float)
+            ax.plot(t, tgt, color="#4ADE80", linewidth=1.2, label="Target")
+            ax.plot(t, eye, color="#A78BFA", linewidth=1.0, label="Eye")
+            ax.set_ylabel(f"{axis} (%)", fontsize=6, color="#475569")
+            ax.tick_params(labelsize=5, colors="#64748B", length=2)
+            ax.grid(True, color="#E2E8F0", linewidth=0.4)
+            for spine in ax.spines.values():
+                spine.set_edgecolor("#CBD5E1")
+                spine.set_linewidth(0.6)
+        axes[1].set_xlabel("seconds", fontsize=6, color="#475569")
+        axes[0].legend(fontsize=5, loc="upper right", frameon=False, ncol=2)
+
+    rms = seg.get("rmsPct")
+    title = seg.get("patternName", "")
+    if rms is not None:
+        title += f"  ·  {seg.get('pointCount', 0)} pts  ·  RMS {rms:.1f}% of screen"
+    axes[0].set_title(title, fontsize=7, color="#0F172A", pad=3)
+    fig.tight_layout(pad=0.3)
+    fig.savefig(path, dpi=DPI, facecolor="white")
+    plt.close(fig)
+    return bool(pts)
+
+
 def style_header(ws, row: int, last_col: int) -> None:
     for c in range(1, last_col + 1):
         cell = ws.cell(row=row, column=c)
@@ -131,6 +177,7 @@ def build_summary(wb: Workbook, data: dict) -> None:
         "Session ID", "Run ID", "Date", "Viewing distance (cm)",
         "Distance measured?", "Real-time error (px)", "Offline error (px)",
         "Quality", "Validation dots", "SD (px)", "Tests scored",
+        "Exercise steps", "Mean pursuit RMS (% screen)",
     ]
     ws.append(headers)
     style_header(ws, 1, len(headers))
@@ -153,6 +200,12 @@ def build_summary(wb: Workbook, data: dict) -> None:
             acc["validationPoints"],
             round(acc["sdPx"], 2) if acc["sdPx"] is not None else "",
             scored_tests,
+            len(r.get("trajectories") or []),
+            round(
+                sum(s["rmsPct"] for s in r["trajectories"] if s.get("rmsPct") is not None)
+                / max(1, sum(1 for s in r["trajectories"] if s.get("rmsPct") is not None)),
+                2,
+            ) if r.get("trajectories") else "",
         ])
 
     for row in ws.iter_rows(min_row=2, min_col=2, max_col=3):
@@ -162,7 +215,7 @@ def build_summary(wb: Workbook, data: dict) -> None:
 
     for col, w in SUMMARY_WIDTHS.items():
         ws.column_dimensions[col].width = w
-    for i, w in enumerate([26, 26, 12, 19, 20, 19, 18, 14, 11, 13], start=4):
+    for i, w in enumerate([26, 26, 12, 19, 20, 19, 18, 14, 11, 13, 14, 24], start=4):
         ws.column_dimensions[get_column_letter(i)].width = w
 
     ws.freeze_panes = "B2"
@@ -179,6 +232,8 @@ def build_summary(wb: Workbook, data: dict) -> None:
         f"{totals['medianAngularErrorDeg']:.2f}°." if totals["medianAngularErrorDeg"] is not None else "",
         f"Offline validation exists for {totals['runsWithOfflineValidation']} run(s); "
         f"the rest show 'not run' rather than a blank that could be read as zero.",
+        f"Test-mode exercise steps recorded for {totals.get('runsWithTestModeTrajectories', 0)} run(s); "
+        f"each participant sheet lists them below its tests.",
         "Accuracy is angular, not pixel: the same pixel error is twice the angle at half the distance, "
         "so a pixel ranking would reward whoever sat closest to the screen.",
     ] + data["caveats"]
@@ -227,6 +282,49 @@ def build_participant(wb: Workbook, r: dict, img_dir: str, draw_images: bool) ->
         )
         ws.cell(row=row, column=6, value=pretty or "—").alignment = Alignment(vertical="center", wrap_text=True)
         row += 1
+
+    # The Test-mode exercise steps. They are recorded per session rather than
+    # per neurological test, so they are not in `tests` and were missing from
+    # the first cut of this report.
+    trajectories = r.get("trajectories") or []
+    if trajectories:
+        row += 1
+        band = ws.cell(row=row, column=1, value="Test mode: Target vs Eye tracking")
+        band.font = Font(bold=True)
+        ws.cell(row=row, column=4, value="Points")
+        ws.cell(row=row, column=5, value="RMS error (% of screen)")
+        ws.cell(row=row, column=6, value="X / Y split")
+        style_header(ws, row, 6)
+        row += 1
+
+        for seg in trajectories:
+            ws.cell(row=row, column=1, value=seg["patternName"]).alignment = Alignment(vertical="center", wrap_text=True)
+
+            safe = seg["patternName"].lower().replace(" ", "-").replace("/", "-")
+            rel = os.path.join("report-images", r["runId"], f"exercise-{safe}.png")
+            abs_png = os.path.join(img_dir, r["runId"], f"exercise-{safe}.png")
+            if draw_images:
+                os.makedirs(os.path.dirname(abs_png), exist_ok=True)
+                render_trajectory(seg, abs_png)
+                img = XLImage(abs_png)
+                ws.add_image(img, f"B{row}")
+                ws.row_dimensions[row].height = img.height * 0.75 + 6
+            else:
+                ws.cell(row=row, column=2, value="(images skipped)")
+                ws.row_dimensions[row].height = 18
+
+            link = ws.cell(row=row, column=3, value=rel)
+            link.hyperlink = rel
+            link.font = Font(color="2563EB", underline="single")
+            link.alignment = Alignment(vertical="center", wrap_text=True)
+
+            ws.cell(row=row, column=4, value=seg["pointCount"]).alignment = Alignment(vertical="center")
+            ws.cell(row=row, column=5,
+                    value=round(seg["rmsPct"], 2) if seg.get("rmsPct") is not None else "—").alignment = Alignment(vertical="center")
+            xy = (f"X {seg['rmsXPct']:.1f}% / Y {seg['rmsYPct']:.1f}%"
+                  if seg.get("rmsXPct") is not None else "—")
+            ws.cell(row=row, column=6, value=xy).alignment = Alignment(vertical="center")
+            row += 1
 
     for col, w in PARTICIPANT_WIDTHS.items():
         ws.column_dimensions[col].width = w
@@ -284,7 +382,10 @@ def main() -> None:
     out = os.path.join(args.out_dir, f"Eye Tracking Report - {stamp}.xlsx")
     wb.save(out)
 
-    n_imgs = sum(len(r["tests"]) for r in data["runs"]) if not args.no_images else 0
+    n_imgs = (
+        sum(len(r["tests"]) + len(r.get("trajectories") or []) for r in data["runs"])
+        if not args.no_images else 0
+    )
     print(f"Participants: {len(data['runs'])} · images rendered: {n_imgs}")
     print(f"Wrote {out}")
 

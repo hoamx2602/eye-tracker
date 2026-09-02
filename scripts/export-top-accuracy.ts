@@ -53,7 +53,7 @@ function toCsv(rows: Record<string, unknown>[]): string {
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const { examined, scored, top, byDistance, median, offlineCount } = await selectTopRuns(prisma, {
+  const { examined, scored, top, byDistance, median, offlineCount, trajectoryCount } = await selectTopRuns(prisma, {
     limit: LIMIT,
     rankBy: RANK_BY,
     status: STATUS,
@@ -70,6 +70,7 @@ async function main() {
       exported: top.length,
       medianAngularErrorDeg: median,
       runsWithOfflineValidation: offlineCount,
+      runsWithTestModeTrajectories: trajectoryCount,
       configuredDistanceCounts: byDistance,
     },
     caveats: [

@@ -56,6 +56,29 @@ export function spread(errors: number[]) {
 
 export type GazePoint = { t: number; x: number; y: number };
 
+/** One sample of a Test-mode exercise: where the dot was, where the gaze went. Percent of viewport. */
+export type TrajectoryPoint = { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number };
+
+/**
+ * How far the gaze trailed the dot over one exercise, as RMS percent of screen.
+ *
+ * Percent rather than pixels because the trajectories are recorded that way,
+ * and RMS rather than mean because a smooth-pursuit trace that lags badly on
+ * two direction changes is not the same as one that lags a little throughout —
+ * and the mean would call them equal.
+ */
+function trackingError(points: TrajectoryPoint[]) {
+  if (points.length === 0) return { rmsXPct: null, rmsYPct: null, rmsPct: null };
+  let sx = 0, sy = 0;
+  for (const p of points) {
+    sx += (p.gazeX - p.targetX) ** 2;
+    sy += (p.gazeY - p.targetY) ** 2;
+  }
+  const rmsXPct = Math.sqrt(sx / points.length);
+  const rmsYPct = Math.sqrt(sy / points.length);
+  return { rmsXPct, rmsYPct, rmsPct: Math.sqrt((sx + sy) / points.length) };
+}
+
 export type RunRecord = ReturnType<typeof shapeRun>;
 
 export interface SelectOptions {
@@ -175,8 +198,27 @@ function shapeRun(r: RunRow, opts: SelectOptions) {
       };
     }),
 
+    trajectories: readTrajectories(r).map((seg) => {
+      const points = Array.isArray(seg.points) ? (seg.points as TrajectoryPoint[]) : [];
+      return {
+        patternName: String(seg.patternName ?? 'Unnamed'),
+        pointCount: points.length,
+        durationS: points.length ? points[points.length - 1].t - points[0].t : 0,
+        ...trackingError(points),
+        ...(opts.includeGazePaths ? { points } : {}),
+      };
+    }),
+
     ...(opts.withDemographics ? { demographics: r.session!.demographics ?? null } : {}),
   };
+}
+
+/** Test-mode segments, from TestRun if present and session config otherwise. */
+function readTrajectories(r: RunRow): Record<string, unknown>[] {
+  const fromTestRun = r.session?.testRun?.trajectories;
+  if (Array.isArray(fromTestRun) && fromTestRun.length) return fromTestRun as Record<string, unknown>[];
+  const fromConfig = asRecord(r.session?.config).testTrajectories;
+  return Array.isArray(fromConfig) ? (fromConfig as Record<string, unknown>[]) : [];
 }
 
 type RunRow = {
@@ -193,6 +235,7 @@ type RunRow = {
     config: unknown;
     demographics: unknown;
     videoUrl: string | null;
+    testRun: { trajectories: unknown } | null;
   } | null;
 };
 
@@ -215,6 +258,10 @@ export async function selectTopRuns(prisma: PrismaClient, opts: SelectOptions) {
           config: true,
           demographics: true,
           videoUrl: true,
+          // The Test-mode exercise steps (Wiggling, Horizontal, …). Stored on
+          // TestRun for newer sessions and inside session config for older
+          // ones, so both are read.
+          testRun: { select: { trajectories: true } },
         },
       },
     },
@@ -238,6 +285,7 @@ export async function selectTopRuns(prisma: PrismaClient, opts: SelectOptions) {
   const degs = scored.map((r) => r.accuracy.angularErrorDeg).sort((a, b) => a - b);
   const median = degs.length ? degs[Math.floor(degs.length / 2)] : null;
   const offlineCount = scored.filter((r) => r.offline.overallDeg != null).length;
+  const trajectoryCount = scored.filter((r) => r.trajectories.length > 0).length;
 
-  return { examined: runs.length, scored, top, byDistance, median, offlineCount };
+  return { examined: runs.length, scored, top, byDistance, median, offlineCount, trajectoryCount };
 }

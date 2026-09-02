@@ -29,7 +29,7 @@ const OUT_DIR = arg('out', 'outputs');
 const WITH_DEMOGRAPHICS = process.argv.includes('--with-demographics');
 
 async function main() {
-  const { examined, scored, top, byDistance, median, offlineCount } = await selectTopRuns(prisma, {
+  const { examined, scored, top, byDistance, median, offlineCount, trajectoryCount } = await selectTopRuns(prisma, {
     limit: LIMIT,
     rankBy: RANK_BY,
     status: STATUS,
@@ -45,6 +45,7 @@ async function main() {
       runsExamined: examined,
       runsWithCalibration: scored.length,
       runsWithOfflineValidation: offlineCount,
+      runsWithTestModeTrajectories: trajectoryCount,
       exported: top.length,
       medianAngularErrorDeg: median,
       configuredDistanceCounts: byDistance,
@@ -63,8 +64,10 @@ async function main() {
   writeFileSync(out, JSON.stringify(payload), 'utf-8');
 
   const paths = top.reduce((n, r) => n + r.tests.reduce((m, t) => m + (t.gazeSampleCount ?? 0), 0), 0);
+  const segs = top.reduce((n, r) => n + r.trajectories.length, 0);
   console.log(
-    `Exported ${top.length} runs (${paths} gaze samples across their tests), ` +
+    `Exported ${top.length} runs: ${paths} gaze samples across their tests, ` +
+      `${segs} Test-mode exercise segments, ` +
       `${offlineCount}/${scored.length} with offline validation.`,
   );
   console.log(`Wrote ${out}`);
