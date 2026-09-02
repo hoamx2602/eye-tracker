@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { angularErrorDeg } from '@/lib/resultScoring';
 
 // ── Types (mirrors admin detail page) ──────────────────────────────────────────
 
@@ -25,18 +26,6 @@ type SymptomPayload = {
 };
 
 type NeuroRunDetail = {
-  /**
-   * Calibration quality, computed server-side from the geometry the session was
-   * actually recorded at. Deliberately not derived here: this shape has never
-   * carried `session.config`, so anything computed on the client would fall
-   * back to defaults and disagree with the runs list.
-   */
-  calibration: {
-    meanErrorPx: number;
-    angularErrorDeg: number | null;
-    distanceCm: number | null;
-    pxPerCm: number | null;
-  } | null;
   id: string;
   sessionId: string;
   status: string | null;
@@ -725,7 +714,7 @@ function NeurologicalRunReportInner() {
                   <dd>
                     {run.session.meanErrorPx.toFixed(1)} px
                     <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 4 }}>
-                      {run.calibration?.angularErrorDeg != null ? `/ ${run.calibration.angularErrorDeg.toFixed(2)}° @ ${run.calibration.distanceCm!.toFixed(0)}cm` : '(distance not measured)'}
+                      / {angularErrorDeg(run.session.meanErrorPx).toFixed(2)}°
                     </span>
                     <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 4 }}>
                       {run.session.meanErrorPx < 30 ? '(Good)' : run.session.meanErrorPx < 60 ? '(Acceptable)' : '(Poor)'}

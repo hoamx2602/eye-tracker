@@ -49,29 +49,6 @@ class Biomarkers:
     extra: dict = field(default_factory=dict)
 
 
-# A fixation shorter than this carries too few samples for a meaningful 2×2
-# covariance (at 30 fps, 200 ms ≈ 6 samples — already the practical floor).
-_MIN_BCEA_FIXATION_MS = 200.0
-
-
-def _bcea_deg2(vx: np.ndarray, vy: np.ndarray, p: float = 0.95) -> float | None:
-    """
-    Bivariate Contour Ellipse Area of one fixation, in deg².
-
-    Returns None when the sample is too small or degenerate (collinear samples
-    give a singular covariance), so callers can skip rather than record a zero.
-    """
-    ok = ~(np.isnan(vx) | np.isnan(vy))
-    if int(ok.sum()) < 3:
-        return None
-    cov = np.cov(np.vstack([vx[ok], vy[ok]]))
-    det = float(np.linalg.det(cov))
-    if not np.isfinite(det) or det <= 0:
-        return None
-    k = -np.log(1.0 - p)          # 95% → ln(20)
-    return float(2.0 * np.pi * k * np.sqrt(det))
-
-
 def _velocity_deg_s(t_ms: np.ndarray, xy: np.ndarray, ppd: float) -> np.ndarray:
     dt_s = np.diff(t_ms) / 1000.0
     dt_s[dt_s <= 0] = np.nan
@@ -111,14 +88,7 @@ def detect_events(
                 j += 1
             seg = vel[i:j]
             sacc_peaks.append(float(np.nanmax(seg)))
-            # `vel[k]` is the step from sample k-1 to k, so the run i..j-1
-            # covers the displacement from position i-1 to position j-1.
-            # Measuring xy[j] - xy[i] instead spans the wrong interval and
-            # collapses to ~0 for a saccade sharp enough to occupy one sample —
-            # which is every saccade once the smoothing stops rounding them off.
-            p0 = xy[max(0, i - 1)]
-            p1 = xy[min(j - 1, n - 1)]
-            amp_px = float(np.linalg.norm(p1 - p0))
+            amp_px = float(np.linalg.norm(xy[min(j, n - 1)] - xy[i]))
             sacc_amps.append(amp_px / ppd)
             i = j
         else:
@@ -130,7 +100,6 @@ def detect_events(
 
     # --- Fixations: contiguous below-threshold runs of sufficient duration ---
     fix_durations = []
-    fix_spans: list[tuple[int, int]] = []   # [start, stop) index ranges, for BCEA
     i = 0
     while i < n:
         if valid[i] and not is_sacc[i]:
@@ -140,7 +109,6 @@ def detect_events(
             dur = t_ms[min(j, n - 1)] - t_ms[i]
             if dur >= min_fixation_ms:
                 fix_durations.append(float(dur))
-                fix_spans.append((i, j))
             i = j
         else:
             i += 1
@@ -148,20 +116,16 @@ def detect_events(
         bm.fixation_count = len(fix_durations)
         bm.fixation_mean_duration_ms = float(np.mean(fix_durations))
 
-    # --- BCEA (95%), per fixation, in deg² ---
-    # BCEA measures how tightly gaze holds during a SINGLE fixation. Pooling all
-    # valid samples instead measures how far apart the targets were placed on the
-    # screen — which is why that version returned ~1400 deg² against a healthy
-    # norm of ~2.4. Compute it within each fixation and report the median across
-    # them, so one long drifting fixation cannot dominate.
-    bceas = [
-        b for start, stop in fix_spans
-        if (t_ms[min(stop, n - 1)] - t_ms[start]) >= _MIN_BCEA_FIXATION_MS
-        and (b := _bcea_deg2(x_px[start:stop] / ppd, y_px[start:stop] / ppd)) is not None
-    ]
-    if bceas:
-        bm.bcea_deg2 = float(np.median(bceas))
-        bm.extra["bcea_n_fixations"] = len(bceas)
+    # --- BCEA (95%) over all valid samples, in deg² ---
+    vx = (x_px[valid] / ppd)
+    vy = (y_px[valid] / ppd)
+    if len(vx) >= 3:
+        cov = np.cov(np.vstack([vx, vy]))
+        det = float(np.linalg.det(cov))
+        if det > 0:
+            # 95% bivariate contour: k = -ln(1-P) = ln(20); area = 2*pi*k*sqrt(det)
+            k = np.log(20.0)
+            bm.bcea_deg2 = float(2.0 * np.pi * k * np.sqrt(det))
 
     return bm
 

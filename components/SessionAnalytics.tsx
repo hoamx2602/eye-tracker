@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { angularErrorDegOrNull } from '@/lib/resultScoring';
+import { angularErrorDeg } from '@/lib/resultScoring';
 import {
   ScatterChart,
   Scatter,
@@ -45,10 +45,6 @@ type Props = {
   meanErrorPx?: number | null;
   /** Distance from face to screen in cm — used for angular error conversion. Default 60. */
   faceDistanceCm?: number;
-  /** Measured display scale; without it no angular figure is shown at all. */
-  pxPerCm?: number;
-  /** False when the distance or scale above is a fallback rather than a measurement. */
-  geometryMeasured?: boolean;
   /** From Test mode: target vs gaze recorded during exercises (config.testTrajectories) */
   testTrajectories?: TestTrajectorySegment[] | null;
 };
@@ -98,15 +94,7 @@ function StatBox({ label, value, unit, color }: { label: string; value: string; 
   );
 }
 
-export default function SessionAnalytics({ samples, validationErrors, meanErrorPx, faceDistanceCm = 60, pxPerCm, geometryMeasured = false, testTrajectories }: Props) {
-  // Computed once, and only when there is real geometry behind it. A session
-  // whose distance nobody measured has no angular error — showing one derived
-  // from the configured target would report 40 cm for someone who sat at 35.
-  const angularErr = angularErrorDegOrNull(meanErrorPx, {
-    distanceCm: faceDistanceCm,
-    pxPerCm: pxPerCm ?? 0,
-    measured: geometryMeasured && pxPerCm != null,
-  });
+export default function SessionAnalytics({ samples, validationErrors, meanErrorPx, faceDistanceCm = 60, testTrajectories }: Props) {
   const samplesWithFeatures = useMemo(
     () => samples.filter((s) => Array.isArray(s.features) && s.features.length >= FEATURE_DIMENSION_NAMES.length),
     [samples],
@@ -300,10 +288,10 @@ export default function SessionAnalytics({ samples, validationErrors, meanErrorP
             <StatBox label="Head valid" value={`${stats.headValidRate.toFixed(0)}%`} color={stats.headValidRate > 80 ? '#22c55e' : '#eab308'} />
             <StatBox label="Mean error" value={meanErrorPx != null ? meanErrorPx.toFixed(1) : '—'} unit="px" color={meanErrorPx != null && meanErrorPx < 10 ? '#22c55e' : '#eab308'} />
             <StatBox
-              label={angularErr != null ? `Angular error (@${faceDistanceCm.toFixed(0)}cm)` : 'Angular error (distance not measured)'}
-              value={angularErr != null ? angularErr.toFixed(2) : '—'}
+              label={`Angular error (@${faceDistanceCm}cm)`}
+              value={meanErrorPx != null ? angularErrorDeg(meanErrorPx, faceDistanceCm).toFixed(2) : '—'}
               unit="°"
-              color={angularErr != null && angularErr < 1 ? '#22c55e' : '#eab308'}
+              color={meanErrorPx != null && angularErrorDeg(meanErrorPx, faceDistanceCm) < 1 ? '#22c55e' : '#eab308'}
             />
             <StatBox label="Avg pupil R" value={((stats.leftR.mean + stats.rightR.mean) / 2).toFixed(4)} />
             {stats.faceWidth && <StatBox label="Avg face width" value={stats.faceWidth.mean.toFixed(3)} />}

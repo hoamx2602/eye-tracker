@@ -11,123 +11,18 @@
 const LENIENT_MODE = typeof process !== 'undefined' && (process.env.NEXT_PUBLIC_LENIENT_SCORING === 'true' || process.env.NEXT_PUBLIC_LENIENT_SCORING === '1');
 
 /**
- * Target mean validation error, degrees of visual angle.
- *
- * A reference point for reading a result, not a gate on running the tests.
- * Validation error mixes tracker accuracy with how steadily the participant
- * could sit and attend, so refusing to test someone who lands above it would
- * exclude exactly the people the assessment exists for.
- */
-export const TARGET_VALIDATION_ANGULAR_ERROR_DEG = 2;
-
-/**
- * The CSS reference pixel: 1/96 inch. A fallback, not a measurement.
- *
- * The spec defines it as a *reference* density, and real displays are not
- * obliged to match it. A Retina Mac at default scaling lands nearer 50 px/cm
- * than 37.8, so assuming the reference over-states every error by about a third.
- */
-export const CSS_REFERENCE_PX_PER_CM = 96 / 2.54; // ≈ 37.795
-
-/**
  * Convert a calibration mean pixel error to visual angle (degrees).
  *
- *     θ = atan(errorPx / pxPerCm / viewingDistanceCm)
+ * Uses the CSS standard: 1 CSS pixel = 1/96 inch = 2.54/96 cm.
+ * Formula: θ = atan(errorCm / viewingDistanceCm) × (180/π)
  *
- * Both denominators have to be real numbers or the answer is not in degrees of
- * anything. This used to hard-code the CSS reference density while the app was
- * separately measuring the true one with a bank card, and to default the
- * distance to 60 cm while the app was separately measuring that too — so the
- * one figure the whole system exists to report was computed from two constants
- * it had already replaced with measurements.
- *
- * @param meanErrorPx        Mean validation error, CSS pixels
- * @param viewingDistanceCm  Eye-to-screen distance; measure it, do not assume it
- * @param pxPerCm            Measured display scale (lib/screenScale.ts)
+ * @param meanErrorPx   Mean error from calibration validation (CSS pixels)
+ * @param viewingDistanceCm  Distance from eye to screen in centimetres (default 60)
  */
-export function angularErrorDeg(
-  meanErrorPx: number,
-  viewingDistanceCm = 60,
-  pxPerCm = CSS_REFERENCE_PX_PER_CM,
-): number {
-  const scale = pxPerCm > 0 ? pxPerCm : CSS_REFERENCE_PX_PER_CM;
-  const errorCm = meanErrorPx / scale;
+export function angularErrorDeg(meanErrorPx: number, viewingDistanceCm = 60): number {
+  const CM_PER_CSS_PX = 2.54 / 96; // ≈ 0.02646 cm
+  const errorCm = meanErrorPx * CM_PER_CSS_PX;
   return (Math.atan(errorCm / viewingDistanceCm) * 180) / Math.PI;
-}
-
-export interface SessionGeometry {
-  /** Distance the session was actually recorded at, cm. */
-  distanceCm: number;
-  /** Measured display scale, or the CSS reference when the card step never ran. */
-  pxPerCm: number;
-  /** False when either number is a fallback rather than a measurement. */
-  measured: boolean;
-}
-
-/**
- * The geometry a session was actually recorded at, from its own config blob.
- *
- * Preference order matters. The position anchor carries the distance at the
- * moment the pose was locked, which is what the whole session then held to; the
- * distance calibration carries the distance at the moment K was fixed, which may
- * be a step earlier; the configured target is only what was *asked for*. Falling
- * back to 60 cm — as two admin pages silently did — reports a session run at
- * 40 cm as though it were at 60, inflating every degree by half.
- */
-export function sessionGeometry(config: unknown): SessionGeometry {
-  const c = (config && typeof config === 'object' ? config : {}) as Record<string, unknown>;
-  const sub = (key: string): Record<string, unknown> => {
-    const obj = c[key];
-    return obj && typeof obj === 'object' ? (obj as Record<string, unknown>) : {};
-  };
-  const num = (obj: Record<string, unknown>, field: string): number | undefined => {
-    const v = obj[field];
-    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined;
-  };
-
-  const anchor = sub('positionAnchor');
-  const cal = sub('distanceCalibration');
-
-  // 'assumed' means the participant was *declared* to be at the configured
-  // target because nothing had measured them. The number that then lands in
-  // positionAnchor.distanceCm is the config value wearing a measurement's
-  // clothes, and treating it as one is how a session recorded at 35 cm comes to
-  // be reported as 40. The source field exists precisely to say so; honour it.
-  const anchorCm = anchor.distanceSource !== 'assumed' ? num(anchor, 'distanceCm') : undefined;
-  const calCm = cal.method !== 'assumed' ? num(cal, 'distanceCm') : undefined;
-  const pxPerCm = num(cal, 'pxPerCm');
-  // New card-free sessions retain a CSS-reference fallback for legacy fields,
-  // but mark it explicitly so a plausible-looking px/cm value cannot turn an
-  // eye-to-screen measurement into a falsely "measured" visual angle.
-  const screenScaleWasMeasured = cal.screenScaleMeasured !== false;
-  const target = typeof c.faceDistance === 'number' ? c.faceDistance : undefined;
-
-  const measuredCm = anchorCm ?? calCm;
-  return {
-    // The fallback is for labelling a row, never for deriving a number from.
-    // `measured` is what guards that, and angularErrorDegOrNull enforces it.
-    distanceCm: measuredCm ?? target ?? 60,
-    pxPerCm: pxPerCm ?? CSS_REFERENCE_PX_PER_CM,
-    measured: measuredCm != null && pxPerCm != null && screenScaleWasMeasured,
-  };
-}
-
-/**
- * Visual angle, or nothing.
- *
- * Converting a pixel error to degrees needs a real distance and a real display
- * scale. When either is missing, the honest output is not a number computed
- * from a stand-in — it is no number. A fabricated 1.20° is worse than a dash,
- * because a dash cannot be averaged, plotted, or compared against a run that
- * was actually measured.
- */
-export function angularErrorDegOrNull(
-  meanErrorPx: number | null | undefined,
-  geometry: SessionGeometry,
-): number | null {
-  if (meanErrorPx == null || !Number.isFinite(meanErrorPx)) return null;
-  if (!geometry.measured) return null;
-  return angularErrorDeg(meanErrorPx, geometry.distanceCm, geometry.pxPerCm);
 }
 
 /** Clamp a value between min and max. */

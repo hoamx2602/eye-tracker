@@ -69,25 +69,6 @@ class CalibrationDot:
     t_end_ms: float
 
 
-# Head-position columns, in the order `_design` expects them.
-HEAD_KEYS = ("head_u", "head_v", "head_w")
-
-
-def _design(gaze: np.ndarray, head: np.ndarray | None, degree: int) -> np.ndarray:
-    """
-    Build the regression design matrix: polynomial in (yaw, pitch), plus the
-    head-position columns entered **linearly**.
-
-    Head terms are deliberately not raised to `degree`. With 6–25 calibration
-    dots a degree-2 expansion of five inputs is 20 terms and cannot be
-    identified; three extra linear columns can. Linear is also the right order
-    of magnitude physically — to first order, translating the head by d moves
-    the point of regard by d.
-    """
-    poly = PolynomialFeatures(degree=degree, include_bias=False).fit_transform(gaze)
-    return np.hstack([poly, head]) if head is not None else poly
-
-
 @dataclass
 class GazeMapper:
     model_x: SkPipeline
@@ -98,65 +79,46 @@ class GazeMapper:
     loocv_px: float = float("nan")           # leave-one-dot-out RMSE — real accuracy estimate
     degree: int = 2                          # polynomial degree chosen by CV
     alpha: float = 1.0                       # Ridge alpha chosen by CV
-    use_head: bool = False                   # whether head position is an input, chosen by CV
     region_errors_px: dict = field(default_factory=dict)  # {center, edge, corner} LODO RMSE
 
-    def map(
-        self,
-        yaw: np.ndarray,
-        pitch: np.ndarray,
-        head: dict[str, np.ndarray] | None = None,
-    ) -> np.ndarray:
+    def map(self, yaw: np.ndarray, pitch: np.ndarray) -> np.ndarray:
         """
         Map arrays of (yaw, pitch) to an (N, 2) array of screen (x, y) px.
-
-        When the mapper was fitted with head inputs, `head` is required — the
-        same {"head_u","head_v","head_w"} arrays used at fit time. Rows with any
-        NaN input (no-face frames, missing head estimate) yield NaN, predicted
-        explicitly on the finite subset because recent sklearn raises on NaN.
+        NaN inputs (no-face frames) yield NaN rows — predicted explicitly on the
+        finite subset because recent sklearn raises on NaN in predict().
         """
-        gaze = np.column_stack([yaw, pitch])
-        head_arr = None
-        if self.use_head:
-            if head is None:
-                raise ValueError("mapper was fitted with head inputs; pass head=")
-            head_arr = np.column_stack([head[k] for k in HEAD_KEYS])
-
-        # Select the finite rows BEFORE expanding: PolynomialFeatures rejects NaN
-        # outright, and no-face frames are NaN by design.
-        ok = np.isfinite(gaze).all(axis=1)
-        if head_arr is not None:
-            ok &= np.isfinite(head_arr).all(axis=1)
-
-        out = np.full((len(gaze), 2), np.nan)
+        feats = np.column_stack([yaw, pitch])
+        out = np.full((len(feats), 2), np.nan)
+        ok = np.isfinite(feats).all(axis=1)
         if ok.any():
-            X = _design(gaze[ok], head_arr[ok] if head_arr is not None else None, self.degree)
-            out[ok, 0] = self.model_x.predict(X)
-            out[ok, 1] = self.model_y.predict(X)
+            out[ok, 0] = self.model_x.predict(feats[ok])
+            out[ok, 1] = self.model_y.predict(feats[ok])
         return out
 
 
-def _scaled_ridge(alpha: float) -> SkPipeline:
-    # standardise → ridge. Standardising each design column to unit variance
-    # makes the Ridge penalty comparable across terms and scale-free in the
-    # inputs (radians vs degrees) and outputs (screen resolution), so `alpha`
+def _poly_ridge(alpha: float, degree: int) -> SkPipeline:
+    # poly → standardise → ridge. Standardising each polynomial term to unit
+    # variance makes the Ridge penalty comparable across terms and scale-free in
+    # the inputs (radians vs degrees) and outputs (screen resolution), so `alpha`
     # has a consistent meaning across sessions and machines.
     return SkPipeline([
+        ("poly",  PolynomialFeatures(degree=degree, include_bias=False)),
         ("scale", StandardScaler()),
         ("ridge", Ridge(alpha=alpha)),
     ])
 
 
 def _fit_weighted(
-    X: np.ndarray,
+    feats: np.ndarray,
     sx: np.ndarray,
     sy: np.ndarray,
     weights: np.ndarray,
     alpha: float,
+    degree: int,
 ) -> tuple[SkPipeline, SkPipeline]:
-    """Fit two weighted Ridge pipelines (one per screen axis) on a design matrix."""
-    mx = _scaled_ridge(alpha).fit(X, sx, ridge__sample_weight=weights)
-    my = _scaled_ridge(alpha).fit(X, sy, ridge__sample_weight=weights)
+    """Fit two weighted Ridge pipelines (one per screen axis)."""
+    mx = _poly_ridge(alpha, degree).fit(feats, sx, ridge__sample_weight=weights)
+    my = _poly_ridge(alpha, degree).fit(feats, sy, ridge__sample_weight=weights)
     return mx, my
 
 
@@ -241,21 +203,24 @@ def _per_dot_weights(n_inliers: np.ndarray, spreads: np.ndarray) -> np.ndarray:
 
 
 def _leave_one_dot_out_errors(
-    X: np.ndarray,
+    feats: np.ndarray,
     sx: np.ndarray,
     sy: np.ndarray,
     weights: np.ndarray,
     alpha: float,
+    degree: int,
 ) -> np.ndarray:
     """Per-dot Euclidean reprojection error (px) when that dot is held out of the fit."""
-    n = len(X)
+    n = len(feats)
     errs = np.empty(n, dtype=float)
     idx = np.arange(n)
     for i in range(n):
         keep = idx != i
-        mx, my = _fit_weighted(X[keep], sx[keep], sy[keep], weights[keep], alpha)
-        px = float(mx.predict(X[i:i + 1])[0])
-        py = float(my.predict(X[i:i + 1])[0])
+        mx, my = _fit_weighted(
+            feats[keep], sx[keep], sy[keep], weights[keep], alpha, degree,
+        )
+        px = float(mx.predict(feats[i:i + 1])[0])
+        py = float(my.predict(feats[i:i + 1])[0])
         errs[i] = float(np.hypot(px - sx[i], py - sy[i]))
     return errs
 
@@ -290,7 +255,6 @@ def fit_mapper(
     frame_yaw: np.ndarray,     # (F,) yaw per frame (NaN where no face)
     frame_pitch: np.ndarray,   # (F,) pitch per frame (NaN where no face)
     frame_quality: np.ndarray | None = None,  # (F,) optional per-frame quality 0–1 (glare gate)
-    frame_head: dict[str, np.ndarray] | None = None,  # {"head_u","head_v","head_w"} per frame
     alpha: float = 1.0,
     outlier_sigma: float = 2.5,
     cv_tune: bool = True,
@@ -310,23 +274,9 @@ def fit_mapper(
     outlier_sigma:
         Dots with leave-one-dot-out error > mean + outlier_sigma · std are removed
         before refitting. Set to np.inf to disable outlier rejection.
-    frame_head:
-        Optional per-frame head-position proxy. When supplied, CV additionally
-        decides whether including head position as a mapper input lowers
-        leave-one-dot-out error, and the winning choice is recorded on the
-        mapper.
-
-        This is the data-driven alternative to head_comp.py's geometric
-        correction, which has to assume a camera FOV and an un-mirrored
-        recording and gets *worse* when either assumption is wrong. Here the
-        head dependence is learned from the same dots the mapping is fitted on,
-        and if the head barely moved during calibration — the usual case for a
-        single-pose grid — the head terms cannot pay for themselves and CV
-        drops them. The benefit appears on its own once calibration spans
-        several head positions.
     cv_tune:
-        Auto-select polynomial degree, alpha and head usage by leave-one-dot-out
-        CV. Strongly recommended; set False only for debugging a fixed model.
+        Auto-select polynomial degree and alpha by leave-one-dot-out CV. Strongly
+        recommended; set False only for debugging a fixed model.
     """
     # ── Per-dot robust aggregation ───────────────────────────────────────────
     xs: list[float] = []        # yaw center
@@ -335,9 +285,6 @@ def fit_mapper(
     sy: list[float] = []        # screen y
     n_inl: list[int] = []       # inlier frame count per dot
     spreads: list[float] = []   # fixation spread per dot
-    heads: list[list[float]] = []   # median head position per dot
-
-    have_head = frame_head is not None and all(k in frame_head for k in HEAD_KEYS)
 
     for d in dots:
         in_window = (frame_t_ms >= d.t_start_ms) & (frame_t_ms <= d.t_end_ms)
@@ -352,13 +299,6 @@ def fit_mapper(
         agg = _aggregate_dot(yaw_w, pitch_w)
         if agg is None:
             continue
-        if have_head:
-            hv = [float(np.nanmedian(frame_head[k][in_window])) if in_window.any() else np.nan
-                  for k in HEAD_KEYS]
-            if not all(np.isfinite(v) for v in hv):
-                have_head = False   # one unusable dot disables head terms entirely
-            else:
-                heads.append(hv)
         yaw_c, pitch_c, n_i, spread = agg
         xs.append(yaw_c)
         ys.append(pitch_c)
@@ -375,40 +315,31 @@ def fit_mapper(
             "the dot time windows align with the video timeline."
         )
 
-    gaze = np.column_stack([xs, ys])
-    head_arr = np.array(heads, dtype=float) if have_head and len(heads) == n_total else None
+    feats = np.column_stack([xs, ys])
     sx_arr = np.array(sx, dtype=float)
     sy_arr = np.array(sy, dtype=float)
     w = _per_dot_weights(np.array(n_inl), np.array(spreads, dtype=float))
 
-    # ── Self-tune (degree, alpha, head) by leave-one-dot-out error ───────────
-    best_degree, best_alpha, best_head = 2, alpha, False
+    # ── Self-tune (degree, alpha) by leave-one-dot-out error ─────────────────
+    best_degree, best_alpha = 2, alpha
     if cv_tune:
         best_score = np.inf
         for degree in _DEGREE_GRID:
             # Degree-2 needs ≥6 points to be identifiable; fall back otherwise.
             if degree == 2 and n_total < 6:
                 continue
-            for uh in ((False, True) if head_arr is not None else (False,)):
-                # Three more columns need three more dots to stay identifiable.
-                n_terms = degree * 2 + (degree - 1) + (3 if uh else 0)
-                if n_total < n_terms + 3:
-                    continue
-                X = _design(gaze, head_arr if uh else None, degree)
-                for a in _ALPHA_GRID:
-                    errs = _leave_one_dot_out_errors(X, sx_arr, sy_arr, w, a)
-                    score = float(np.sqrt(np.mean(errs ** 2)))
-                    if score < best_score:
-                        best_score, best_degree, best_alpha, best_head = score, degree, a, uh
+            for a in _ALPHA_GRID:
+                errs = _leave_one_dot_out_errors(feats, sx_arr, sy_arr, w, a, degree)
+                score = float(np.sqrt(np.mean(errs ** 2)))
+                if score < best_score:
+                    best_score, best_degree, best_alpha = score, degree, a
         logger.info(
-            "Calibration CV: degree=%d alpha=%.2f head=%s → LODO RMSE %.1f px",
-            best_degree, best_alpha, best_head, best_score,
+            "Calibration CV: degree=%d alpha=%.2f → LODO RMSE %.1f px",
+            best_degree, best_alpha, best_score,
         )
 
-    feats = _design(gaze, head_arr if best_head else None, best_degree)
-
     # ── Outlier-dot rejection based on held-out error, then refit ────────────
-    lodo = _leave_one_dot_out_errors(feats, sx_arr, sy_arr, w, best_alpha)
+    lodo = _leave_one_dot_out_errors(feats, sx_arr, sy_arr, w, best_alpha, best_degree)
     mu, sigma = float(lodo.mean()), float(lodo.std())
     keep = np.ones(n_total, dtype=bool)
     if sigma > 0 and np.isfinite(outlier_sigma):
@@ -422,14 +353,18 @@ def fit_mapper(
             )
 
     n_used = int(keep.sum())
-    mx, my = _fit_weighted(feats[keep], sx_arr[keep], sy_arr[keep], w[keep], best_alpha)
+    mx, my = _fit_weighted(
+        feats[keep], sx_arr[keep], sy_arr[keep], w[keep], best_alpha, best_degree,
+    )
 
     # ── Reporting: in-sample RMSE, honest LODO RMSE, per-region breakdown ────
     pred_x = mx.predict(feats[keep])
     pred_y = my.predict(feats[keep])
     rmse = float(np.sqrt(np.mean((pred_x - sx_arr[keep]) ** 2 + (pred_y - sy_arr[keep]) ** 2)))
 
-    lodo_used = _leave_one_dot_out_errors(feats[keep], sx_arr[keep], sy_arr[keep], w[keep], best_alpha)
+    lodo_used = _leave_one_dot_out_errors(
+        feats[keep], sx_arr[keep], sy_arr[keep], w[keep], best_alpha, best_degree,
+    )
     loocv_px = float(np.sqrt(np.mean(lodo_used ** 2)))
 
     regions = _classify_regions(sx_arr[keep], sy_arr[keep])
@@ -440,9 +375,9 @@ def fit_mapper(
             region_errors[name] = float(np.sqrt(np.mean(lodo_used[mask] ** 2)))
 
     logger.info(
-        "Calibration fit: %d/%d dots, degree=%d alpha=%.2f head=%s | train RMSE %.1f px | "
+        "Calibration fit: %d/%d dots, degree=%d alpha=%.2f | train RMSE %.1f px | "
         "LODO RMSE %.1f px | regions %s",
-        n_used, n_total, best_degree, best_alpha, best_head, rmse, loocv_px,
+        n_used, n_total, best_degree, best_alpha, rmse, loocv_px,
         {k: round(v, 1) for k, v in region_errors.items()},
     )
     return GazeMapper(
@@ -454,6 +389,5 @@ def fit_mapper(
         loocv_px=loocv_px,
         degree=best_degree,
         alpha=best_alpha,
-        use_head=best_head,
         region_errors_px=region_errors,
     )

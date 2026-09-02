@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import SessionAnalytics from '@/components/SessionAnalytics';
 import type { TestTrajectorySegment } from '@/components/SessionAnalytics';
-import { angularErrorDegOrNull, sessionGeometry } from '@/lib/resultScoring';
+import { angularErrorDeg } from '@/lib/resultScoring';
 
 type CalibrationSample = {
   screenX?: number;
@@ -294,13 +294,12 @@ export default function AdminSessionDetailPage() {
                 <>
                   {session.meanErrorPx.toFixed(2)} px
                   <span className="text-slate-400 text-xs ml-1">
-                    {(() => {
-                      const g = sessionGeometry(session.config);
-                      const deg = angularErrorDegOrNull(session.meanErrorPx, g);
-                      return deg == null
-                        ? ' · distance not measured'
-                        : ` / ${deg.toFixed(2)}° @ ${g.distanceCm.toFixed(0)}cm`;
-                    })()}
+                    / {angularErrorDeg(
+                      session.meanErrorPx,
+                      (session.config && typeof session.config === 'object'
+                        ? ((session.config as Record<string, unknown>).faceDistance as number | undefined)
+                        : undefined) ?? 60
+                    ).toFixed(2)}°
                   </span>
                 </>
               ) : '—'}
@@ -368,9 +367,11 @@ export default function AdminSessionDetailPage() {
             samples={samples}
             validationErrors={session.validationErrors}
             meanErrorPx={session.meanErrorPx}
-            faceDistanceCm={sessionGeometry(session.config).distanceCm}
-            pxPerCm={sessionGeometry(session.config).pxPerCm}
-            geometryMeasured={sessionGeometry(session.config).measured}
+            faceDistanceCm={
+              session.config && typeof session.config === 'object'
+                ? ((session.config as Record<string, unknown>).faceDistance as number | undefined)
+                : undefined
+            }
             testTrajectories={session.testTrajectories ?? (session.config && typeof session.config === 'object' && Array.isArray((session.config as Record<string, unknown>).testTrajectories) ? (session.config as { testTrajectories: TestTrajectorySegment[] }).testTrajectories : undefined)}
           />
         </div>

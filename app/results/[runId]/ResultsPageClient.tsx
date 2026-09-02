@@ -21,8 +21,7 @@ import {
   calibrationQualityLabel,
   calibrationQualityColour,
   eyeTrackingAccuracyScore,
-  angularErrorDegOrNull,
-  TARGET_VALIDATION_ANGULAR_ERROR_DEG,
+  angularErrorDeg,
   selfAssessmentInsight,
   symptomTotal,
   DOMAIN_ICONS,
@@ -53,8 +52,6 @@ interface RunData {
   postSymptomScores: Record<string, number> | null;
   testResults: Record<string, Record<string, unknown>>;
   faceDistance?: number;
-  pxPerCm?: number;
-  geometryMeasured?: boolean;
   chartSmoothing?: { method: string; window: number };
   session: {
     id: string;
@@ -112,9 +109,8 @@ function GazeErrorDiagram({
   viewingDistanceCm,
 }: {
   pixelError: number;
-  angularError: number | null;
-  /** Null when the distance behind the angle was never measured. */
-  viewingDistanceCm: number | null;
+  angularError: number;
+  viewingDistanceCm: number;
 }) {
   const [lineHover, setLineHover] = React.useState(false);
   const [arcHover, setArcHover] = React.useState(false);
@@ -257,10 +253,8 @@ function GazeErrorDiagram({
               textAnchor={arcShelfDir > 0 ? 'start' : 'end'}
               dominantBaseline="middle"
             >
-              θ = {angularError == null ? 'N/A' : `${angularError.toFixed(2)}°`}{' '}
-              {viewingDistanceCm != null && (
-                <tspan fill="#6b7280">@ {viewingDistanceCm}cm</tspan>
-              )}
+              θ = {angularError.toFixed(2)}°{' '}
+              <tspan fill="#6b7280">@ {viewingDistanceCm}cm</tspan>
             </text>
           </g>
         )}
@@ -322,14 +316,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
   const { session, testOrderSnapshot, testResults, configSnapshot, preSymptomScores, postSymptomScores } = runData;
   const meanErrorPx = session.meanErrorPx;
   const viewingDistanceCm = runData.faceDistance ?? 60;
-  // Null unless the geometry behind it was actually measured — see
-  // angularErrorDegOrNull. A converted number from a stand-in distance is worse
-  // than no number, because it can be averaged and compared as if it were real.
-  const angularErr = angularErrorDegOrNull(meanErrorPx, {
-    distanceCm: viewingDistanceCm,
-    pxPerCm: runData.pxPerCm ?? 0,
-    measured: (runData.geometryMeasured ?? false) && runData.pxPerCm != null,
-  });
+  const angularErr = meanErrorPx != null ? angularErrorDeg(meanErrorPx, viewingDistanceCm) : null;
 
   // Extract scoring config from configSnapshot
   const configSnap = configSnapshot as {
@@ -452,8 +439,8 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
                 <div className="w-full max-w-[320px] rounded-xl border border-gray-800 bg-gray-900/70 p-2 overflow-visible">
                   <GazeErrorDiagram
                     pixelError={meanErrorPx}
-                    angularError={angularErr}
-                    viewingDistanceCm={angularErr != null ? viewingDistanceCm : null}
+                    angularError={angularErr ?? 0}
+                    viewingDistanceCm={viewingDistanceCm}
                   />
                 </div>
                 <div className="w-full max-w-[320px] grid grid-cols-2 gap-2">
@@ -463,26 +450,10 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
                       {meanErrorPx.toFixed(1)} px
                     </div>
                   </div>
-                  <div className={`rounded-lg border px-3 py-2 ${
-                    angularErr == null
-                      ? 'border-gray-800 bg-gray-900/60'
-                      : 'border-blue-900/30 bg-blue-950/15'
-                  }`}>
+                  <div className="rounded-lg border border-blue-900/30 bg-blue-950/15 px-3 py-2">
                     <div className="text-[9px] text-blue-400/60 uppercase tracking-wider">Angular error</div>
-                    <div className={`text-sm font-mono font-semibold tabular-nums mt-0.5 ${
-                      angularErr == null ? 'text-gray-400' : 'text-blue-300'
-                    }`}>
-                      {angularErr == null ? 'N/A' : `${angularErr.toFixed(2)}°`}
-                      {angularErr != null && (
-                        <span className="text-[9px] text-gray-600"> @ {viewingDistanceCm}cm</span>
-                      )}
-                    </div>
-                    {/* A reference point, not a pass mark: validation accuracy
-                        also reflects how steadily the participant could attend. */}
-                    <div className="mt-0.5 text-[8px] uppercase tracking-wider text-gray-600">
-                      {angularErr == null
-                        ? 'Display scale not measured'
-                        : `Target ≤ ${TARGET_VALIDATION_ANGULAR_ERROR_DEG}°`}
+                    <div className="text-sm font-mono font-semibold text-blue-300 tabular-nums mt-0.5">
+                      {(angularErr ?? 0).toFixed(2)}° <span className="text-[9px] text-gray-600">@ {viewingDistanceCm}cm</span>
                     </div>
                   </div>
                 </div>

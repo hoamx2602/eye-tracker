@@ -14,32 +14,11 @@ type NeuroRunRow = {
   preSymptomScores: unknown;
   postSymptomScores: unknown;
   testResults: unknown;
-  /** Null when the session recorded no validation error. */
-  calibration: {
-    meanErrorPx: number;
-    /** Null when the geometry needed to convert it was never measured. */
-    angularErrorDeg: number | null;
-    distanceCm: number | null;
-    pxPerCm: number | null;
-  } | null;
 };
 
 type ListResponse = { runs: NeuroRunRow[]; nextCursor: string | null };
 
 const PAGE_SIZE = 30;
-
-/**
- * Colour the angular error against what the method can actually deliver.
- *
- * One degree is the threshold the results screen already uses. Two is roughly
- * where published webcam work sits, so above it the run is worse than the
- * approach's own ceiling and worth a second look before its numbers are used.
- */
-function calibrationColour(deg: number): string {
-  if (deg < 1) return 'text-emerald-400';
-  if (deg < 2) return 'text-yellow-400';
-  return 'text-red-400';
-}
 
 function statusBadge(status: string | null) {
   const s = status ?? 'unknown';
@@ -138,7 +117,6 @@ export default function AdminNeuroRunsPage() {
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Created</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Tests</th>
-                    <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Calibration</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Symptoms</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider w-20">Action</th>
                   </tr>
@@ -160,46 +138,6 @@ export default function AdminNeuroRunsPage() {
                       </td>
                       <td className="px-4 py-3">{statusBadge(r.status)}</td>
                       <td className="px-4 py-3 text-sm text-slate-300 tabular-nums">{testCount(r)}</td>
-                      <td className="px-4 py-3 text-sm tabular-nums whitespace-nowrap">
-                        {r.calibration ? (
-                          <>
-                            {/* Degrees only when the geometry was measured. A
-                                run whose distance nobody recorded has no angular
-                                error, and deriving one from the configured
-                                target would report 40 cm for someone who sat at
-                                35. The pixel figure is always shown because it
-                                is the raw record, converted from nothing. */}
-                            {r.calibration.angularErrorDeg != null ? (
-                              <span className={calibrationColour(r.calibration.angularErrorDeg)}>
-                                {r.calibration.angularErrorDeg.toFixed(2)}°
-                              </span>
-                            ) : (
-                              <span
-                                className="text-slate-600"
-                                title="No measured distance or display scale for this session, so its error cannot be expressed in degrees"
-                              >
-                                —°
-                              </span>
-                            )}
-                            <span className="text-slate-500 text-xs ml-1.5">
-                              {r.calibration.meanErrorPx.toFixed(0)} px
-                            </span>
-                            {/* The distance belongs next to the degrees. A run at
-                                40 cm and one at 60 cm are different tasks, so two
-                                angular figures are only comparable once you can
-                                see both. */}
-                            {r.calibration.distanceCm != null ? (
-                              <span className="block text-xs text-slate-500">
-                                @ {r.calibration.distanceCm.toFixed(0)} cm
-                              </span>
-                            ) : (
-                              <span className="block text-xs text-slate-600">not measured</span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-slate-600">—</span>
-                        )}
-                      </td>
                       <td className="px-4 py-3 text-sm text-slate-300">
                         {hasSymptoms(r) ? (
                           <span className="text-emerald-400">Pre + Post</span>

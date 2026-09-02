@@ -63,7 +63,7 @@ export interface HeadSnapshot {
   targetDistanceCm?: number;
 }
 
-export type AppState = 'IDLE' | 'LOADING_MODEL' | 'DISTANCE_CALIBRATION' | 'HEAD_POSITIONING' | 'CALIBRATION' | 'TRACKING' | 'POST_CALIBRATION_CHOICE' | 'NEURO_FLOW';
+export type AppState = 'IDLE' | 'LOADING_MODEL' | 'HEAD_POSITIONING' | 'CALIBRATION' | 'TRACKING' | 'POST_CALIBRATION_CHOICE' | 'NEURO_FLOW';
 
 export type TrackingMode = 'free_gaze' | 'random_dots' | 'article_reading';
 
@@ -98,6 +98,16 @@ export enum EyeLandmarkIndices {
 }
 
 // --- CONFIGURATION TYPES ---
+
+/**
+ * Range of target viewing distances the app will accept, in cm.
+ *
+ * One definition for the setup sliders and for the head-position check in
+ * `services/eyeTrackingService.ts`, so a slider can never offer a distance the
+ * check refuses.
+ */
+export const MIN_FACE_DISTANCE_CM = 30;
+export const MAX_FACE_DISTANCE_CM = 90;
 
 export enum RegressionMethod {
   RIDGE = 'RIDGE', // Simple, Global
@@ -189,23 +199,11 @@ export interface AppConfig {
   outlierThreshold: number; // For TRIM: %, For STD_DEV: Sigma count
   
   // Head Positioning
-  /**
-   * Target eye-to-screen distance in cm (30–60).
-   *
-   * Closer is not uniformly better. Iris pixels scale as 1/d, but so does the
-   * angle the screen subtends: at 30 cm the screen corners sit ~33° from centre,
-   * past the ~25° where people start turning the head instead of the eyes, which
-   * would turn an oculomotor test into a head-movement test. Below 30 cm the
-   * downward gaze to the bottom of the screen also starts occluding the iris
-   * behind the eyelid, and many fixed-focus webcams stop focusing.
-   */
-  faceDistance: number;
+  faceDistance: number; // Target distance in CM, within MIN/MAX_FACE_DISTANCE_CM (e.g. 30, 50, 60)
   /** Scale for face width from different camera FOV (1 = built-in, &lt;1 e.g. 0.7 for external webcam so 60cm passes) */
   faceWidthScale: number;
   /** Widen acceptable distance band (1 = strict, 2 = 2x band for cameras that auto-zoom). Default 2 to cope with Center Stage / Studio Effects. */
   headDistanceTolerance: number;
-  /** Multiplier on the per-axis head-rotation tolerances (lib/positionAnchor.ts). */
-  headRotationTolerance: number;
 
   // Eye Movement Exercises (additional calibration patterns for better accuracy)
   enableExercises: boolean;
@@ -227,16 +225,6 @@ export interface AppConfig {
   // --- CHART DISPLAY ---
   chartSmoothingMethod: ChartSmoothingMethod;
   chartSmoothingWindow: number; // Frames (2–30)
-
-  // --- CALIBRATION CAPTURE ---
-  /**
-   * Start recording a calibration dot when the eye has actually settled on it,
-   * instead of after a fixed wait. The fixed wait recorded the approach saccade
-   * on corner dots — the targets that dominate calibration error. The timed
-   * behaviour remains as a backstop, so a dot that never settles is still
-   * recorded, just flagged. Default true.
-   */
-  gazeContingentCalibration: boolean;
 
   // --- GLASSES OPTIMIZATION ---
   /** Master toggle. When true + participant reports wearing glasses, all sub-features activate. */
@@ -280,28 +268,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   outlierThreshold: 0.10, // Trim 10% from each end (was 0.25)
   
   // Distance
-  // Closer is better on both terms that matter: the iris gets more pixels (noise
-  // scales with 1/d), and a given angular error lands fewer centimetres off on
-  // screen. 40 cm is where that stops paying — nearer, the screen subtends so
-  // much visual angle that the participant turns their head to reach the corners
-  // instead of just their eyes, which is exactly what the position anchor is
-  // there to reject. Admin can still move it; this is only where it starts.
-  faceDistance: 40,
+  faceDistance: 60, // Standard desktop distance (60cm)
   faceWidthScale: 1, // 1 = built-in cam; use ~0.65–0.8 for external 1080p webcam
-  // Multiplier on the science-derived distance band (lib/viewingDistance.ts).
-  // 1 = ±5% of the target, which is 10% on BCEA and the most posture may spend.
-  //
-  // This was 2, sized for auto-zoom cameras back when distance was inferred from
-  // a hand-tuned face-width band. Both halves of that rationale are gone: zoom is
-  // pinned to its minimum and re-applied every two seconds, and distance is now
-  // measured rather than guessed. Widen it only for a rig that genuinely cannot
-  // hold position, and knowing it widens the task, not just the tolerance.
-  headDistanceTolerance: 1,
-  // Multiplier on yaw 12° / pitch 15° / roll 25°. The three differ because the
-  // three cost different amounts — see AnchorTolerance. Raise this if
-  // participants are being sent back for movements that are not actually
-  // breaking the mapping; the head-positioning readout prints the live figures.
-  headRotationTolerance: 1,
+  headDistanceTolerance: 2, // 2 = wider band so auto-zoom cameras (Center Stage etc.) don't block
 
   // Exercises
   enableExercises: true,
@@ -321,9 +290,6 @@ export const DEFAULT_CONFIG: AppConfig = {
   // Chart Display Defaults
   chartSmoothingMethod: ChartSmoothingMethod.MOVING_AVERAGE,
   chartSmoothingWindow: 7,
-
-  // Calibration Capture Defaults
-  gazeContingentCalibration: true,
 
   // Glasses Optimization Defaults
   glassesOptimization: true,

@@ -1,21 +1,8 @@
 import type { SessionMeta } from '@/lib/calibrationMeta';
 
-const TRUTHY = ['1', 'true', 'yes', 'on'];
-
 export function offlineHandlingEnabled(): boolean {
-  return TRUTHY.includes((process.env.NEXT_PUBLIC_OFFLINE_HANDLING ?? '').trim().toLowerCase());
-}
-
-/**
- * Opt-in per-subject fine-tuning (NEXT_PUBLIC_OFFLINE_PERSONALIZE=1).
- *
- * Off by default because it costs minutes of GPU time per session and
- * serialises requests on the backend. The backend keeps the fine-tuned weights
- * only when they beat the baseline on held-out dots, so enabling it cannot make
- * a session's reported accuracy worse — only slower.
- */
-export function offlinePersonalizationEnabled(): boolean {
-  return TRUTHY.includes((process.env.NEXT_PUBLIC_OFFLINE_PERSONALIZE ?? '').trim().toLowerCase());
+  const raw = process.env.NEXT_PUBLIC_OFFLINE_HANDLING ?? '';
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
 }
 
 export interface OfflineGazeProcessResponse {
@@ -23,30 +10,10 @@ export interface OfflineGazeProcessResponse {
   calibration_loocv_px: number;
   calibration_region_errors_px: Record<string, number>;
   calibration_degree: number;
-  /** Whether CV found head position worth including as a mapper input. */
-  calibration_use_head?: boolean;
   calibration_dots_used: number;
   calibration_dots_total: number;
   head_compensation_applied: boolean;
   head_motion: Record<string, number>;
-  /** Parallax gain actually applied (0 = compensation off). */
-  head_comp_gain?: number;
-  /** Per-gain held-out error sweep and the winner, when the gain was auto-picked. */
-  head_comp_gain_selection?: {
-    mode: string;
-    chosen: number;
-    reason?: string;
-    sweep_px?: Record<string, number>;
-  } | null;
-  /** Per-subject fine-tuning outcome, when `personalize` was requested. */
-  personalization?: {
-    kept?: boolean;
-    applied?: boolean;
-    reason?: string;
-    n_dots?: number;
-    n_crops?: number;
-    [k: string]: unknown;
-  } | null;
   biomarkers: {
     n_samples: number;
     valid_ratio: number;
@@ -87,11 +54,9 @@ export async function processOfflineGaze(
   form.append('file', videoBlob, 'calibration.webm');
   form.append('payload', JSON.stringify({
     ...meta,
+    // FastAPI /process currently ignores unknown fields, but keeping the shape
+    // close to reprocess.py means validation_dots can be used for accuracy A/B.
     validation_dots: meta.validation_dots,
-    // Per-subject fine-tuning is a payload field, not a form field. It used to
-    // be accepted here and then silently dropped, which is why no session has
-    // ever come back with a personalization result.
-    personalize: opts.personalize ?? false,
   }));
   form.append('include_trace', opts.includeTrace ? 'true' : 'false');
 

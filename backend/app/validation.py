@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .calibration import HEAD_KEYS, CalibrationDot, GazeMapper, _aggregate_dot, _classify_regions
+from .calibration import CalibrationDot, GazeMapper, _aggregate_dot, _classify_regions
 from .events import ScreenGeometry, _px_per_degree
 
 
@@ -111,11 +111,6 @@ def evaluate_mapper(
     errs_px_raw: list[float] = []
     quals: list[float] = []
     use_head = compensator is not None and frame_head is not None
-    if mapper.use_head and frame_head is None:
-        raise ValueError(
-            "mapper was fitted with head inputs — evaluate_mapper needs frame_head "
-            "to score it, otherwise the validation number is not the model's."
-        )
 
     for d in val_dots:
         in_win = (frame_t_ms >= d.t_start_ms) & (frame_t_ms <= d.t_end_ms)
@@ -134,25 +129,15 @@ def evaluate_mapper(
         if agg is None:
             continue
         yaw_c, pitch_c, _, _ = agg
-
-        # Median head position over this dot's window — needed as a mapper input
-        # when the mapping is head-aware, and by the compensator either way.
-        dot_head = (
-            {k: np.array([np.nanmedian(frame_head[k][in_win])]) for k in HEAD_KEYS}
-            if frame_head is not None else None
-        )
-        pred = mapper.map(
-            np.array([yaw_c]), np.array([pitch_c]),
-            head=dot_head if mapper.use_head else None,
-        )[0]
-        if not np.isfinite(pred).all():
-            continue
+        pred = mapper.map(np.array([yaw_c]), np.array([pitch_c]))[0]
         err_raw = float(np.hypot(pred[0] - d.screen_x, pred[1] - d.screen_y))
 
         if use_head:
+            hu = np.array([np.nanmedian(frame_head["head_u"][in_win])])
+            hv = np.array([np.nanmedian(frame_head["head_v"][in_win])])
+            hw = np.array([np.nanmedian(frame_head["head_w"][in_win])])
             cx, cy = compensator.apply(
-                np.array([pred[0]]), np.array([pred[1]]),
-                dot_head["head_u"], dot_head["head_v"], dot_head["head_w"],
+                np.array([pred[0]]), np.array([pred[1]]), hu, hv, hw,
             )
             pred = np.array([float(cx[0]), float(cy[0])])
         err_px = float(np.hypot(pred[0] - d.screen_x, pred[1] - d.screen_y))

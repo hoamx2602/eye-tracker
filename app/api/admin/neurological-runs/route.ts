@@ -5,7 +5,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminCookieName, verifyAdminToken } from '@/lib/admin-auth';
 import { prisma } from '@/lib/prisma';
-import { calibrationForSessions } from '@/lib/sessionCalibration';
 
 async function requireAdmin(request: NextRequest) {
   const cookieName = getAdminCookieName();
@@ -46,17 +45,8 @@ export async function GET(request: NextRequest) {
     const list = hasMore ? runs.slice(0, limit) : runs;
     const nextCursor = hasMore ? list[list.length - 1].id : null;
 
-    // Calibration quality per run, so runs can be compared without opening each
-    // one. Shared with the detail route so the two cannot report different
-    // angular errors for the same session — see lib/sessionCalibration.ts.
-    const byId = await calibrationForSessions(list.map((r) => r.sessionId));
-    const withCalibration = list.map((r) => ({
-      ...r,
-      calibration: byId.get(r.sessionId) ?? null,
-    }));
-
     return NextResponse.json({
-      runs: withCalibration,
+      runs: list,
       nextCursor,
     });
   } catch (e) {

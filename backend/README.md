@@ -148,7 +148,7 @@ container, and reports written to `/data` show up back on the host.
 ### 4. Smoke test — confirm OpenFace + GPU actually work
 
 ```bash
-# (a) Health — must show device: cuda (or mps on an Apple-Silicon Mac)
+# (a) Health — must show cuda: true
 curl localhost:8000/health
 
 # (b) Run the model on one face image or a short clip (drop it in backend/data first)
@@ -197,41 +197,6 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000          # or run the API
 ```
 
 Force CPU if the torch build lacks kernels for a very new GPU: `OPENFACE_DEVICE=cpu`.
-
-### Apple Silicon (M-series Mac)
-
-**Do not use Docker on macOS.** Docker Desktop cannot reach the Mac GPU at all —
-there is no CUDA, and MPS is not passed into containers — so a containerised run
-falls back to CPU and is several times slower than it needs to be. Run natively
-and the backend picks up the GPU through Metal (MPS) on its own.
-
-```bash
-conda create -y -n gaze python=3.10
-conda activate gaze
-pip install torch torchvision            # macOS arm64 wheels are MPS-enabled by default
-pip install -r requirements.txt
-
-cd backend
-export OPENFACE_WEIGHTS=$PWD/models/openface
-python -m app.smoke ./data/face.jpg      # prints "Model loaded on mps."
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-`GET /health` must report `"device": "mps"`. If it reports `"cpu"`, torch was
-built without MPS (check `python -c "import torch; print(torch.backends.mps.is_built())"`)
-or `OPENFACE_DEVICE` is set.
-
-A few operators still have no MPS kernel. `GazeModel` sets
-`PYTORCH_ENABLE_MPS_FALLBACK=1` so those run on the CPU instead of aborting the
-session — for an offline batch job that trade is obviously right. If you would
-rather see the failure than the slowdown, set `PYTORCH_ENABLE_MPS_FALLBACK=0`
-before starting; if MPS misbehaves entirely, `OPENFACE_DEVICE=cpu` still works
-and is only a few times slower, which for offline processing is survivable.
-
-Face detection dominates runtime on MPS, so it runs on a copy of each frame
-downscaled to `GAZE_DETECT_WIDTH` (640 px) while the face crop still comes from
-the full-resolution frame — same accuracy, much less work. Raise it if faces are
-unusually small in frame or very far from the camera.
 
 ---
 
@@ -376,10 +341,8 @@ docker compose exec gaze-backend python3 -m app.replay \
 | Variable | Default | Description |
 |---|---|---|
 | `OPENFACE_WEIGHTS` | `/models/openface` | Directory with `Alignment_RetinaFace.pth` and `MTL_backbone.pth` |
-| `OPENFACE_DEVICE` | auto (`cuda` → `mps` → `cpu`) | Force `cpu`/`cuda`/`mps` (e.g. torch build lacks kernels for a very new GPU) |
+| `OPENFACE_DEVICE` | auto | Force `cpu`/`cuda` (e.g. torch build lacks kernels for a very new GPU) |
 | `GAZE_BATCH_SIZE` | `16` | Frames per batched gaze forward in `video.py` (lower it on small-VRAM GPUs) |
-| `GAZE_DETECT_WIDTH` | `640` | Width frames are downscaled to for face detection; the crop still comes from the full-resolution frame |
-| `PYTORCH_ENABLE_MPS_FALLBACK` | `1` (set automatically on MPS) | Run MPS-unsupported ops on the CPU instead of raising |
 
 ---
 

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import Modal from './ui/Modal';
-import { AppConfig, RegressionMethod, SmoothingMethod, OutlierMethod, CalibrationMethod, DEFAULT_CONFIG } from '../types';
+import { AppConfig, RegressionMethod, SmoothingMethod, OutlierMethod, CalibrationMethod, DEFAULT_CONFIG, MIN_FACE_DISTANCE_CM, MAX_FACE_DISTANCE_CM } from '../types';
 
 interface SettingsModalProps {
   config: AppConfig;
@@ -146,7 +146,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, onClose }
                      <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-300">Setup Distance</span></div>
                      <div>
                         <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Distance to Screen (cm)</span><span className="font-mono">{localConfig.faceDistance} cm</span></div>
-                        <input type="range" min="20" max="60" step="5" value={localConfig.faceDistance} onChange={(e) => handleChange('faceDistance', parseInt(e.target.value))} className="w-full accent-gray-500 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"/>
+                        <input type="range" min={MIN_FACE_DISTANCE_CM} max={MAX_FACE_DISTANCE_CM} step="5" value={localConfig.faceDistance} onChange={(e) => handleChange('faceDistance', parseInt(e.target.value))} className="w-full accent-gray-500 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"/>
                      </div>
                      <div>
                         <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Camera FOV (face size)</span><span className="font-mono">{localConfig.faceWidthScale.toFixed(2)}</span></div>

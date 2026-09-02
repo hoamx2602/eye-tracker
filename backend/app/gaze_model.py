@@ -42,9 +42,6 @@ from openface.Pytorch_Retinaface.layers.functions.prior_box import PriorBox
 from openface.Pytorch_Retinaface.utils.box_utils import decode
 from openface.Pytorch_Retinaface.utils.nms.py_cpu_nms import py_cpu_nms
 
-from .device import resolve_device
-from .imaging import downscale_for_detection
-
 logger = logging.getLogger(__name__)
 
 def _resolve_weights_dir() -> str:
@@ -92,13 +89,6 @@ def _ensure_weights_symlink(weights: Path) -> None:
             "bundled weights. Run from a directory that contains weights/, or mount them there.",
             e,
         )
-
-
-# Width the frame is downscaled to before face detection. RetinaFace localises a
-# face bbox reliably well below this; the crop is taken from the full-resolution
-# frame regardless, so nothing the gaze model sees is degraded. Frames already
-# narrower than this are passed through untouched.
-_DETECT_MAX_WIDTH = int(os.environ.get("GAZE_DETECT_WIDTH", "640"))
 
 
 @dataclass
@@ -161,15 +151,11 @@ class GazeModel:
         self._tmp_path: str | None = None   # set even if model load fails (see __del__)
         # Device order: explicit arg → OPENFACE_DEVICE env (escape hatch, e.g. "cpu"
         # when the torch build lacks kernels for a very new GPU) → auto.
-        self.device = device or resolve_device()
-        if self.device.startswith("mps"):
-            # A handful of ops still have no MPS kernel. Without this, the first
-            # one raises and the whole session dies; with it, torch quietly runs
-            # that op on the CPU. For an offline batch job the slowdown is the
-            # obviously right trade against a crash. Must be set before the first
-            # MPS dispatch, hence here rather than in the shell.
-            os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
-
+        self.device = (
+            device
+            or os.environ.get("OPENFACE_DEVICE")
+            or ("cuda" if torch.cuda.is_available() else "cpu")
+        )
         weights = Path(weights_dir)
         logger.info("Loading OpenFace 3.0 on %s from %s", self.device, weights)
 
@@ -193,8 +179,7 @@ class GazeModel:
         # (slower) library file-path code, and we log the reason only once.
         self._detect_via_file = False
         # Fixed input sizes (detector: one video resolution; MTL: 224×224) —
-        # let cuDNN autotune kernels once and reuse them. cuDNN-only; MPS and CPU
-        # have no equivalent knob.
+        # let cuDNN autotune kernels once and reuse them.
         if self.device.startswith("cuda"):
             torch.backends.cudnn.benchmark = True
 
@@ -224,32 +209,23 @@ class GazeModel:
     def _detect_faces(self, frame_bgr: np.ndarray) -> np.ndarray | None:
         """
         RetinaFace on an in-memory BGR frame → (N, 5) dets [x1, y1, x2, y2, conf]
-        with conf ≥ vis_threshold, or None, in FULL-frame pixel coordinates.
-
-        Same preprocessing/decode/NMS as the library's detect_faces(), minus the
-        file round trip, minus the landmark decode we never use, with priors
-        cached per image size — and with detection run on a downscaled copy.
-
-        Detection cost is quadratic in frame size while a face bbox is a coarse
-        object: locating it at 640 px wide and scaling the box back up gives the
-        same crop, because the crop is still taken from the full-resolution
-        frame. That matters now that capture is 1080p (2.25x the pixels of 720p)
-        and doubly so on Apple-Silicon MPS, where this is the slowest stage.
+        with conf ≥ vis_threshold, or None. Same preprocessing/decode/NMS as the
+        library's detect_faces(), minus the file round trip, minus the landmark
+        decode we never use, with priors cached per image size.
         """
         if not self._detect_via_file:
             try:
                 det = self._detector
-                small, scale_back = downscale_for_detection(frame_bgr, _DETECT_MAX_WIDTH)
-                img = small.astype(np.float32)
+                img = frame_bgr.astype(np.float32)
                 img -= (104, 117, 123)
                 img_t = torch.from_numpy(img.transpose(2, 0, 1)).unsqueeze(0).to(self.device)
-                h, w = small.shape[:2]
+                h, w = frame_bgr.shape[:2]
                 with torch.no_grad():
                     loc, conf, _landms = det.model(img_t)
                 priors = self._priors_for(h, w)
                 boxes = decode(loc.data.squeeze(0), priors.data, det.cfg["variance"])
                 scale = torch.tensor([w, h, w, h], dtype=boxes.dtype, device=boxes.device)
-                boxes = (boxes * scale).cpu().numpy() * scale_back
+                boxes = (boxes * scale).cpu().numpy()
                 scores = conf.squeeze(0).data.cpu().numpy()[:, 1]
                 keep = scores > det.confidence_threshold
                 boxes, scores = boxes[keep], scores[keep]

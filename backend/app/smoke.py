@@ -34,7 +34,7 @@ def main() -> None:
 
     print("Loading OpenFace 3.0 …")
     model = GazeModel()
-    print(f"Model loaded on {model.device}.\n")
+    print("Model loaded.\n")
 
     if path.lower().endswith(_IMG_EXT):
         frame = cv2.imread(path)

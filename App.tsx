@@ -30,7 +30,7 @@ import {
   getPatternDisplayName,
   type EyeMovementKind
 } from './types';
-import { eyeTrackingService, HEAD_CENTRE_TOLERANCE_X, HEAD_CENTRE_TOLERANCE_Y, HeadValidationResult } from './services/eyeTrackingService';
+import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
 import { HybridRegressor, GazeSmoother, DataCleaner } from './services/mathUtils';
 import { sessionsApi, uploadApi, neurologicalRunsApi, getNeurologicalConfig } from './services/api';
 import CalibrationLayer from './components/CalibrationLayer';
@@ -59,131 +59,9 @@ import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, QUICK_CALIBRATION_POINTS, roundedRect } from '@/lib/appHelpers';
 import { CalibrationMetaRecorder, type SessionMeta } from '@/lib/calibrationMeta';
 import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
-import { offlineBackendUrl, offlineHandlingEnabled, offlinePersonalizationEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
-import { lockCameraAutoAdjustments, describeCameraLock, type CameraLockResult } from '@/lib/cameraLock';
-import { FixationGate, type GateSample, type DotConvergence } from '@/lib/fixationGate';
-import DistanceCalibrationScreen from '@/components/DistanceCalibrationScreen';
-import { faceScale as toFaceScale, clearCalibration, distanceFromFace, faceScaleAtDistance, saveCalibration, type DistanceCalibration } from '@/lib/viewingDistance';
-import { cameraKey as buildCameraKey, canPersistFocalForPlatform, fovDegFromFocal, loadFocal } from '@/lib/cameraFocal';
-import { captureAnchor, DEFAULT_ANCHOR_TOLERANCE, type AnchorTolerance, type PositionAnchor } from '@/lib/positionAnchor';
-import { loadScreenScale } from '@/lib/screenScale';
-import { angularErrorDeg, TARGET_VALIDATION_ANGULAR_ERROR_DEG } from '@/lib/resultScoring';
+import { offlineBackendUrl, offlineHandlingEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { SelfAssessmentConfig } from '@/components/neurological/GuidePracticeTestFlow';
-
-interface CameraStartProfile {
-  key: string;
-  allowPersistentFocal: boolean;
-}
-
-/**
- * How long to let the camera's auto-exposure converge before pinning it.
- * Locking on the first frame would freeze a half-converged exposure for the
- * whole session; 1.5 s is past the settling time of every webcam tested and
- * still comfortably before calibration begins.
- */
-
-/**
- * Does the current state need the camera running?
- *
- * This predicate had been written out three separate times — once to start the
- * camera, once to release the start latch, once to stop it again — and adding a
- * state meant remembering all three. Missing one is not a small bug: the starter
- * and the stopper then disagree, and the camera is started and torn down on
- * every render for as long as the state lasts.
- *
- * The switch is deliberately exhaustive with no `default`, so adding a state to
- * AppState fails the build here until someone decides what it should do.
- */
-/**
- * How long a pose failure must persist before the run stops.
- *
- * This is a noise floor, not a grace period. Leaving the setup pose stops the
- * test immediately by design — the mapping was fitted at that pose and anything
- * recorded away from it is worth nothing — and the only reason the check is not
- * literally instantaneous is that a single frame is not evidence. MediaPipe
- * drops or corrupts an occasional detection under motion blur, a lighting step
- * or a hand passing the face, and aborting a whole test on one bad frame would
- * be reacting to the sensor rather than to the participant.
- *
- * Roughly four frames at 30 fps. Below human perception as a delay, well above
- * the length of a single-frame artefact.
- *
- * It was briefly 3 s, to spare people who struggle to hold still. That turned
- * out to be treating a symptom: the real cause was `roll` mixing frame-width and
- * frame-height units, which reported a 6° head tilt as 10.6° and rejected people
- * for a movement they could not feel. With the angle measured correctly the gate
- * fires on genuine displacement only, and waiting is no longer a kindness — it
- * is just three seconds of unusable recording.
- */
-const OUT_OF_POSE_CONFIRM_MS = 150;
-/**
- * How much longer a rotation fault must persist before it counts.
- *
- * Rotation is the one fault that routinely corrects itself: people glance at the
- * keyboard, tilt while thinking, and come back. Depth and drift do not do that.
- * Ten times 150 ms is a second and a half — long enough that a passing tilt is
- * ignored, short enough that a participant who has genuinely turned away is
- * still caught well before a trial completes.
- */
-const TURN_CONFIRM_MULTIPLIER = 10;
-
-/**
- * Per-frame head-pose telemetry to the console.
- *
- * On by default while the position gates are being tuned: the thresholds are
- * only meaningful next to the numbers they are judging, and without them a
- * participant being rejected has no way to tell a real movement from an
- * estimator artefact. Set NEXT_PUBLIC_POSE_TELEMETRY=0 to silence it.
- */
-const POSE_TELEMETRY =
-  (process.env.NEXT_PUBLIC_POSE_TELEMETRY ?? '1').trim() !== '0';
-
-/**
- * How long the position hold tolerates a dropout before starting over.
- *
- * A blink is 100–400 ms and takes the landmarks with it; a tremor, a swallow or
- * a single missed detection are the same order. Restarting the countdown on the
- * first bad frame made the setup step disproportionately hard for exactly the
- * people least able to hold still, which for a concussion assessment is close to
- * the opposite of what is wanted.
- */
-const HOLD_DROPOUT_ALLOWANCE_MS = 600;
-
-function cameraNeededFor(
-  status: AppState,
-  neuroPhase: string,
-  hasSession: boolean,
-): boolean {
-  switch (status) {
-    case 'DISTANCE_CALIBRATION':
-    case 'HEAD_POSITIONING':
-    case 'CALIBRATION':
-      return true;
-    // Tracking only resumes the camera once a session exists; without one the
-    // route is being restored mid-navigation and there is nothing to record.
-    case 'TRACKING':
-      return hasSession;
-    case 'NEURO_FLOW':
-      return neuroPhase !== 'done';
-    case 'IDLE':
-    case 'LOADING_MODEL':
-    case 'POST_CALIBRATION_CHOICE':
-      return false;
-  }
-}
-
-/**
- * How much longer than the old fixed prep wait the gaze-contingent gate may
- * spend waiting for the eye to arrive before recording anyway.
- *
- * 2.5× turns the old 800 ms into a 2 s ceiling. Corner dots — the largest
- * saccade, the longest settle, and the targets that dominate calibration
- * error — routinely need more than 800 ms, which is the whole reason the timed
- * flow recorded the worst data on the hardest targets. Dots that hit this
- * ceiling are recorded with reason "timeout" so bad windows stay visible.
- */
-const GAZE_CONTINGENT_TIMEOUT_FACTOR = 2.5;
 
 /** When true (NEXT_PUBLIC_CALIBRATION_TEST_MODE=1): after first calibration phase (grid) only, save session and show choice screen (Real-time vs Neurological). Choice is always required. */
 const CALIBRATION_TEST_MODE =
@@ -220,9 +98,6 @@ function App() {
   const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
   /** Orchestrator (ticket 12): pre → tests → post → done. */
   const [neuroPhase, setNeuroPhase] = useState<'pre' | 'tests' | 'post' | 'done'>('pre');
-  /** Same value, readable from the detection loop, which runs outside React. */
-  const neuroPhaseRef = useRef<'pre' | 'tests' | 'post' | 'done'>('pre');
-  useEffect(() => { neuroPhaseRef.current = neuroPhase; }, [neuroPhase]);
   const [neuroRunId, setNeuroRunId] = useState<string | null>(null);
   const [neuroRunStatus, setNeuroRunStatus] = useState<'idle' | 'creating' | 'ready' | 'error'>('idle');
   const [neuroTestOrder, setNeuroTestOrder] = useState<string[]>([]);
@@ -269,18 +144,8 @@ function App() {
   const [stableFrameCount, setStableFrameCount] = useState(0);
   const headPosStartTimeRef = useRef<number | null>(null);
   const lastHeadDebugLogRef = useRef<number>(0);
-  const lastPoseLogRef = useRef<number>(0);
-  /**
-   * Where to go back to once the participant has returned to the setup pose.
-   *
-   * Null means head positioning was reached the normal way, at the start of the
-   * session, and calibration should begin. Non-null means the run was stopped
-   * because the pose was left, and that is the state to resume.
-   */
-  const resumeStatusRef = useRef<AppState | null>(null);
+  const calibrationResumeRef = useRef(false); // true when we returned to HEAD_POSITIONING from CALIBRATION (resume same step)
   const headInvalidSinceRef = useRef<number | null>(null); // debounce: head invalid start time
-  /** Last frame that passed while holding position — see HOLD_DROPOUT_ALLOWANCE_MS. */
-  const lastHeldValidAtRef = useRef<number>(0);
   
   const hybridRegressorRef = useRef<HybridRegressor>(new HybridRegressor());
   const [calibPhase, setCalibPhase] = useState<CalibrationPhase>(CalibrationPhase.INITIAL_MAPPING);
@@ -336,20 +201,6 @@ function App() {
   }, []);
 
   useEffect(() => { statusRef.current = status; }, [status]);
-
-
-  useEffect(() => {
-    // Only the rotation axes scale here. Depth and drift are already expressed
-    // in units that mean the same thing at every distance, and have their own
-    // knob in headDistanceTolerance.
-    const k = Math.max(0.5, Math.min(3, config.headRotationTolerance ?? 1));
-    anchorToleranceRef.current = {
-      ...DEFAULT_ANCHOR_TOLERANCE,
-      yawDeg: DEFAULT_ANCHOR_TOLERANCE.yawDeg * k,
-      pitchDeg: DEFAULT_ANCHOR_TOLERANCE.pitchDeg * k,
-      rollDeg: DEFAULT_ANCHOR_TOLERANCE.rollDeg * k,
-    };
-  }, [config.headRotationTolerance]);
   useEffect(() => {
     if (status !== 'CALIBRATION' && status !== 'TRACKING') setLightLevel(null);
   }, [status]);
@@ -416,54 +267,6 @@ function App() {
   const detectionStrideRef = useRef(1);
   const detectionAvgMsRef = useRef(0);
   const isCollectingRef = useRef(false);
-  /**
-   * Gaze-contingent capture. The frame loop is a stable callback that reads
-   * everything through refs, so the gate, the dot list and the "start recording"
-   * callback all have to be reachable that way too.
-   */
-  const fixationGateRef = useRef(new FixationGate());
-  const gateActiveRef = useRef(false);
-  const gateCaptureTimeRef = useRef(0);
-  const gateIndexRef = useRef(0);
-  const calibPointsRef = useRef<CalibrationPoint[]>([]);
-  const beginDotCaptureRef = useRef<((captureTime: number, c: DotConvergence) => void) | null>(null);
-  /** Per-dot record of how long the eye took to settle — saved with the session. */
-  const dotConvergenceRef = useRef<DotConvergence[]>([]);
-  /**
-   * Measured face-size→centimetre calibration for this participant on this
-   * camera. Null until the setup step runs; everything downstream falls back to
-   * the configured target distance when it is.
-   */
-  const distanceCalRef = useRef<DistanceCalibration | null>(null);
-  /**
-   * Where the participant was when head positioning completed. From that moment
-   * the position check is relative to this pose rather than to the frame, and
-   * leaving it stops the test — which is the condition that actually invalidates
-   * a calibration.
-   */
-  const positionAnchorRef = useRef<PositionAnchor | null>(null);
-  /**
-   * Anchor tolerances, scaled by the admin config.
-   *
-   * These used to be unreachable: validateHeadPosition accepted an override and
-   * nothing ever passed one, so the defaults were effectively hard-coded and a
-   * participant rejected for a slight head tilt had no knob to turn.
-   */
-  const anchorToleranceRef = useRef<AnchorTolerance>(DEFAULT_ANCHOR_TOLERANCE);
-  /**
-   * Physical face width in cm, from the card-at-cheek step. Feeds the anchor so
-   * drift is reported in real centimetres rather than against a nominal 15 cm.
-   */
-  const faceWidthCmRef = useRef<number | null>(null);
-  /** Which camera and framing is running — selects the cached focal length. */
-  const [cameraKey, setCameraKey] = useState<string>(() => buildCameraKey(undefined));
-  /** False where the OS can change crop/zoom without exposing it to WebRTC. */
-
-  /** Live raw face width (fraction of frame), fed to the distance calibration UI. */
-  const lastFaceWidthRef = useRef<number | null>(null);
-  const [liveFaceWidth, setLiveFaceWidth] = useState<number | null>(null);
-  const lastIrisDiameterRef = useRef<number | null>(null);
-  const [liveIrisDiameter, setLiveIrisDiameter] = useState<number | null>(null);
   const collectionBufferRef = useRef<number[][]>([]);
   /** Parallel raw-features buffer — same lifecycle as collectionBufferRef. Used to store
    *  EyeFeatures per frame so the averaged result can be saved in TrainingSample.rawEyeFeatures,
@@ -474,8 +277,6 @@ function App() {
   const timerRef = useRef<(number | ReturnType<typeof setTimeout>)[]>([]);
   const trackingHistoryRef = useRef<GazeRecord[]>([]);
   const zoomLockIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  /** Outcome of the exposure/focus/WB lock — recorded on the session for QA. */
-  const cameraLockRef = useRef<CameraLockResult | null>(null);
 
   // Refs for click hold logic
   const holdStartTimeRef = useRef<number>(0);
@@ -600,12 +401,7 @@ function App() {
             if (heatmapRef.current) heatmapRef.current.reset();
             trackingHistoryRef.current = [];
           } else if (parsed.screen === 'calibration') {
-            // A reload/deep link must ask for the actual distance again. A
-            // restored K belongs to an earlier pose and potentially an earlier
-            // participant or Center Stage crop, so it is not a valid shortcut.
-            distanceCalRef.current = null;
-            faceWidthCmRef.current = null;
-            setStatus('DISTANCE_CALIBRATION');
+            setStatus('HEAD_POSITIONING');
           } else if (parsed.screen === 'choice') {
             setStatus('IDLE');
           } else if (parsed.screen === 'neuro_pre' || parsed.screen === 'neuro_post' || parsed.screen === 'neuro_done' || parsed.screen === 'neuro_test') {
@@ -658,11 +454,7 @@ function App() {
         }
         break;
       case 'calibration':
-        if (
-          status !== 'DISTANCE_CALIBRATION' &&
-          status !== 'HEAD_POSITIONING' &&
-          status !== 'CALIBRATION'
-        ) {
+        if (status !== 'HEAD_POSITIONING' && status !== 'CALIBRATION') {
           handleStartProcess();
         }
         break;
@@ -776,21 +568,20 @@ function App() {
   const hasTriedStartCameraNeuroRef = useRef(false);
   useEffect(() => {
     // Start camera if we are in neuro flow (uncompleted) OR if we are in tracking (with session) OR if we are in normal setup flows
-    const shouldStart = cameraNeededFor(status, neuroPhase, !!createdSessionId);
-
+    const shouldStart = (status === 'NEURO_FLOW' && neuroPhase !== 'done') || 
+                       (status === 'TRACKING' && createdSessionId) ||
+                       (status === 'CALIBRATION') ||
+                       (status === 'HEAD_POSITIONING');
+    
     if (!shouldStart || hasCameraStream) {
-      if (!shouldStart) {
+      if (status !== 'NEURO_FLOW' && status !== 'TRACKING' && status !== 'CALIBRATION' && status !== 'HEAD_POSITIONING') {
         hasTriedStartCameraNeuroRef.current = false;
       }
       return;
     }
     if (hasTriedStartCameraNeuroRef.current) return;
     hasTriedStartCameraNeuroRef.current = true;
-    // Any failure must also release the latch, for the same reason.
-    startCamera().catch((e) => {
-      hasTriedStartCameraNeuroRef.current = false;
-      console.error('[App] startCamera failed', e);
-    });
+    startCamera();
   }, [status, hasCameraStream, neuroPhase, createdSessionId]);
 
   // Clean up camera stream on component unmount
@@ -809,8 +600,8 @@ function App() {
     };
   }, []);
 
-  const startCamera = async (): Promise<CameraStartProfile | null> => {
-    if (!videoRef.current) return null;
+  const startCamera = async () => {
+    if (!videoRef.current) return;
 
     // Absolute safeguard: Do not start the camera on non-eye-tracking pages.
     const p = typeof window !== 'undefined' ? window.location.pathname : '/';
@@ -820,12 +611,7 @@ function App() {
        if (process.env.NODE_ENV === 'development') {
          console.warn('[App] Aborting startCamera - on non-camera screen:', parsed.screen);
        }
-       // Release the once-only latch the caller set before calling us. Without
-       // this an aborted attempt leaves the latch stuck: the next *legitimate*
-       // request sees "already tried", returns immediately, and the camera never
-       // starts — a black preview with no error anywhere.
-       hasTriedStartCameraNeuroRef.current = false;
-       return null;
+       return;
     }
 
     if (zoomLockIntervalRef.current) {
@@ -835,15 +621,11 @@ function App() {
     try {
       const supports = typeof navigator !== 'undefined' && navigator.mediaDevices?.getSupportedConstraints?.();
       const wantsZoom = supports && (supports as { zoom?: boolean }).zoom === true;
-      // Prefer 1080p; request PTZ so we can lock zoom (reduces auto-zoom when user moves).
-      // Resolution is the hard ceiling on gaze accuracy: at 720p the iris spans
-      // only ~15–25 px, so a 1 px landmark/feature error is already tens of px on
-      // screen. The reference webcam system that reaches 1.4° uses 1080p. `ideal`
-      // degrades gracefully on cameras that cannot deliver it.
+      // Prefer 720p; request PTZ so we can lock zoom (reduces auto-zoom when user moves).
       const videoConstraints: MediaTrackConstraints & { zoom?: boolean } = {
         facingMode: 'user',
-        width: { ideal: 1920, min: 1280 },
-        height: { ideal: 1080, min: 720 },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
         // Request a stable frame rate: erratic fps makes the OneEuro dt jittery,
         // which corrupts smoothing and reaction-time measurements in saccade tests.
         frameRate: { ideal: 30, min: 24 },
@@ -851,10 +633,6 @@ function App() {
       };
       const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
       const videoTrack = stream.getVideoTracks()[0];
-      let profile: CameraStartProfile = {
-        key: buildCameraKey(undefined),
-        allowPersistentFocal: true,
-      };
       if (videoTrack) {
         const caps = videoTrack.getCapabilities() as { zoom?: { min?: number; max?: number } };
         const minZoom = typeof caps?.zoom?.min === 'number' ? caps.zoom.min : null;
@@ -882,43 +660,6 @@ function App() {
             }
           }, 2000);
         }
-
-        // Build the profile only after the best-effort zoom lock. Building it
-        // before applyConstraints() keyed the cache to the framing we requested,
-        // then measured under the framing the driver actually settled on.
-        const settled = videoTrack.getSettings() as MediaTrackSettings & {
-          zoom?: number;
-          resizeMode?: string;
-        };
-        const key = buildCameraKey(settled.deviceId, settled.width, settled.height, {
-          zoom: settled.zoom,
-          resizeMode: settled.resizeMode,
-        });
-        const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-        const platform = nav.userAgentData?.platform || nav.platform || nav.userAgent;
-        profile = {
-          key,
-          allowPersistentFocal: canPersistFocalForPlatform(platform),
-        };
-        setCameraKey(key);
-
-        // A calibration belongs to the exact optical profile that produced it.
-        // On macOS, Center Stage/Manual Framing is opaque to WebRTC, so even an
-        // apparently identical key is not enough after a stream is reopened.
-        const prior = distanceCalRef.current;
-        const profileChanged = prior?.cameraKey !== key;
-        if (
-          parsed.screen === 'calibration' &&
-          (profileChanged || !profile.allowPersistentFocal)
-        ) {
-          distanceCalRef.current = null;
-          faceWidthCmRef.current = null;
-          clearCalibration();
-          if (statusRef.current === 'HEAD_POSITIONING') {
-            statusRef.current = 'DISTANCE_CALIBRATION';
-            setStatus('DISTANCE_CALIBRATION');
-          }
-        }
       }
       videoRef.current.srcObject = stream;
       streamRef.current = stream;
@@ -927,17 +668,7 @@ function App() {
         if (videoRef.current) videoRef.current.onloadedmetadata = resolve;
       });
       videoRef.current.play();
-      // The exposure/focus/white-balance lock does NOT happen here. It used to,
-      // 1.5 s after the stream opened — which is before the participant has been
-      // anywhere near the target distance. Focus was pinned at whatever plane
-      // they happened to be sitting at during setup and exposure at whatever the
-      // setup screens were showing, and then they moved closer. Many built-in
-      // webcams have a near limit around 30–40 cm, so the image went soft at
-      // exactly the distance that was supposed to be the sharpest.
-      //
-      // It now fires from the anchor capture instead: see lockCameraForSession.
       processVideo();
-      return profile;
     } catch (err) {
       console.error('[Camera] getUserMedia failed:', err);
       // Exit fullscreen so the user can see the in-app error, then send
@@ -947,7 +678,6 @@ function App() {
       }
       pathSyncSourceRef.current = 'internal';
       router.push('/setup');
-      return null;
     }
   };
 
@@ -962,9 +692,6 @@ function App() {
       clearInterval(zoomLockIntervalRef.current);
       zoomLockIntervalRef.current = null;
     }
-    // A new stream is a new set of auto-adjustments, so the next time the
-    // participant settles into position it must be locked again.
-    cameraLockRef.current = null;
     // Stop all media tracks so the OS camera indicator turns off.
     if (videoRef.current?.srcObject) {
       (videoRef.current.srcObject as MediaStream).getTracks().forEach((t) => t.stop());
@@ -989,8 +716,11 @@ function App() {
 
   // Automated camera cleanup when navigating away from active tracking/neuro logic (e.g. going home)
   useEffect(() => {
-    const isFlowActive = cameraNeededFor(status, neuroPhase, !!createdSessionId);
-
+    const isFlowActive = (status === 'NEURO_FLOW' && neuroPhase !== 'done') || 
+                         (status === 'TRACKING' && createdSessionId) ||
+                         (status === 'CALIBRATION') ||
+                         (status === 'HEAD_POSITIONING');
+                         
     if (!isFlowActive && hasCameraStream) {
       neuroDebugLog('[App] Navigation/State change -> stopping camera automatically');
       stopCamera();
@@ -1143,123 +873,6 @@ function App() {
       }
   };
 
-  /**
-   * Leaving the setup pose stops the run.
-   *
-   * Once the anchor exists, `validation` is no longer "is the face nicely
-   * framed" — it is "is the participant still where the gaze mapping was
-   * fitted". Every centimetre of drift from that pose is roughly a centimetre of
-   * screen error, so collecting data past it produces numbers that look fine and
-   * are wrong. The participant goes back to head positioning until they return
-   * to the *original* pose: the anchor is never re-captured, so there is no way
-   * to quietly redefine "correct" as wherever they happened to drift to.
-   *
-   * Gated on the phases where a mapping is being fitted or used:
-   *
-   *   CALIBRATION   fitting it
-   *   TRACKING      using it
-   *   NEURO_FLOW    using it, but only during gaze-based tests. Head Orientation
-   *                 is deliberately exempt: yaw, pitch and roll away from the
-   *                 anchor are the signal that test asks the participant to
-   *                 produce. Applying the setup-pose gate there makes the test
-   *                 reject its own correct behaviour.
-   *
-   * Also held off while an assessment modal is up, for the same reason.
-   *
-   * Called from both detection branches on purpose. A lost face is the other
-   * half of the condition this exists for — a participant who has left the frame
-   * entirely is at least as far out of position as one who merely leaned — and
-   * calling it only where landmarks exist meant walking away never stopped
-   * anything.
-   *
-   * Fires as soon as the failure is confirmed — see OUT_OF_POSE_CONFIRM_MS,
-   * which is a single-frame noise filter rather than time granted to the
-   * participant. Once the pose is left, every further frame is recorded against
-   * a mapping that no longer describes where the eyes are; there is nothing to
-   * be gained by waiting for them to notice.
-   */
-  const enforceSetupPose = useCallback((now: number, validation: HeadValidationResult) => {
-    const isHeadOrientationTest =
-      statusRef.current === 'NEURO_FLOW' &&
-      neuroPhaseRef.current === 'tests' &&
-      currentNeuroTestIdRef.current === 'head_orientation';
-    const poseGated =
-      statusRef.current === 'CALIBRATION' ||
-      statusRef.current === 'TRACKING' ||
-      (statusRef.current === 'NEURO_FLOW' &&
-        neuroPhaseRef.current === 'tests' &&
-        !isHeadOrientationTest);
-
-    if (!poseGated || assessmentPendingRef.current || validation.valid) {
-      headInvalidSinceRef.current = null;
-      return;
-    }
-    if (headInvalidSinceRef.current === null) {
-      headInvalidSinceRef.current = now;
-      return;
-    }
-    // A turned head gets longer to correct itself than a drifted one.
-    //
-    // Depth and lateral drift are postural: once someone has slumped or leaned
-    // they stay there, so confirming quickly is right. A glance away or a head
-    // tilt is usually already on its way back before anyone could act on it, and
-    // 150 ms is four or five frames — short enough that a momentary tilt cost
-    // the participant the whole run.
-    const confirmMs =
-      validation.debug?.anchorFault === 'turned'
-        ? OUT_OF_POSE_CONFIRM_MS * TURN_CONFIRM_MULTIPLIER
-        : OUT_OF_POSE_CONFIRM_MS;
-    if (now - headInvalidSinceRef.current <= confirmMs) return;
-
-    headInvalidSinceRef.current = null;
-    resumeStatusRef.current = statusRef.current;
-    console.log(
-      `[anchor] left the setup pose during ${statusRef.current}: ${validation.message}`,
-      validation.debug,
-    );
-    setStatus('HEAD_POSITIONING');
-    // Set the ref too, not just the state: the next animation frame can run
-    // before React has committed, and it would otherwise still believe the test
-    // is live and fire this a second time.
-    statusRef.current = 'HEAD_POSITIONING';
-  }, []);
-
-  /**
-   * Freeze exposure, focus and white balance — once, and at the right moment.
-   *
-   * The right moment is when the participant is in the pose the session will run
-   * in: at the target distance, under the lighting the test will use. Locking
-   * earlier pins focus at whatever plane they were sitting at while reading the
-   * setup instructions, and they then move closer — which on a webcam with a
-   * near limit around 30–40 cm means the image is softest exactly where the
-   * design intended it to be sharpest.
-   *
-   * Locking at all is still worth it for the reason lib/cameraLock.ts gives:
-   * auto-exposure reacts to the calibration dot's own brightness, so leaving it
-   * running injects a bias *correlated with target position*, which the
-   * calibration fit then absorbs as though it were gaze.
-   *
-   * Not awaited — the caller is about to start calibration and the constraints
-   * land within a frame or two. Idempotent, because head positioning is
-   * re-entered every time the participant leaves the pose.
-   */
-  const lockCameraForSession = useCallback(() => {
-    if (cameraLockRef.current) return;
-    const track = (videoRef.current?.srcObject as MediaStream | undefined)?.getVideoTracks?.()[0];
-    if (!track) return;
-    // Placeholder so a second call cannot race the first before it resolves.
-    cameraLockRef.current = { locked: [], unsupported: [], failed: [], settings: {} };
-    lockCameraAutoAdjustments(track)
-      .then((r) => {
-        cameraLockRef.current = r;
-        console.log('[Camera] locked in position —', describeCameraLock(r));
-      })
-      .catch((e) => {
-        cameraLockRef.current = null;
-        console.warn('[Camera] lock failed:', e);
-      });
-  }, []);
-
   const processVideo = useCallback(() => {
     if (!videoRef.current) return;
     
@@ -1350,61 +963,11 @@ function App() {
                 landmarks,
                 configRef.current.faceDistance,
                 configRef.current.faceWidthScale ?? 1,
-                configRef.current.headDistanceTolerance ?? 1,
-                distanceCalRef.current,
-                positionAnchorRef.current,
-                anchorToleranceRef.current,
+                configRef.current.headDistanceTolerance ?? 2
               );
-              if (validation.debug?.rawFaceWidth != null) {
-                lastFaceWidthRef.current = validation.debug.rawFaceWidth;
-                // Only mirror into React state while the distance screen needs
-                // it — a setState per frame during tracking would be wasteful.
-                if (statusRef.current === 'DISTANCE_CALIBRATION') {
-                  setLiveFaceWidth(validation.debug.rawFaceWidth);
-                }
-              }
-              if (validation.debug?.irisDiameterNorm != null) {
-                lastIrisDiameterRef.current = validation.debug.irisDiameterNorm;
-                if (statusRef.current === 'DISTANCE_CALIBRATION') {
-                  setLiveIrisDiameter(validation.debug.irisDiameterNorm);
-                }
-              }
               setHeadValidation(validation);
               headValidationRef.current = validation;
               isHeadValidRef.current = validation.valid;
-
-              // Pose telemetry, throttled to ~3 Hz.
-              //
-              // Deliberately prints the *raw* pose beside the deviation from the
-              // anchor. The two together are what separate "the participant
-              // moved" from "the estimator moved" — and the estimator is a
-              // heuristic whose yaw and pitch are known to pick up roll, so a
-              // reading that jumps when the head only tilts is a measurement
-              // fault, not a posture fault.
-              if (
-                POSE_TELEMETRY &&
-                (statusRef.current === 'HEAD_POSITIONING' ||
-                  statusRef.current === 'CALIBRATION' ||
-                  statusRef.current === 'NEURO_FLOW') &&
-                now - lastPoseLogRef.current > 333
-              ) {
-                lastPoseLogRef.current = now;
-                const raw = eyeTrackingService.headPose(landmarks);
-                const geo = eyeTrackingService.calculateGeometricHeadPose(landmarks);
-                const sig = eyeTrackingService.headSignature(landmarks);
-                const d = validation.debug;
-                const deg = (r: number) => ((r * 180) / Math.PI).toFixed(1).padStart(6);
-                const n = (v: number | undefined, dp = 2) =>
-                  v == null || !Number.isFinite(v) ? '  —' : v.toFixed(dp).padStart(6);
-                console.log(
-                  `[pose:${eyeTrackingService.poseSource}] y${deg(raw.yaw)} p${deg(raw.pitch)} r${deg(raw.roll)}` +
-                  ` (geo y${deg(geo.yaw)})` +
-                  ` | vs anchor y${n(d?.yawDeg, 1)} p${n(d?.pitchDeg, 1)} r${n(d?.rollDeg, 1)}` +
-                  ` | faceScale ${n(sig?.faceScale, 4)} depth ${n(d?.depthRatio, 3)}` +
-                  ` | drift ${n(d?.driftFaceWidths, 3)}` +
-                  ` | ${validation.valid ? 'OK  ' : (d?.anchorFault ?? 'fail')} ${validation.message}`,
-                );
-              }
 
               // Debug log (throttled) during Head Positioning so user can see values in Console
               if (statusRef.current === 'HEAD_POSITIONING' && validation.debug && now - lastHeadDebugLogRef.current > 500) {
@@ -1431,23 +994,9 @@ function App() {
               
               if (statusRef.current === 'HEAD_POSITIONING') {
                   if (validation.valid) {
-                      lastHeldValidAtRef.current = now;
                       setStableFrameCount(c => c + 1);
                       if (!headPosStartTimeRef.current) {
                           headPosStartTimeRef.current = now;
-                          // Lock the camera at the START of the hold, not the end.
-                          //
-                          // This is the first frame the participant is verified to
-                          // be at the target distance, so the lock still captures
-                          // the right focus plane and the right lighting — but it
-                          // now has the full two-second countdown to settle in.
-                          // Firing it at anchor capture instead put the
-                          // applyConstraints mode switch in the same tick as
-                          // startActualCalibration(), so the exposure step landed
-                          // on the first calibration dot. With nine training
-                          // samples, one contaminated dot is eleven percent of the
-                          // model.
-                          lockCameraForSession();
                       }
                       const elapsed = now - headPosStartTimeRef.current;
                       const remaining = Math.max(0, 2000 - elapsed);
@@ -1456,59 +1005,37 @@ function App() {
                       if (remaining === 0) {
                           headPosStartTimeRef.current = null;
                           setPositionHoldTime(null);
-                          // Lock this pose. Everything after is judged against
-                          // it, so it is captured at the last stable frame
-                          // rather than the first — the participant has been
-                          // holding still for the full countdown by now.
-                          if (!positionAnchorRef.current) {
-                            const sig = eyeTrackingService.headSignature(landmarks);
-                            if (sig) {
-                              const cal = distanceCalRef.current;
-                              positionAnchorRef.current = captureAnchor(sig, {
-                                distanceCm: cal
-                                  ? distanceFromFace(cal, sig.faceScale)
-                                  : configRef.current.faceDistance,
-                                distanceSource: cal ? cal.method : 'assumed',
-                                // Present whenever the card step ran. It is what
-                                // turns every later drift reading from a ratio
-                                // into exact centimetres.
-                                ...(faceWidthCmRef.current != null
-                                  ? { faceWidthCm: faceWidthCmRef.current }
-                                  : {}),
-                              });
-                              console.log('[anchor] locked', positionAnchorRef.current);
-                            }
-                          }
-                          const resume = resumeStatusRef.current;
-                          if (resume) {
-                              resumeStatusRef.current = null;
-                              setStatus(resume);
-                              statusRef.current = resume;
+                          if (calibrationResumeRef.current) {
+                              calibrationResumeRef.current = false;
+                              setStatus('CALIBRATION');
                           } else {
                               startActualCalibration();
                           }
                       }
-                  } else if (now - lastHeldValidAtRef.current > HOLD_DROPOUT_ALLOWANCE_MS) {
-                      // Only give up on the countdown after a *sustained* dropout.
-                      //
-                      // It used to restart on a single bad frame, which quietly
-                      // excluded anyone who cannot hold perfectly still: a blink
-                      // at the wrong moment, a tremor, one dropped detection, and
-                      // the two seconds began again. For some people that is not
-                      // merely annoying, it never terminates.
-                      //
-                      // Costs nothing in accuracy. The countdown can only *finish*
-                      // inside the valid branch above, so the anchor is still
-                      // captured from a frame that passed every check — the
-                      // allowance decides how patient the wait is, never what
-                      // counts as being in position.
+                  } else {
                       setStableFrameCount(0);
                       headPosStartTimeRef.current = null;
                       setPositionHoldTime(null);
                   }
               }
 
-              enforceSetupPose(now, validation);
+              // During CALIBRATION: if head invalid (wrong distance / off-center), return to Head Positioning after short debounce
+              // Do NOT return to HEAD_POSITIONING if we are showing an assessment modal or saving samples,
+              // to avoid interrupting the user.
+              if (
+                statusRef.current === 'CALIBRATION' &&
+                !validation.valid &&
+                !assessmentPendingRef.current
+              ) {
+                  if (headInvalidSinceRef.current === null) headInvalidSinceRef.current = now;
+                  else if (now - headInvalidSinceRef.current > 500) {
+                      headInvalidSinceRef.current = null;
+                      calibrationResumeRef.current = true;
+                      setStatus('HEAD_POSITIONING');
+                  }
+              } else if (statusRef.current === 'CALIBRATION' && validation.valid) {
+                  headInvalidSinceRef.current = null;
+              }
 
               // Draw Face Mesh on debugCanvas (skip during HEAD_POSITIONING or LOADING_MODEL)
               if (statusRef.current !== 'HEAD_POSITIONING' && statusRef.current !== 'LOADING_MODEL') {
@@ -1534,21 +1061,7 @@ function App() {
           } else {
              currentFaceLandmarksRef.current = null;
              isHeadValidRef.current = false;
-             // Do not let Head Orientation keep sampling the last valid pose
-             // while the face is outside MediaPipe's view. The test remains in
-             // place (it is exempt from the setup-pose gate), but its sampler
-             // sees null and waits for a real detection to return.
-             if (statusRef.current === 'NEURO_FLOW') {
-               setNeuroHeadPose(null);
-             }
-             const lost: HeadValidationResult = { valid: false, message: "No Face Detected" };
-             setHeadValidation(lost);
-             headValidationRef.current = lost;
-             // Walking out of frame is leaving the setup pose in its most
-             // extreme form. Head Orientation is intentionally exempt from the
-             // setup-pose gate; its own UI reports a missing face and simply
-             // records no pose samples until detection returns.
-             enforceSetupPose(now, lost);
+             setHeadValidation({ valid: false, message: "No Face Detected" });
           }
       }
 
@@ -1577,40 +1090,6 @@ function App() {
                     const inputVector = eyeTrackingService.prepareFeatureVector(features, configRef.current);
                     collectionBufferRef.current.push(inputVector);
                     rawCollectionBufferRef.current.push(features);
-                  }
-
-                  // 1a. Gaze-contingent gate: decide when the eye has actually
-                  // arrived at the dot, instead of assuming it has after a fixed
-                  // wait. Runs only while waiting to record, never during it.
-                  if (currentStatus === 'CALIBRATION' && gateActiveRef.current && !isCollectingRef.current) {
-                    const dot = calibPointsRef.current[gateIndexRef.current];
-                    if (dot) {
-                      const sample: GateSample = {
-                        t: now,
-                        lx: features.leftRelative.x,
-                        ly: features.leftRelative.y,
-                        rx: features.rightRelative.x,
-                        ry: features.rightRelative.y,
-                      };
-                      // Proximity needs a trained regressor; on the first grid
-                      // there is none, so the gate falls back to stability only.
-                      if (hybridRegressorRef.current.hasTrainedModel()) {
-                        const v = eyeTrackingService.prepareFeatureVector(features, configRef.current);
-                        const pred = hybridRegressorRef.current.predict(v, configRef.current.regressionMethod);
-                        sample.predX = pred.x;
-                        sample.predY = pred.y;
-                      }
-                      const verdict = fixationGateRef.current.push(sample);
-                      if (verdict.settled) {
-                        beginDotCaptureRef.current?.(gateCaptureTimeRef.current, {
-                          index: gateIndexRef.current,
-                          reason: verdict.reason,
-                          waitMs: verdict.elapsedMs,
-                          spread: verdict.spread,
-                          offsetPx: verdict.offsetPx,
-                        });
-                      }
-                    }
                   }
 
                   // 1b. Data Collection (eye movement exercises)
@@ -1656,7 +1135,7 @@ function App() {
       }
     }
     requestRef.current = requestAnimationFrame(processVideo);
-  }, [enforceSetupPose, lockCameraForSession]); 
+  }, []); 
 
   // --- HEAD POSITIONING CANVAS: draws video + face mesh + target box in a contained view ---
   useEffect(() => {
@@ -1692,67 +1171,58 @@ function App() {
       const valid = isHeadValidRef.current;
       const color = valid ? '#22c55e' : '#ef4444';
 
-      // One box. Inside it is in position; that is the whole instruction.
-      //
-      // Two earlier versions were wrong in opposite ways. The first drew a fixed
-      // 26%×48% rectangle that no check referenced and that a face at a normal
-      // working distance could not fit inside even in principle. The second drew
-      // every criterion faithfully — an expected outline, a live outline, a drift
-      // circle, two markers — which was true and unusable, because a participant
-      // being asked to hold still should have one thing to look at, not five.
-      //
-      // So: the box is the target face size grown by the position tolerance. A
-      // face inside it is within both. Which of the underlying checks is
-      // unhappy is already spelled out in words underneath — the picture does
-      // not need to say it twice.
-      const lmNow = currentFaceLandmarksRef.current;
-      const sig = lmNow ? eyeTrackingService.headSignature(lmNow) : null;
-      const bounds = lmNow ? eyeTrackingService.faceBounds(lmNow) : null;
-      const anchor = positionAnchorRef.current;
-      const cal = distanceCalRef.current;
+      // Target box (matches frontend HeadPoseStep proportions)
+      const bw = 0.26, bh = 0.48;
+      const bx = (1 - bw) / 2 * W;
+      const by = (1 - bh) / 2 * H;
+      const boxW = bw * W;
+      const boxH = bh * H;
 
-      // Where the face should sit, and how wide it should look there.
-      //   with an anchor  the pose the mapping was fitted at — the only target
-      //                   that matters once calibration has happened
-      //   without one     frame centre, at the configured distance
-      const targetNx = anchor ? anchor.cx : 0.5;
-      const targetNy = anchor ? anchor.cy : 0.5;
-      const targetScale = anchor
-        ? anchor.faceScale
-        : cal
-          ? faceScaleAtDistance(cal, configRef.current.faceDistance)
-          : null;
+      // Rounded target box
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = valid ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)';
+      roundedRect(ctx, bx, by, boxW, boxH, 16);
+      ctx.stroke();
 
-      // Mirrored, to match the video underneath.
-      const tx = (1 - targetNx) * W;
-      const ty = targetNy * H;
+      // Corner brackets
+      const cLen = 25;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = color;
+      ctx.lineCap = 'round';
+      // TL
+      ctx.beginPath();
+      ctx.moveTo(bx, by + cLen); ctx.lineTo(bx, by); ctx.lineTo(bx + cLen, by);
+      ctx.stroke();
+      // TR
+      ctx.beginPath();
+      ctx.moveTo(bx + boxW - cLen, by); ctx.lineTo(bx + boxW, by); ctx.lineTo(bx + boxW, by + cLen);
+      ctx.stroke();
+      // BL
+      ctx.beginPath();
+      ctx.moveTo(bx, by + boxH - cLen); ctx.lineTo(bx, by + boxH); ctx.lineTo(bx + cLen, by + boxH);
+      ctx.stroke();
+      // BR
+      ctx.beginPath();
+      ctx.moveTo(bx + boxW - cLen, by + boxH); ctx.lineTo(bx + boxW, by + boxH); ctx.lineTo(bx + boxW, by + boxH - cLen);
+      ctx.stroke();
 
-      if (bounds && sig && sig.faceScale > 0 && targetScale) {
-        // The live silhouette rescaled to the size it would be at the target:
-        // the right shape for this face, the right size for this distance, with
-        // no constant standing in for either.
-        const k = targetScale / sig.faceScale;
-        const faceW = (bounds.maxX - bounds.minX) * W * k;
-        const faceH = (bounds.maxY - bounds.minY) * H * k;
+      // Crosshairs
+      ctx.globalAlpha = 0.12;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, by); ctx.lineTo(W / 2, by + boxH);
+      ctx.moveTo(bx, H / 2); ctx.lineTo(bx + boxW, H / 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
 
-        // Grown by however far the face centre is allowed to wander.
-        const padX = anchor
-          ? DEFAULT_ANCHOR_TOLERANCE.driftFaceWidths * targetScale * W
-          : HEAD_CENTRE_TOLERANCE_X * W;
-        const padY = anchor
-          ? DEFAULT_ANCHOR_TOLERANCE.driftFaceWidths * targetScale * W
-          : HEAD_CENTRE_TOLERANCE_Y * H;
-
-        const boxW = faceW + padX * 2;
-        const boxH = faceH + padY * 2;
-
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = color;
-        ctx.globalAlpha = 0.9;
-        roundedRect(ctx, tx - boxW / 2, ty - boxH / 2, boxW, boxH, 28);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
+      // Center dot
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
 
       // Draw face mesh: all 478 landmarks — always green; only the box shows pass/fail (red/green)
       const lm = currentFaceLandmarksRef.current;
@@ -1848,66 +1318,12 @@ function App() {
   };
 
 
-  /**
-   * Begin recording the current dot. Shared by the gaze-contingent path (called
-   * the moment the eye settles) and the safety timeout (called regardless), so
-   * both start from identical state.
-   */
-  const beginDotCapture = useCallback((captureTime: number, convergence: DotConvergence) => {
-    if (isCollectingRef.current) return;    // already recording this dot
-    dotConvergenceRef.current.push(convergence);
-    collectionBufferRef.current = [];
-    rawCollectionBufferRef.current = [];
-    isCollectingRef.current = true;
-    gateActiveRef.current = false;
-    metaRecorderRef.current.markWindowStart();   // dot dwell begins
-    setIsCapturing(true);
-
-    const tEnd = setTimeout(() => {
-      isCollectingRef.current = false;
-      setIsCapturing(false);
-      const cleanBuffer = DataCleaner.clean(
-        collectionBufferRef.current,
-        configRef.current.outlierMethod,
-        configRef.current.outlierThreshold,
-      );
-      // Through a ref, not the closure.
-      //
-      // This callback is useCallback(…, []), so it is created once and keeps
-      // whatever `processCalibBuffer` binding existed on the first render — a
-      // render where calibPoints is still [] and currentCalibIndex is 0. When
-      // the timer fired it therefore looked up calibPoints[0] of an empty array
-      // and dereferenced undefined. calibPhase was captured just as stale, which
-      // is worse than a crash: a validation dot recorded as a training dot fails
-      // silently and poisons the fit.
-      processCalibBufferRef.current(cleanBuffer, rawCollectionBufferRef.current);
-    }, captureTime);
-    timerRef.current.push(tEnd);
-  }, []);
-
-  /**
-   * The current processCalibBuffer, for callers frozen in a stable closure.
-   *
-   * Deliberately without a dependency array: it must be refreshed on *every*
-   * render, because the function it points at closes over three pieces of state
-   * — calibPoints, currentCalibIndex and calibPhase — that all change during
-   * calibration.
-   */
-  const processCalibBufferRef = useRef<(buffer: number[][], rawFeatBuffer?: EyeFeatures[]) => void>(
-    () => {},
-  );
-
-  // Mirror into refs for the frame loop, which is a stable callback.
-  useEffect(() => { calibPointsRef.current = calibPoints; }, [calibPoints]);
-  useEffect(() => { beginDotCaptureRef.current = beginDotCapture; }, [beginDotCapture]);
-
-  // --- CALIBRATION LOGIC ENGINE (GAZE-CONTINGENT, TIMER-BACKSTOPPED) ---
+  // --- CALIBRATION LOGIC ENGINE (TIMER BASED) ---
   useEffect(() => {
     if (status !== 'CALIBRATION') {
       timerRef.current.forEach(clearTimeout);
       timerRef.current = [];
       isCollectingRef.current = false;
-      gateActiveRef.current = false;
       return;
     }
 
@@ -1928,50 +1344,37 @@ function App() {
     const speedMultiplier = NEURO_QUICK_MODE
       ? 0.5
       : config.calibrationSpeed === 'FAST' ? 0.5 : config.calibrationSpeed === 'SLOW' ? 1.5 : 1.0;
-    const captureTime = 1200 * speedMultiplier;
     const prepTime = 800 * speedMultiplier;
-    const gated = config.gazeContingentCalibration !== false;
-    // When gated, the old fixed prep wait becomes only a *ceiling*: recording
-    // starts as soon as the eye has actually arrived (usually sooner), and at
-    // the latest here — so a subject the gate cannot read still completes
-    // calibration, with the dot marked unconverged rather than silently trusted.
-    const prepDeadline = gated ? prepTime * GAZE_CONTINGENT_TIMEOUT_FACTOR : prepTime;
-
-    if (gated) {
-      // Hand the frame loop a gate for this dot; it calls beginDotCapture the
-      // moment the eye settles. Proximity is only checked once a regressor
-      // exists — during the first grid there is nothing to predict with.
-      fixationGateRef.current.reset({ x: point.x, y: point.y }, performance.now());
-      gateCaptureTimeRef.current = captureTime;
-      gateIndexRef.current = currentCalibIndex;
-      gateActiveRef.current = true;
-    }
+    const captureTime = 1200 * speedMultiplier;
 
     const tStart = setTimeout(() => {
-      if (isCollectingRef.current) return;
-      if (gated) {
-        console.warn(
-          `[Calibration] dot ${currentCalibIndex} never settled within ${Math.round(prepDeadline)}ms — recording anyway`
-        );
-      }
-      beginDotCapture(captureTime, {
-        index: currentCalibIndex,
-        reason: gated ? 'timeout' : 'stable',
-        waitMs: prepDeadline,
-        spread: null,
-        offsetPx: null,
-      });
-    }, prepDeadline);
+      collectionBufferRef.current = [];
+      rawCollectionBufferRef.current = [];
+      isCollectingRef.current = true;
+      metaRecorderRef.current.markWindowStart();   // dot dwell begins (timer mode)
+      setIsCapturing(true);
+    }, prepTime);
 
-    timerRef.current.push(tStart);
+    const tEnd = setTimeout(() => {
+      isCollectingRef.current = false;
+      setIsCapturing(false);
+
+      const buffer = collectionBufferRef.current;
+      const rawFeatBuffer = rawCollectionBufferRef.current;
+      // Use standard cleaning for timer method
+      const cleanBuffer = DataCleaner.clean(buffer, configRef.current.outlierMethod, configRef.current.outlierThreshold);
+      processCalibBuffer(cleanBuffer, rawFeatBuffer);
+
+    }, prepTime + captureTime);
+
+    timerRef.current.push(tStart, tEnd);
 
     return () => {
       timerRef.current.forEach(clearTimeout);
       timerRef.current = [];
-      gateActiveRef.current = false;
     };
 
-  }, [currentCalibIndex, status, calibPoints, calibPhase, config.calibrationSpeed, config.calibrationMethod, config.gazeContingentCalibration, retryCount, beginDotCapture]);
+  }, [currentCalibIndex, status, calibPoints, calibPhase, config.calibrationSpeed, config.calibrationMethod, retryCount]);
 
   const toHeadSnapshot = (v: HeadValidationResult | null): HeadSnapshot | undefined => {
     if (!v) return undefined;
@@ -2024,16 +1427,6 @@ function App() {
   // Common function to process buffer and advance state
   const processCalibBuffer = (buffer: number[][], rawFeatBuffer?: EyeFeatures[]) => {
      const point = calibPoints[currentCalibIndex];
-
-     // Belt and braces. The stale-closure route that used to get here is gone,
-     // but a dot timer can still outlive the state it belongs to — the run being
-     // aborted mid-capture, or the phase advancing underneath it — and losing one
-     // dot's data is a far better outcome than taking the whole calibration down
-     // with a TypeError.
-     if (!point) {
-       console.warn('[calibration] buffer arrived for a dot that no longer exists — discarded');
-       return;
-     }
 
      if (buffer.length > 2) {
         // Average raw EyeFeatures first (when available), then recompute the feature vector
@@ -2106,8 +1499,6 @@ function App() {
           setRetryCount(c => c + 1); 
       }
   };
-
-  useEffect(() => { processCalibBufferRef.current = processCalibBuffer; });
 
   const processExerciseData = () => {
     const data = exerciseDataRef.current;
@@ -2354,17 +1745,7 @@ function App() {
   const completeCalibrationAndStartTracking = (errors: number[], testTrajectories?: { patternName: string; points: { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }[] }[]) => {
     const avgError = errors.length > 0 ? errors.reduce((a, b) => a + b, 0) / errors.length : 0;
     setAccuracyScore(avgError);
-    // Report the error in degrees where the geometry allows it, and in pixels
-    // where it does not — a pixel figure means something different on every
-    // display. Neither is a pass mark: validation accuracy also reflects how
-    // well the participant could hold still and attend, which is not grounds
-    // for refusing to run the tests. 2° is the target, not a gate.
-    const geometry = distanceCalRef.current;
-    const viewingDistanceCm = positionAnchorRef.current?.distanceCm ?? geometry?.distanceCm ?? configRef.current.faceDistance;
-    const angularError = errors.length > 0 && geometry?.screenScaleMeasured
-      ? angularErrorDeg(avgError, viewingDistanceCm, geometry.pxPerCm)
-      : null;
-    const isAccuracyGood = errors.length === 0 || (angularError != null && angularError <= TARGET_VALIDATION_ANGULAR_ERROR_DEG);
+    const isAccuracyGood = avgError < 300;
     setLoadingMsg('Saving samples');
     setStatus('LOADING_MODEL');
 
@@ -2401,33 +1782,20 @@ function App() {
             throw new Error('Offline handling is enabled, but no calibration video was recorded.');
           }
           const offlineMeta = buildOfflineSessionMeta();
-          const personalize = offlinePersonalizationEnabled();
-          setLoadingMsg(
-            personalize
-              ? `Processing gaze offline (with personalization) on ${offlineBackendUrl()}…`
-              : `Processing gaze offline on ${offlineBackendUrl()}…`
-          );
+          setLoadingMsg(`Processing gaze offline on ${offlineBackendUrl()}…`);
           console.log('[offline] sending calibration video + metadata to gaze backend', {
             backend: offlineBackendUrl(),
             videoBytes: videoBlob.size,
             calibrationDots: offlineMeta.calibration_dots.length,
             validationDots: offlineMeta.validation_dots.length,
-            personalize,
           });
-          offlineGazeReport = await processOfflineGaze(videoBlob, offlineMeta, { personalize });
+          offlineGazeReport = await processOfflineGaze(videoBlob, offlineMeta);
           const offlineValidation = offlineGazeReport.validation;
           const offlineMsg = offlineValidation
             ? `Offline processing complete: ${offlineValidation.overall_deg.toFixed(2)}° validation error`
             : `Offline processing complete: ${Math.round(offlineGazeReport.calibration_loocv_px)}px LOOCV`;
           setLoadingMsg(offlineMsg);
           console.log('[offline] gaze backend report', offlineGazeReport);
-          if (offlineGazeReport.personalization) {
-            const p = offlineGazeReport.personalization;
-            console.log(`[offline] personalization ${p.kept ? 'KEPT' : 'discarded'}: ${p.reason ?? '—'}`);
-          }
-          if (offlineGazeReport.head_comp_gain_selection) {
-            console.log('[offline] head-comp gain', offlineGazeReport.head_comp_gain_selection);
-          }
         }
         const gridImageCount = calibrationImagesRef.current.length;
         const samples = trainingSamplesRef.current;
@@ -2498,29 +1866,6 @@ function App() {
           config: {
             ...(configRef.current as unknown as Record<string, unknown>),
             ...(demographicsRef.current ? { demographics: demographicsRef.current } : {}),
-            // Capture conditions: which auto-adjustments were actually frozen and
-            // what resolution the driver settled on. Without this, a session that
-            // scored badly can't be told apart from one recorded on a camera that
-            // silently refused the lock or delivered 720p.
-            ...(cameraLockRef.current ? { camera: cameraLockRef.current } : {}),
-            // How long each dot took to settle, and whether it settled at all.
-            // Dots recorded with reason "timeout" are the ones whose calibration
-            // data is suspect — the signal the timed flow never produced.
-            ...(dotConvergenceRef.current.length
-              ? { dotConvergence: dotConvergenceRef.current }
-              : {}),
-            // The measured geometry every angular figure was derived from. A
-            // session without this was scored against an assumed distance and
-            // must not be pooled with measured ones as if they were comparable.
-            ...(distanceCalRef.current
-              ? { distanceCalibration: distanceCalRef.current }
-              : {}),
-            // Where the participant was locked to, and how far the readings can
-            // be trusted: an anchor carrying faceWidthCm reports drift in exact
-            // centimetres, one without it only in face widths.
-            ...(positionAnchorRef.current
-              ? { positionAnchor: positionAnchorRef.current }
-              : {}),
             ...(offlineGazeReport ? {
               offlineGaze: {
                 status: 'completed',
@@ -2551,14 +1896,9 @@ function App() {
         }
         setLastSavedCounts({ samples: sampleCount, images: imageCount });
         setSessionSaveStatus('saved');
-        const accuracyText = angularError != null
-          ? `${angularError.toFixed(2)}° @ ${viewingDistanceCm.toFixed(0)}cm`
-          : `${Math.round(avgError)}px`;
-        const statusMsg = errors.length === 0
-          ? 'Calibration complete (test mode)'
-          : isAccuracyGood
-            ? `Calibration Success! Mean Error: ${accuracyText}`
-            : `Calibration Complete (Accuracy: ${accuracyText})`;
+        const statusMsg = isAccuracyGood
+          ? `Calibration Success! Mean Error: ${Math.round(avgError)}px`
+          : errors.length > 0 ? `Calibration Complete (Accuracy: ${Math.round(avgError)}px)` : 'Calibration complete (test mode)';
         setLoadingMsg(statusMsg);
         setTimeout(() => {
           pathSyncSourceRef.current = 'internal';
@@ -3165,32 +2505,8 @@ function App() {
       console.warn("Fullscreen denied", e);
     }
     await startCamera();
-    // A new run gets a new anchor. Keeping the previous one would hold the
-    // participant to a pose belonging to a mapping that is about to be refitted,
-    // and would reject them for sitting differently this time — which is allowed,
-    // as long as they then stay there.
-    positionAnchorRef.current = null;
-    resumeStatusRef.current = null;
-    // Every run anchors the live face/iris scale to a distance the participant
-    // just measured. Reusing a previous K would silently assume the same person,
-    // pose and OS-level camera crop — exactly the failure this step prevents.
-    setStatus('DISTANCE_CALIBRATION');
+    setStatus('HEAD_POSITIONING');
   };
-
-  const handleDistanceCalibrated = useCallback(
-    (cal: DistanceCalibration, faceWidthCm: number | null) => {
-      distanceCalRef.current = cal;
-      faceWidthCmRef.current = faceWidthCm;
-      saveCalibration(cal);
-      console.log(
-        `[distance] ${cal.method} ${cal.distanceCm.toFixed(1)} cm ±${(cal.spreadCm ?? 0).toFixed(1)} ` +
-        `(K=${cal.k.toFixed(4)}, ${cal.pxPerCm.toFixed(1)} px/cm` +
-        `${faceWidthCm != null ? `, face ${faceWidthCm.toFixed(1)} cm` : ''})`
-      );
-      setStatus('HEAD_POSITIONING');
-    },
-    [],
-  );
 
   const handleStartCalibrationClick = () => {
     router.push('/consent');
@@ -3289,11 +2605,6 @@ function App() {
     neuroLiveGazeRef.current = { x: 0, y: 0 };
     smootherRef.current.reset();
     validationErrorsRef.current = [];
-    dotConvergenceRef.current = [];
-    // The anchor is captured on the last stable frame of head positioning, which
-    // is the frame before this runs. Clearing it here threw that capture away
-    // and left the rest of the session with no pose to police. A stale anchor
-    // from an earlier run is already cleared in handleStartProcess.
     setAccuracyScore(null);
     trackingHistoryRef.current = []; 
     setCapturedImages([]); // Reset images
@@ -3360,26 +2671,11 @@ function App() {
   };
 
   const buildOfflineSessionMeta = (): SessionMeta => {
-    // Physical geometry, measured where possible. `widthCm` used to be a
-    // hard-coded 34.5 paired with `window.innerWidth` — the monitor's width next
-    // to the *viewport's* pixel count, two quantities that only agree by
-    // accident. Both now come from the card measurement, and the viewing
-    // distance from the blind-spot calibration rather than the config target.
-    // Every degree the backend reports rests on these two numbers.
-    const scale = loadScreenScale();
-    const cal = distanceCalRef.current;
-    const widthPx = window.innerWidth;
-    const widthCm = scale ? widthPx / scale.pxPerCm : 34.5;
-    const viewingDistanceCm =
-      cal && lastFaceWidthRef.current != null
-        ? distanceFromFace(cal, toFaceScale(lastFaceWidthRef.current))
-        : configRef.current.faceDistance;
-
     return metaRecorderRef.current.build({
-      widthPx,
+      widthPx: window.innerWidth,
       heightPx: window.innerHeight,
-      widthCm,
-      viewingDistanceCm,
+      widthCm: 34.5,   // TODO: set to your monitor's real physical width (cm) for accurate degree units
+      viewingDistanceCm: configRef.current.faceDistance,
       glasses: !!demographicsRef.current?.wearsGlasses,
     });
   };
@@ -3388,102 +2684,6 @@ function App() {
   // recorded calibration video + its meta.json (per-dot windows on the video
   // clock) so they can be dropped into backend/data and run through
   // `python -m app.reprocess`. Off by default — zero effect on normal sessions.
-  /**
-   * One console call that captures everything needed to diagnose a wrong
-   * distance, so nobody has to be walked through reading six numbers off four
-   * screens one at a time.
-   *
-   *     await __eyeDiag(40)   // sit at a tape-measured 40 cm, then call it
-   *
-   * Samples for two seconds and reports medians, because every live quantity
-   * here jitters and a single frame proves nothing. Call it at two or three
-   * measured distances; the collected rows are what separate a camera that hides
-   * movement from a scale constant that is simply wrong, and neither can be told
-   * from the other with one reading.
-   */
-  useEffect(() => {
-    if (!POSE_TELEMETRY || typeof window === 'undefined') return;
-    const rows: Record<string, unknown>[] = [];
-
-    (window as unknown as Record<string, unknown>).__eyeDiag = async (trueCm?: number) => {
-      const samples: { canthal: number; iris: number; reported: number }[] = [];
-      const cal = distanceCalRef.current;
-      const started = performance.now();
-      while (performance.now() - started < 2000) {
-        const lm = currentFaceLandmarksRef.current;
-        if (lm) {
-          const canthal = eyeTrackingService.rigidFaceWidth(lm);
-          const iris = lastIrisDiameterRef.current ?? NaN;
-          samples.push({
-            canthal,
-            iris,
-            reported: cal && canthal > 0
-              ? distanceFromFace(cal, toFaceScale(canthal), iris)
-              : NaN,
-          });
-        }
-        await new Promise((r) => setTimeout(r, 33));
-      }
-      const med = (pick: (s: { canthal: number; iris: number; reported: number }) => number) => {
-        const v = samples.map(pick).filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b);
-        return v.length ? v[v.length >> 1] : NaN;
-      };
-
-      const track = (videoRef.current?.srcObject as MediaStream | undefined)?.getVideoTracks?.()[0];
-      const st = track?.getSettings?.() ?? {};
-      const focal = loadFocal(cameraKey);
-      const scale = loadScreenScale();
-      const lm = currentFaceLandmarksRef.current;
-      const pose = lm ? eyeTrackingService.headPose(lm) : null;
-
-      const row = {
-        trueCm: trueCm ?? null,
-        canthalScale: +med((x) => x.canthal).toFixed(5),
-        irisScale: +med((x) => x.iris).toFixed(5),
-        reportedCm: +med((x) => x.reported).toFixed(1),
-        frames: samples.length,
-      };
-      rows.push(row);
-
-      const out = {
-        rows,
-        camera: {
-          key: cameraKey,
-          resolution: `${st.width ?? '?'}x${st.height ?? '?'}`,
-          deviceId: (st.deviceId ?? '').slice(0, 12),
-          focal: focal
-            ? {
-                f: +focal.f.toFixed(4),
-                fovDeg: +fovDegFromFocal(focal.f).toFixed(1),
-                method: focal.method,
-                measuredAt: focal.measuredAt,
-                bootstrapDistanceCm: focal.bootstrapDistanceCm,
-                faceWidthCm: focal.faceWidthCm,
-              }
-            : null,
-        },
-        display: scale ? { pxPerCm: +scale.pxPerCm.toFixed(2), measuredAt: scale.measuredAt } : null,
-        sessionCalibration: cal
-          ? { k: +cal.k.toFixed(5), method: cal.method, distanceCm: +cal.distanceCm.toFixed(1),
-              faceWidthCm: cal.faceWidthCm, irisK: cal.irisK, cameraKey: cal.cameraKey,
-              spreadCm: cal.spreadCm }
-          : null,
-        pose: pose
-          ? { yaw: +((pose.yaw * 180) / Math.PI).toFixed(1),
-              pitch: +((pose.pitch * 180) / Math.PI).toFixed(1),
-              roll: +((pose.roll * 180) / Math.PI).toFixed(1),
-              source: eyeTrackingService.poseSource }
-          : null,
-        config: { faceDistance: configRef.current.faceDistance },
-      };
-      console.log('%c=== EYE DIAG — copy everything below ===', 'font-weight:bold');
-      console.log(JSON.stringify(out, null, 2));
-      return out;
-    };
-
-    return () => { delete (window as unknown as Record<string, unknown>).__eyeDiag; };
-  }, [cameraKey]);
-
   const maybeExportOfflineMeta = (videoBlob: Blob | null) => {
     try {
       if (typeof window === 'undefined') return;
@@ -3617,19 +2817,6 @@ function App() {
       <AppMainOverlays
         status={status}
         currentScreen={currentScreen}
-        currentNeuroTestId={currentNeuroTestId}
-        distanceCalibrationProps={{
-          targetDistanceCm: config.faceDistance,
-          faceWidthNorm: liveFaceWidth,
-          irisDiameterNorm: liveIrisDiameter,
-          onComplete: handleDistanceCalibrated,
-          distanceTolerance: config.headDistanceTolerance ?? 1,
-          cameraKey,
-          // Only so the optional card-at-cheek step can freeze a frame. The
-          // element is opacity-0 during setup, not display:none, so it is still
-          // decoding frames and drawImage sees them.
-          videoRef,
-        }}
         headPosCanvasRef={headPosCanvasRef}
         headValidation={headValidation}
         positionHoldTime={positionHoldTime}
@@ -3749,10 +2936,6 @@ function App() {
         neuroConfigSnapshot={neuroConfigSnapshot}
         neuroHeadPose={neuroHeadPose}
         gazePos={gazePos}
-        // Gaze prediction is gated on head validity, so gazePos stops updating
-        // rather than going blank when the participant leaves the pose. Without
-        // this flag every test keeps recording that frozen value as a measurement.
-        gazeValid={headValidation?.valid ?? false}
         gazeModelReady={gazeModelReady}
         neuroTestResults={neuroTestResults}
         onExitRun={async () => setShowNeuroExitConfirm(true)}
