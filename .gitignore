@@ -32,3 +32,5 @@ dist-ssr
 tickets
 tsconfig.tsbuildinfo
 backup.sql
+# Exported run data — participant test results, not for the repo
+outputs/
