@@ -23,6 +23,7 @@ interface PrintData {
   createdAt: string;
   testOrderSnapshot: string[];
   configSnapshot: Record<string, any>;
+  faceDistance: number;
   testResults: Record<string, any>;
   trajectories: any[] | null;
   chartSmoothing?: ChartSmoothingConfig | null;
@@ -35,7 +36,7 @@ interface PrintData {
 }
 
 export default function ResultsPrintLayout({ data }: { data: PrintData }) {
-  const { session, testOrderSnapshot, testResults, configSnapshot, trajectories, chartSmoothing } = data;
+  const { session, testOrderSnapshot, testResults, configSnapshot, trajectories, chartSmoothing, faceDistance } = data;
 
   const configSnap = configSnapshot as {
     testParameters?: Record<string, Record<string, unknown>>;
@@ -49,7 +50,9 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
     [testResults, testOrderSnapshot, enabledTests, scoringConfig]
   );
 
-  const etScore = session.meanErrorPx != null ? eyeTrackingAccuracyScore(session.meanErrorPx) : null;
+  const angularErr =
+    session.meanErrorPx != null ? angularErrorDeg(session.meanErrorPx, faceDistance) : null;
+  const etScore = angularErr != null ? eyeTrackingAccuracyScore(angularErr) : null;
 
   const radarData = scores.map((s) => ({
     domain: s.domainName,
@@ -118,9 +121,7 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
         <div style={{ background: '#fff7ed', border: '1px solid #ffedd5', borderRadius: 12, padding: '16px 20px' }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: '#9a3412', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Visual Angular</p>
           <p style={{ fontSize: 40, fontWeight: 900, color: '#7c2d12', margin: '6px 0 0', lineHeight: 1 }}>
-            {session.meanErrorPx != null 
-              ? angularErrorDeg(session.meanErrorPx, (configSnapshot as any)?.faceDistance ?? 60).toFixed(1) 
-              : '—'}
+            {angularErr != null ? angularErr.toFixed(1) : '—'}
             <span style={{ fontSize: 18, fontWeight: 600 }}>°</span>
           </p>
           <p style={{ fontSize: 10, color: '#64748b', margin: '4px 0 0' }}>degrees error</p>

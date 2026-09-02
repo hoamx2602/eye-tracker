@@ -333,7 +333,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
   );
 
   // Eye tracking accuracy
-  const etScore = meanErrorPx != null ? eyeTrackingAccuracyScore(meanErrorPx) : null;
+  const etScore = angularErr != null ? eyeTrackingAccuracyScore(angularErr) : null;
 
 
 
@@ -432,9 +432,9 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
             {/* Quality label + diagram + metric cards — full width, centred */}
             {meanErrorPx != null && (
               <div className="flex flex-col items-center gap-3">
-                <div className={`inline-flex items-center gap-2 text-sm font-medium ${calibrationQualityColour(meanErrorPx)}`}>
+                <div className={`inline-flex items-center gap-2 text-sm font-medium ${calibrationQualityColour(angularErr)}`}>
                   <span className="text-lg">●</span>
-                  <span>{calibrationQualityLabel(meanErrorPx)}</span>
+                  <span>{calibrationQualityLabel(angularErr)}</span>
                 </div>
                 <div className="w-full max-w-[320px] rounded-xl border border-gray-800 bg-gray-900/70 p-2 overflow-visible">
                   <GazeErrorDiagram

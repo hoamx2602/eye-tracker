@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
+import { viewingDistanceCmFrom } from '@/lib/resultScoring';
 import ResultsPrintLayout from './ResultsPrintLayout';
 
 export default async function PrintPage({ params }: { params: Promise<{ runId: string }> }) {
@@ -55,6 +56,9 @@ export default async function PrintPage({ params }: { params: Promise<{ runId: s
         : { method: 'MOVING_AVERAGE', window: 6 })),
     testResults,
     trajectories,
+    // The run's configSnapshot has no faceDistance in it - see
+    // viewingDistanceCmFrom. Read it from the session, where it lives.
+    faceDistance: viewingDistanceCmFrom(run.session.config),
     session: {
       id: run.session.id,
       meanErrorPx: run.session.meanErrorPx,

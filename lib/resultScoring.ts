@@ -16,13 +16,42 @@ const LENIENT_MODE = typeof process !== 'undefined' && (process.env.NEXT_PUBLIC_
  * Uses the CSS standard: 1 CSS pixel = 1/96 inch = 2.54/96 cm.
  * Formula: θ = atan(errorCm / viewingDistanceCm) × (180/π)
  *
+ * The 1/96 inch is nominal, not measured: on a HiDPI laptop a CSS pixel is
+ * nearer 1/128 inch, so this overstates the error there by about a third. It is
+ * a systematic bias per display, which cancels when comparing two sessions on
+ * the same machine and does not when comparing across machines.
+ *
  * @param meanErrorPx   Mean error from calibration validation (CSS pixels)
  * @param viewingDistanceCm  Distance from eye to screen in centimetres (default 60)
  */
-export function angularErrorDeg(meanErrorPx: number, viewingDistanceCm = 60): number {
+export function angularErrorDeg(meanErrorPx: number, viewingDistanceCm = DEFAULT_VIEWING_DISTANCE_CM): number {
   const CM_PER_CSS_PX = 2.54 / 96; // ≈ 0.02646 cm
   const errorCm = meanErrorPx * CM_PER_CSS_PX;
   return (Math.atan(errorCm / viewingDistanceCm) * 180) / Math.PI;
+}
+
+/** Assumed eye-to-screen distance when a session recorded none. */
+export const DEFAULT_VIEWING_DISTANCE_CM = 60;
+
+/**
+ * Eye-to-screen distance a session was configured for, in cm.
+ *
+ * Three screens used to dig this out of whatever object was nearest, and two of
+ * them dug in the wrong place: a neurological run's `configSnapshot` holds only
+ * `{testOrder, testParameters, testEnabled}`, so `configSnapshot.faceDistance`
+ * was always undefined and always fell through to 60 - which is why the printed
+ * report and the participant's own results page disagreed whenever the session
+ * had run at anything but 60 cm. The distance lives on the session config.
+ */
+export function viewingDistanceCmFrom(
+  sessionConfig: unknown,
+  fallbackCm: number = DEFAULT_VIEWING_DISTANCE_CM,
+): number {
+  if (sessionConfig && typeof sessionConfig === 'object') {
+    const d = (sessionConfig as Record<string, unknown>).faceDistance;
+    if (typeof d === 'number' && Number.isFinite(d) && d > 0) return d;
+  }
+  return fallbackCm;
 }
 
 /** Clamp a value between min and max. */
@@ -494,25 +523,57 @@ export function computeAllScores(
 // Calibration quality helpers
 // ---------------------------------------------------------------------------
 
-export function calibrationQualityLabel(meanErrorPx: number | null | undefined): string {
-  if (meanErrorPx == null) return 'Unknown tracking quality';
-  if (meanErrorPx < 30) return 'Excellent tracking quality';
-  if (meanErrorPx < 60) return 'Good tracking quality';
-  if (meanErrorPx < 100) return 'Fair tracking quality';
+/**
+ * Quality bands, in degrees of visual angle.
+ *
+ * These used to be pixel thresholds - 30/60/100 px - and a pixel is the wrong
+ * unit to judge in, because what it is worth depends on both the viewing
+ * distance and the display's pixel density, and the verdict knew neither. The
+ * same 40 px reads as 1.01° at 60 cm and 2.02° at 30 cm, yet both earned the
+ * same "Good", sitting on screen beside an angle that said otherwise.
+ *
+ * The numbers below are those pixel thresholds evaluated at the 60 cm default,
+ * rounded: 30 px → 0.76°, 60 px → 1.52°, 100 px → 2.52°. So a session that
+ * ran at 60 cm keeps the verdict it already had, and every other distance now
+ * gets judged on what it actually achieved.
+ */
+export const ANGULAR_QUALITY_DEG = {
+  excellent: 0.75,
+  good: 1.5,
+  fair: 2.5,
+} as const;
+
+export function calibrationQualityLabel(angularErrDeg: number | null | undefined): string {
+  if (angularErrDeg == null) return 'Unknown tracking quality';
+  if (angularErrDeg < ANGULAR_QUALITY_DEG.excellent) return 'Excellent tracking quality';
+  if (angularErrDeg < ANGULAR_QUALITY_DEG.good) return 'Good tracking quality';
+  if (angularErrDeg < ANGULAR_QUALITY_DEG.fair) return 'Fair tracking quality';
   return 'Tracking quality was low — results may be less accurate';
 }
 
-export function calibrationQualityColour(meanErrorPx: number | null | undefined): string {
-  if (meanErrorPx == null) return 'text-gray-400';
-  if (meanErrorPx < 30) return 'text-emerald-400';
-  if (meanErrorPx < 60) return 'text-blue-400';
-  if (meanErrorPx < 100) return 'text-amber-400';
+/** One-word form of the same bands, for compact readouts. */
+export function calibrationQualityShort(angularErrDeg: number | null | undefined): string {
+  if (angularErrDeg == null) return 'Unknown';
+  if (angularErrDeg < ANGULAR_QUALITY_DEG.excellent) return 'Excellent';
+  if (angularErrDeg < ANGULAR_QUALITY_DEG.good) return 'Good';
+  if (angularErrDeg < ANGULAR_QUALITY_DEG.fair) return 'Fair';
+  return 'Poor';
+}
+
+export function calibrationQualityColour(angularErrDeg: number | null | undefined): string {
+  if (angularErrDeg == null) return 'text-gray-400';
+  if (angularErrDeg < ANGULAR_QUALITY_DEG.excellent) return 'text-emerald-400';
+  if (angularErrDeg < ANGULAR_QUALITY_DEG.good) return 'text-blue-400';
+  if (angularErrDeg < ANGULAR_QUALITY_DEG.fair) return 'text-amber-400';
   return 'text-red-400';
 }
 
-export function eyeTrackingAccuracyScore(meanErrorPx: number): number {
-  // Score 0–100: 0 px → 100, 300 px → 0 (linear, clamped)
-  return Math.round(Math.max(0, 100 - meanErrorPx / 3));
+/** Angle at which the accuracy dial reads zero - 300 px at 60 cm, the old floor. */
+export const ACCURACY_SCORE_ZERO_DEG = 7.5;
+
+export function eyeTrackingAccuracyScore(angularErrDeg: number): number {
+  // Score 0–100: 0° → 100, ACCURACY_SCORE_ZERO_DEG → 0 (linear, clamped)
+  return Math.round(clamp(100 * (1 - angularErrDeg / ACCURACY_SCORE_ZERO_DEG), 0, 100));
 }
 
 // ---------------------------------------------------------------------------

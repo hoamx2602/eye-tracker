@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { createPortal } from 'react-dom';
-import { angularErrorDeg } from '@/lib/resultScoring';
+import { angularErrorDeg, viewingDistanceCmFrom } from '@/lib/resultScoring';
 
 // Re-use the exact same visualization + metrics components from the user-facing results screen
 import NeurologicalResultParamsDrawer from '@/components/neurological/results/NeurologicalResultParamsDrawer';
@@ -31,6 +31,8 @@ type SessionContext = {
   id: string;
   meanErrorPx: number | null;
   demographics: Demographics | null;
+  /** App config snapshot for the session; carries faceDistance. */
+  config: unknown;
 };
 
 type SymptomPayload = {
@@ -642,7 +644,10 @@ export default function AdminNeuroRunDetailPage() {
               <dd className="text-sm text-slate-200 mt-0.5 tabular-nums">
                 {run.session.meanErrorPx.toFixed(1)} px
                 <span className="text-slate-400 text-xs ml-1">
-                  / {angularErrorDeg(run.session.meanErrorPx).toFixed(2)}°
+                  / {angularErrorDeg(
+                    run.session.meanErrorPx,
+                    viewingDistanceCmFrom(run.session.config),
+                  ).toFixed(2)}° @ {viewingDistanceCmFrom(run.session.config)}cm
                 </span>
                 <span className="text-slate-500 text-xs ml-1">(affects gaze accuracy)</span>
               </dd>
