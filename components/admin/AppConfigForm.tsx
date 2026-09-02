@@ -9,6 +9,8 @@ import {
   OutlierMethod,
   CalibrationMethod,
   DEFAULT_CONFIG,
+  MIN_FACE_DISTANCE_CM,
+  MAX_FACE_DISTANCE_CM,
 } from '@/types';
 
 export default function AppConfigForm() {
@@ -245,8 +247,8 @@ export default function AppConfigForm() {
                 </div>
                 <input
                   type="range"
-                  min="40"
-                  max="90"
+                  min={MIN_FACE_DISTANCE_CM}
+                  max={MAX_FACE_DISTANCE_CM}
                   step="5"
                   value={localConfig.faceDistance}
                   onChange={(e) => handleChange('faceDistance', parseInt(e.target.value, 10))}

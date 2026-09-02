@@ -1,5 +1,5 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark, FaceLandmarkerResult } from "@mediapipe/tasks-vision";
-import { EyeLandmarkIndices, EyeFeatures, HeadPose, AppConfig } from "../types";
+import { EyeLandmarkIndices, EyeFeatures, HeadPose, AppConfig, MIN_FACE_DISTANCE_CM, MAX_FACE_DISTANCE_CM } from "../types";
 
 // Lightweight inline types for optional MediaPipe outputs (avoids importing extra @mediapipe types)
 interface BlendshapeCategory { categoryName: string; score: number; }
@@ -12,6 +12,40 @@ const GAZE_BLENDSHAPES = [
   'eyeLookOutLeft',  'eyeLookOutRight',
   'eyeLookUpLeft',   'eyeLookUpRight',
 ] as const;
+
+// The distance floor lives in types.ts (MIN_FACE_DISTANCE_CM). It used to be 40
+// here because the face-size band was a straight line fitted over 40-90 cm and
+// had nowhere sensible to go past its own left edge; re-anchoring that band on
+// 1/D below is what let the floor drop to 30.
+
+/**
+ * Expected face width, as a fraction of frame width, at REF_FACE_DISTANCE_CM.
+ *
+ * A face of fixed real width subtends an angle that shrinks as 1/D, so the
+ * fraction of the frame it fills does too. One anchor point therefore fixes the
+ * whole curve, and the anchor here is the old band's centre at the default
+ * 60 cm - which leaves the default setting behaving exactly as it did.
+ *
+ * The old formula was linear in D instead: its centre moved only 0.141 -> 0.160
+ * between 60 and 40 cm, where 1/D demands 0.141 -> 0.212. Extrapolated to 30 cm
+ * that line asks for a face barely wider than at 40 cm, so someone actually
+ * sitting at 30 cm reads far above the ceiling and is told "Move Back" until
+ * they are back at 40. That is why the floor could not simply be lowered.
+ *
+ * The anchor is only true for the field of view it was measured on. That is
+ * what `faceWidthScale` is for - it rescales the measurement onto this curve,
+ * and one number suffices because the FOV correction is a constant factor at
+ * every distance.
+ */
+const REF_FACE_DISTANCE_CM = 60;
+const REF_FACE_WIDTH = 0.141;
+
+/** Half-width of the accepted band, as a fraction of the expected width. Reproduces the old band at 60 cm. */
+const FACE_WIDTH_BAND = 0.106;
+
+/** Rails on the band: below the floor the iris gets too few pixels; above the ceiling the head is leaving the frame. */
+const FACE_WIDTH_FLOOR = 0.05;
+const FACE_WIDTH_CEILING = 0.5;
 
 export interface HeadValidationResult {
   valid: boolean;
@@ -55,7 +89,7 @@ export class EyeTrackingService {
    * Uses faceDistanceCm from app config to enforce allowed distance (closer = larger face in frame).
    * faceWidthScale compensates for camera FOV; headDistanceTolerance widens the band for cameras that auto-zoom.
    * @param landmarks MediaPipe landmarks
-   * @param faceDistanceCm Target distance in cm (40–90). Used to compute allowed face size in frame.
+   * @param faceDistanceCm Target distance in cm (30–90). Used to compute allowed face size in frame.
    * @param faceWidthScale Scale applied to raw face width (1 = built-in; 0.65–0.8 typical for external 1080p webcam).
    * @param headDistanceTolerance Widen band (1 = strict, 2 = 2x band). Use 2+ when camera auto-zooms (Center Stage, etc.).
    */
@@ -75,17 +109,15 @@ export class EyeTrackingService {
     const rawFaceWidth = Math.sqrt(Math.pow(rightEdge.x - leftEdge.x, 2) + Math.pow(rightEdge.y - leftEdge.y, 2));
     const scale = Math.max(0.5, Math.min(1.5, faceWidthScale ?? 1));
     const faceWidth = Math.max(0.01, Math.min(1, rawFaceWidth * scale));
-    const D = Math.max(40, Math.min(90, faceDistanceCm));
-    let minFaceWidth = 0.09 + (90 - D) * 0.0012;
-    let maxFaceWidth = 0.17 - (D - 40) * 0.0007;
+    const D = Math.max(MIN_FACE_DISTANCE_CM, Math.min(MAX_FACE_DISTANCE_CM, faceDistanceCm));
+    // Face width in frame goes as 1/D, so the band is the expected width at D
+    // plus or minus a fixed fraction of it - see REF_FACE_WIDTH.
+    const expectedFaceWidth = REF_FACE_WIDTH * (REF_FACE_DISTANCE_CM / D);
     // Widen band when camera auto-zooms (Center Stage, Studio Effects) so user can still pass
     const tol = Math.max(1, Math.min(3, headDistanceTolerance ?? 1));
-    if (tol > 1) {
-      const center = (minFaceWidth + maxFaceWidth) / 2;
-      const halfBand = ((maxFaceWidth - minFaceWidth) / 2) * tol;
-      minFaceWidth = Math.max(0.05, center - halfBand);
-      maxFaceWidth = Math.min(0.35, center + halfBand);
-    }
+    const halfBand = FACE_WIDTH_BAND * tol;
+    const minFaceWidth = Math.max(FACE_WIDTH_FLOOR, expectedFaceWidth * (1 - halfBand));
+    const maxFaceWidth = Math.min(FACE_WIDTH_CEILING, expectedFaceWidth * (1 + halfBand));
     const debug = { faceWidth, minFaceWidth, maxFaceWidth, targetDistanceCm: D };
 
     // 1. Center Check (Horizontal & Vertical)

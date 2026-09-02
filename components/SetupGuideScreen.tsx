@@ -219,15 +219,20 @@ function PostureStep({ distanceCm, onAllViewed }: { distanceCm: number; onAllVie
     onAllViewed(true);
   }, [onAllViewed]);
 
+  // Only these three postures have been photographed. With 30 cm now a legal
+  // target the old `else 60` would have shown a 60 cm picture captioned 30 cm,
+  // so fall back to the nearest one that exists and caption it as itself.
   const validDistances = [50, 55, 60];
-  const imageDistance = validDistances.includes(distanceCm) ? distanceCm : 60;
+  const imageDistance = validDistances.reduce((best, d) =>
+    Math.abs(d - distanceCm) < Math.abs(best - distanceCm) ? d : best,
+  );
   const imgSrc = `/guide/${imageDistance}cm.png`;
 
   return (
     <div className="flex flex-col gap-4 w-full items-center">
       <img
         src={imgSrc}
-        alt={`Posture guide ${distanceCm}cm`}
+        alt={`Posture guide ${imageDistance}cm`}
         className="w-full max-h-[50vh] object-contain rounded-xl shadow-md border border-gray-700 bg-gray-800"
       />
     </div>

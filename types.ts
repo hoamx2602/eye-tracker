@@ -99,6 +99,16 @@ export enum EyeLandmarkIndices {
 
 // --- CONFIGURATION TYPES ---
 
+/**
+ * Range of target viewing distances the app will accept, in cm.
+ *
+ * One definition for the setup sliders and for the head-position check in
+ * `services/eyeTrackingService.ts`, so a slider can never offer a distance the
+ * check refuses.
+ */
+export const MIN_FACE_DISTANCE_CM = 30;
+export const MAX_FACE_DISTANCE_CM = 90;
+
 export enum RegressionMethod {
   RIDGE = 'RIDGE', // Simple, Global
   HYBRID = 'HYBRID', // Ridge + k-NN Residuals
@@ -189,7 +199,7 @@ export interface AppConfig {
   outlierThreshold: number; // For TRIM: %, For STD_DEV: Sigma count
   
   // Head Positioning
-  faceDistance: number; // Target distance in CM (e.g. 50, 60, 70)
+  faceDistance: number; // Target distance in CM, within MIN/MAX_FACE_DISTANCE_CM (e.g. 30, 50, 60)
   /** Scale for face width from different camera FOV (1 = built-in, &lt;1 e.g. 0.7 for external webcam so 60cm passes) */
   faceWidthScale: number;
   /** Widen acceptable distance band (1 = strict, 2 = 2x band for cameras that auto-zoom). Default 2 to cope with Center Stage / Studio Effects. */
