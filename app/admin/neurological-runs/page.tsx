@@ -3,6 +3,11 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { EyeIcon } from '@/components/admin/AdminIcons';
+import {
+  angularErrorDeg,
+  calibrationQualityColour,
+  viewingDistanceCmFrom,
+} from '@/lib/resultScoring';
 
 type NeuroRunRow = {
   id: string;
@@ -14,6 +19,7 @@ type NeuroRunRow = {
   preSymptomScores: unknown;
   postSymptomScores: unknown;
   testResults: unknown;
+  session: { meanErrorPx: number | null; config: unknown } | null;
 };
 
 type ListResponse = { runs: NeuroRunRow[]; nextCursor: string | null };
@@ -42,8 +48,19 @@ function testCount(row: NeuroRunRow): number {
   return 0;
 }
 
-function hasSymptoms(row: NeuroRunRow): boolean {
-  return !!(row.preSymptomScores || row.postSymptomScores);
+/**
+ * Calibration error for one row, in pixels and in the visual angle those
+ * pixels subtend at the distance the session was configured for.
+ *
+ * The angle is the comparable half: pixels mean different things at different
+ * distances, so a list sorted by px alone would rank a close-up session as
+ * better than a far one that was genuinely more accurate.
+ */
+function calibrationError(row: NeuroRunRow): { px: number; deg: number; distanceCm: number } | null {
+  const px = row.session?.meanErrorPx;
+  if (px == null) return null;
+  const distanceCm = viewingDistanceCmFrom(row.session?.config);
+  return { px, deg: angularErrorDeg(px, distanceCm), distanceCm };
 }
 
 export default function AdminNeuroRunsPage() {
@@ -117,7 +134,7 @@ export default function AdminNeuroRunsPage() {
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Created</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Tests</th>
-                    <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Symptoms</th>
+                    <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Calibration error</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider w-20">Action</th>
                   </tr>
                 </thead>
@@ -138,12 +155,19 @@ export default function AdminNeuroRunsPage() {
                       </td>
                       <td className="px-4 py-3">{statusBadge(r.status)}</td>
                       <td className="px-4 py-3 text-sm text-slate-300 tabular-nums">{testCount(r)}</td>
-                      <td className="px-4 py-3 text-sm text-slate-300">
-                        {hasSymptoms(r) ? (
-                          <span className="text-emerald-400">Pre + Post</span>
-                        ) : (
-                          <span className="text-slate-600">—</span>
-                        )}
+                      <td className="px-4 py-3 text-sm tabular-nums">
+                        {(() => {
+                          const cal = calibrationError(r);
+                          if (!cal) return <span className="text-slate-600">—</span>;
+                          return (
+                            <span className={calibrationQualityColour(cal.deg)}>
+                              {cal.px.toFixed(1)} px
+                              <span className="text-slate-500 text-xs ml-1">
+                                / {cal.deg.toFixed(2)}° @ {cal.distanceCm}cm
+                              </span>
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3">
                         <Link

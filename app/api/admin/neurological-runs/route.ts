@@ -38,6 +38,14 @@ export async function GET(request: NextRequest) {
         postSymptomScores: true,
         testOrderSnapshot: true,
         testResults: true,
+        // Calibration error column: the px figure, and the config that says
+        // which distance to convert it at.
+        session: {
+          select: {
+            meanErrorPx: true,
+            config: true,
+          },
+        },
       },
     });
 
