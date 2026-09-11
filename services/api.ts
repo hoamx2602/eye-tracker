@@ -52,6 +52,8 @@ export interface CreateSessionPayload {
     head?: { valid: boolean; message: string; faceWidth?: number; minFaceWidth?: number; maxFaceWidth?: number; targetDistanceCm?: number };
     imageUrl?: string | null;
     patternName?: string;
+    /** How the sample was collected (fixation / pursuit, frames, precision). See types.ts SampleQuality. */
+    quality?: Record<string, unknown>;
   }> | null;
   /** Per-dot video-clock windows for offline reprocessing. See lib/calibrationMeta.ts. */
   calibrationMeta?: Record<string, unknown>;

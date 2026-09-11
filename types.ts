@@ -41,16 +41,42 @@ export interface TrainingSample {
   head?: HeadSnapshot;
   /** Filled after upload when saving session. */
   imageUrl?: string;
-  /** In-memory only: blob to upload for this sample (exercise). Omitted when sending to API. */
+  /** In-memory only: face frame to upload for this sample. Omitted when sending to API. */
   blobForUpload?: Blob;
   /** Pattern name for display (e.g. "Grid point 1", "horizontal", "h_pattern"). */
   patternName?: string;
   /**
-   * Raw averaged EyeFeatures at capture time.
+   * Robust (per-field median) EyeFeatures of the frames the sample was built from.
    * Stored so feature flags can be toggled and LOOCV re-evaluated without re-calibrating.
-   * Only populated for grid calibration points (not exercise data).
    */
   rawEyeFeatures?: EyeFeatures;
+  /** How the sample was selected and how clean it was (see lib/fixationSampling). */
+  quality?: SampleQuality;
+}
+
+/** Per-sample provenance and quality, saved with the calibration samples. */
+export interface SampleQuality {
+  /**
+   * fixation          — gaze-contingent stable run on a dot
+   * fixation_fallback — no complete stable run; best run found before timeout
+   * pause             — endpoint pause of an eye-movement exercise
+   * pursuit           — latency-compensated bin of a moving exercise target
+   */
+  method: 'fixation' | 'fixation_fallback' | 'pause' | 'pursuit';
+  nFrames: number;
+  spanMs: number;
+  /** Dot onset → first frame used: a latency-to-stable-fixation proxy. */
+  settleMs?: number;
+  /** RMS spread of the used frames around their median, in iris-offset units. */
+  dispersion?: number;
+  /** How many times this dot was presented before this sample was kept. */
+  attempts?: number;
+  /** Target→feature delay applied to pursuit labels. */
+  lagMs?: number;
+  /** Validation dots: RMS sample-to-sample distance of the mapped frames (px). */
+  precisionRmsS2SPx?: number;
+  /** Validation dots: SD of the mapped frames around their mean (px). */
+  precisionSdPx?: number;
 }
 
 /** Serializable head validation snapshot for calibration samples. */

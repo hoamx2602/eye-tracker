@@ -28,10 +28,12 @@ import {
   DEFAULT_CONFIG,
   TrackingMode,
   getPatternDisplayName,
-  type EyeMovementKind
+  type EyeMovementKind,
+  OutlierMethod,
+  type SampleQuality
 } from './types';
 import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
-import { HybridRegressor, GazeSmoother, DataCleaner } from './services/mathUtils';
+import { HybridRegressor, GazeSmoother } from './services/mathUtils';
 import {
   sessionsApi,
   uploadApi,
@@ -69,6 +71,18 @@ import { CalibrationMetaRecorder, type SessionMeta } from '@/lib/calibrationMeta
 import { CONSENT_VERSION } from '@/lib/consentText';
 import { ChunkedVideoUploader } from '@/lib/chunkedUpload';
 import { NEURO_RECORD_VIDEO_ENABLED, RECORDER_TIMESLICE_MS, VIDEO_BITS_PER_SECOND } from '@/lib/recordingConfig';
+import {
+  DEFAULT_FIXATION_OPTIONS,
+  FixationCollector,
+  FixationNoiseModel,
+  buildExerciseSamples,
+  isBetterResult,
+  residualOutliers,
+  shuffled,
+  timerFixationOptions,
+  type ExerciseFrame,
+  type FixationResult,
+} from '@/lib/fixationSampling';
 import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
 import { offlineBackendUrl, offlineHandlingEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
@@ -325,7 +339,9 @@ function App() {
   // Exercise state
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const exerciseTargetRef = useRef<{ x: number; y: number } | null>(null);
-  const exerciseDataRef = useRef<{ screenX: number; screenY: number; features: number[]; head?: HeadSnapshot; rawEyeFeatures?: EyeFeatures }[]>([]);
+  const exerciseDataRef = useRef<{ t: number; screenX: number; screenY: number; features: number[]; head?: HeadSnapshot; rawEyeFeatures: EyeFeatures }[]>([]);
+  /** Blink frames seen during the current exercise, for blink padding. */
+  const exerciseBlinkTimesRef = useRef<number[]>([]);
   const exerciseBlobsRef = useRef<Blob[]>([]);
   const exerciseActiveRef = useRef(false);
   const exerciseKindRef = useRef<EyeMovementKind>('wiggling');
@@ -369,11 +385,19 @@ function App() {
   const detectionStrideRef = useRef(1);
   const detectionAvgMsRef = useRef(0);
   const isCollectingRef = useRef(false);
-  const collectionBufferRef = useRef<number[][]>([]);
-  /** Parallel raw-features buffer — same lifecycle as collectionBufferRef. Used to store
-   *  EyeFeatures per frame so the averaged result can be saved in TrainingSample.rawEyeFeatures,
-   *  enabling flag re-evaluation without re-calibrating. */
-  const rawCollectionBufferRef = useRef<EyeFeatures[]>([]);
+  /** Gaze-contingent collector for the dot on screen; null between dots. Fed by processVideo. */
+  const pointCollectorRef = useRef<FixationCollector | null>(null);
+  /** The participant's fixation noise, learnt from accepted dots; scales every stability radius. */
+  const fixationNoiseRef = useRef(new FixationNoiseModel());
+  /** Best attempt per dot (key `cal:<id>` / `val:<id>`) and where its sample sits in trainingSamplesRef. */
+  const dotAttemptsRef = useRef(new Map<string, { result: FixationResult; sampleIndex: number }>());
+  /** Presentations per dot key, successful or not — caps re-queuing. */
+  const dotAttemptCountRef = useRef(new Map<string, number>());
+  /** Grid dots queued by the residual review; their next stable result replaces the old one. */
+  const recollectKeysRef = useRef(new Set<string>());
+  const residualReviewDoneRef = useRef(false);
+  /** Validation error (px) per validation dot id; a re-presented dot overwrites its entry. */
+  const validationErrorByIdRef = useRef(new Map<number, number>());
   const trainingSamplesRef = useRef<TrainingSample[]>([]);
   const validationErrorsRef = useRef<number[]>([]); 
   const timerRef = useRef<(number | ReturnType<typeof setTimeout>)[]>([]);
@@ -413,7 +437,6 @@ function App() {
   const neuroRecordingRunIdRef = useRef<string | null>(null);
   const [lightLevel, setLightLevel] = useState<{ value: number; status: 'too_dark' | 'low' | 'ok' | 'good' } | null>(null);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
-  const calibrationImagesRef = useRef<Blob[]>([]);
   
   // --- FACE CAPTURE STATE ---
   const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
@@ -1150,8 +1173,10 @@ function App() {
     if (videoRef.current.currentTime !== lastVideoTimeRef.current) {
       lastVideoTimeRef.current = videoRef.current.currentTime;
       const currentStatus = statusRef.current;
+      // Only exercises trade detections for smooth dot motion; a static dot does
+      // not move, so while one is being collected every frame is worth keeping.
       const shouldAdaptDetectionLoad =
-        currentStatus === 'CALIBRATION' && (exerciseActiveRef.current || isCollectingRef.current);
+        currentStatus === 'CALIBRATION' && exerciseActiveRef.current;
       let skipDetectionThisFrame = false;
 
       if (shouldAdaptDetectionLoad) {
@@ -1423,6 +1448,12 @@ function App() {
         if (isHeadValidRef.current) {
             const blinking = eyeTrackingService.isBlinking(landmarks);
             setIsBlinking(blinking);
+            // Blink frames never reach the collectors, but their timing does: the
+            // frames around a blink are dropped too (lid moving, eye recovering).
+            if (blinking && statusRef.current === 'CALIBRATION') {
+              pointCollectorRef.current?.addBlink(now);
+              if (exerciseActiveRef.current) exerciseBlinkTimesRef.current.push(now);
+            }
 
             if (!blinking) {
                 // Pass optional MediaPipe outputs for richer feature extraction
@@ -1436,11 +1467,10 @@ function App() {
                   setRawFeatures(features);
                   const currentStatus = statusRef.current;
 
-                  // 1. Data Collection (grid points)
+                  // 1. Data Collection (calibration / validation dots). The collector,
+                  // not the clock, decides which of these frames the dot is built from.
                   if (currentStatus === 'CALIBRATION' && isCollectingRef.current) {
-                    const inputVector = eyeTrackingService.prepareFeatureVector(features, configRef.current);
-                    collectionBufferRef.current.push(inputVector);
-                    rawCollectionBufferRef.current.push(features);
+                    pointCollectorRef.current?.addFrame(now, features);
                   }
 
                   // 1b. Data Collection (eye movement exercises)
@@ -1463,6 +1493,7 @@ function App() {
                       if (runModeRef.current !== 'test') {
                         const len = exerciseDataRef.current.length;
                         exerciseDataRef.current.push({
+                          t: now,
                           screenX: target.x,
                           screenY: target.y,
                           features: inputVector,
@@ -1616,11 +1647,10 @@ function App() {
   const handlePointMouseDown = () => {
     if (config.calibrationMethod !== CalibrationMethod.CLICK_HOLD) return;
 
-    collectionBufferRef.current = [];
-    rawCollectionBufferRef.current = [];
+    const now = performance.now();
+    pointCollectorRef.current = new FixationCollector(now, clickHoldFixationOptions(), fixationNoiseRef.current);
     isCollectingRef.current = true;
-    holdStartTimeRef.current = performance.now();
-    metaRecorderRef.current.markWindowStart();   // dot dwell begins (click-hold mode)
+    holdStartTimeRef.current = now;
     
     const updateProgress = () => {
         const elapsed = (performance.now() - holdStartTimeRef.current) / 1000; // seconds
@@ -1643,50 +1673,49 @@ function App() {
     
     isCollectingRef.current = false;
     cancelAnimationFrame(clickAnimationRef.current);
-    
+    const collector = pointCollectorRef.current;
+    pointCollectorRef.current = null;
+
     // Check if we held long enough
-    if (success === true || calibrationProgress >= 1) {
-        processClickHoldData();
+    if ((success === true || calibrationProgress >= 1) && collector) {
+        const point = calibPoints[currentCalibIndex];
+        if (point) handleDotResult(point, collector.finalize(performance.now()));
     } else {
         // Failed / Released early
         console.warn("Released too early");
-        collectionBufferRef.current = []; // Discard bad data
-        rawCollectionBufferRef.current = [];
     }
     
     setCalibrationProgress(0);
   };
 
-  const processClickHoldData = () => {
-    const rawBuffer = collectionBufferRef.current;
-    const rawFeatBuffer = rawCollectionBufferRef.current;
-
-    // TEMPORAL TRIMMING: Remove first 20% and last 20% of frames
-    // This removes jitter from the click action and the release anticipation
-    if (rawBuffer.length > 5) {
-        const cutAmount = Math.floor(rawBuffer.length * 0.2);
-        // Ensure we have data left after cutting 40%
-        if (rawBuffer.length - (cutAmount * 2) > 2) {
-             const trimmedBuffer = rawBuffer.slice(cutAmount, rawBuffer.length - cutAmount);
-             // Apply same temporal trim to raw features for re-evaluation support
-             const trimmedRawFeat = rawFeatBuffer.slice(cutAmount, rawFeatBuffer.length - cutAmount);
-             processCalibBuffer(trimmedBuffer, trimmedRawFeat);
-             return;
-        }
-    }
-
-    // Fallback if data is too short
-    console.warn("Buffer too short after trimming");
-    setRetryCount(c => c + 1);
+  /** k for the final MAD rejection, from the Data Hygiene setting (TRIM_TAILS keeps the default). */
+  const outlierMadK = (): number => {
+    const c = configRef.current;
+    if (c.outlierMethod === OutlierMethod.NONE) return Infinity;
+    if (c.outlierMethod === OutlierMethod.STD_DEV) return c.outlierThreshold;
+    return DEFAULT_FIXATION_OPTIONS.madK;
   };
 
+  /** Click & Hold: the hold length caps the window; the settle floor still applies. */
+  const clickHoldFixationOptions = () => {
+    const holdMs = configRef.current.clickDuration * 1000;
+    return { ...timerFixationOptions(1, outlierMadK()), collectMs: Math.min(700, holdMs / 2), maxMs: holdMs };
+  };
 
-  // --- CALIBRATION LOGIC ENGINE (TIMER BASED) ---
+  // --- CALIBRATION LOGIC ENGINE (TIMER BASED, GAZE-CONTINGENT) ---
+  // A dot is collected only once the gaze has settled on it (FixationCollector,
+  // lib/fixationSampling.ts): the dot's capturing state switches on when a stable
+  // fixation begins, and the dot completes as soon as the stable run is long
+  // enough — or after a timeout with the best run seen. The EXERCISES phase has
+  // its own layer and must not run this: it used to record one more sample,
+  // labelled as the last grid dot, while the participant watched the exercise
+  // countdown at the center.
   useEffect(() => {
     if (status !== 'CALIBRATION') {
       timerRef.current.forEach(clearTimeout);
       timerRef.current = [];
       isCollectingRef.current = false;
+      pointCollectorRef.current = null;
       return;
     }
 
@@ -1694,47 +1723,46 @@ function App() {
     if (config.calibrationMethod === CalibrationMethod.CLICK_HOLD) {
         return;
     }
+    if (calibPhase === CalibrationPhase.EXERCISES) return;
 
     const point = calibPoints[currentCalibIndex];
     if (!point) return;
 
     setIsCapturing(false);
-    timerRef.current.forEach(clearTimeout);
-    timerRef.current = [];
 
-    // Speed configuration logic. Quick mode forces FAST (halves prep+capture) so a
-    // calibration dot takes ~1s instead of ~2s during offline smoke testing.
+    // Speed only scales how long a dot collects and how long we wait for a stable
+    // fixation; the settle floor is physiological. Quick mode forces FAST.
     const speedMultiplier = NEURO_QUICK_MODE
       ? 0.5
       : config.calibrationSpeed === 'FAST' ? 0.5 : config.calibrationSpeed === 'SLOW' ? 1.5 : 1.0;
-    const prepTime = 800 * speedMultiplier;
-    const captureTime = 1200 * speedMultiplier;
+    const opts = timerFixationOptions(speedMultiplier, outlierMadK());
+    const onset = performance.now();
+    const collector = new FixationCollector(onset, opts, fixationNoiseRef.current);
+    pointCollectorRef.current = collector;
+    isCollectingRef.current = true;
+    let capturing = false;
 
-    const tStart = setTimeout(() => {
-      collectionBufferRef.current = [];
-      rawCollectionBufferRef.current = [];
-      isCollectingRef.current = true;
-      metaRecorderRef.current.markWindowStart();   // dot dwell begins (timer mode)
-      setIsCapturing(true);
-    }, prepTime);
-
-    const tEnd = setTimeout(() => {
+    const poll = setInterval(() => {
+      const now = performance.now();
+      const state = collector.evaluate(now);
+      if (state.capturing && !capturing) {
+        capturing = true;
+        setIsCapturing(true);
+      }
+      if (!state.complete && now - onset < opts.maxMs) return;
+      clearInterval(poll);
       isCollectingRef.current = false;
+      pointCollectorRef.current = null;
       setIsCapturing(false);
-
-      const buffer = collectionBufferRef.current;
-      const rawFeatBuffer = rawCollectionBufferRef.current;
-      // Use standard cleaning for timer method
-      const cleanBuffer = DataCleaner.clean(buffer, configRef.current.outlierMethod, configRef.current.outlierThreshold);
-      processCalibBuffer(cleanBuffer, rawFeatBuffer);
-
-    }, prepTime + captureTime);
-
-    timerRef.current.push(tStart, tEnd);
+      handleDotResult(point, collector.finalize(now));
+    }, 50);
 
     return () => {
-      timerRef.current.forEach(clearTimeout);
-      timerRef.current = [];
+      clearInterval(poll);
+      if (pointCollectorRef.current === collector) {
+        pointCollectorRef.current = null;
+        isCollectingRef.current = false;
+      }
     };
 
   }, [currentCalibIndex, status, calibPoints, calibPhase, config.calibrationSpeed, config.calibrationMethod, retryCount]);
@@ -1753,114 +1781,153 @@ function App() {
     };
   };
 
-  /** Average a buffer of EyeFeatures frames into a single representative sample. */
-  const averageEyeFeatures = (feats: EyeFeatures[]): EyeFeatures => {
-    const n = feats.length;
-    const avgN = (fn: (f: EyeFeatures) => number): number =>
-      feats.reduce((s, f) => s + fn(f), 0) / n;
-    const gazeBlendshapeKeys = ['eyeLookDownLeft','eyeLookDownRight','eyeLookInLeft','eyeLookInRight','eyeLookOutLeft','eyeLookOutRight','eyeLookUpLeft','eyeLookUpRight'];
-    const hasBlendshapes = !!feats[0]?.blendshapes;
-    const hasMatrixPose  = !!feats[0]?.matrixHeadPose;
-    return {
-      leftPupil:      { x: avgN(f=>f.leftPupil.x),      y: avgN(f=>f.leftPupil.y) },
-      rightPupil:     { x: avgN(f=>f.rightPupil.x),     y: avgN(f=>f.rightPupil.y) },
-      leftEyeCenter:  { x: avgN(f=>f.leftEyeCenter.x),  y: avgN(f=>f.leftEyeCenter.y) },
-      rightEyeCenter: { x: avgN(f=>f.rightEyeCenter.x), y: avgN(f=>f.rightEyeCenter.y) },
-      leftRelative:   { x: avgN(f=>f.leftRelative.x),   y: avgN(f=>f.leftRelative.y) },
-      rightRelative:  { x: avgN(f=>f.rightRelative.x),  y: avgN(f=>f.rightRelative.y) },
-      headPose: {
-        pitch: avgN(f=>f.headPose.pitch),
-        yaw:   avgN(f=>f.headPose.yaw),
-        roll:  avgN(f=>f.headPose.roll),
-      },
-      zDistance: avgN(f=>f.zDistance),
-      leftEAR:  avgN(f=>f.leftEAR),
-      rightEAR: avgN(f=>f.rightEAR),
-      blendshapes: hasBlendshapes
-        ? Object.fromEntries(gazeBlendshapeKeys.map(k => [k, avgN(f => f.blendshapes?.[k] ?? 0)]))
-        : undefined,
-      matrixHeadPose: hasMatrixPose ? {
-        pitch: avgN(f=>f.matrixHeadPose?.pitch ?? 0),
-        yaw:   avgN(f=>f.matrixHeadPose?.yaw   ?? 0),
-        roll:  avgN(f=>f.matrixHeadPose?.roll  ?? 0),
-      } : undefined,
-    };
+  /** A dot is shown at most this many times (first try + re-queues) before its best attempt stands. */
+  const MAX_DOT_ATTEMPTS = 3;
+
+  const resetDotBookkeeping = () => {
+    dotAttemptsRef.current.clear();
+    dotAttemptCountRef.current.clear();
+    recollectKeysRef.current.clear();
+    residualReviewDoneRef.current = false;
+    validationErrorByIdRef.current.clear();
   };
 
-  // Common function to process buffer and advance state
-  const processCalibBuffer = (buffer: number[][], rawFeatBuffer?: EyeFeatures[]) => {
-     const point = calibPoints[currentCalibIndex];
+  /** Precision of a validation dot: spread of its individually mapped frames (px). */
+  const validationPrecisionPx = (result: FixationResult): Pick<SampleQuality, 'precisionRmsS2SPx' | 'precisionSdPx'> => {
+    const pts = result.frames.map((fr) =>
+      hybridRegressorRef.current.predict(
+        eyeTrackingService.prepareFeatureVector(fr.f, configRef.current),
+        configRef.current.regressionMethod,
+      ));
+    if (pts.length < 3) return {};
+    let s2s = 0;
+    for (let i = 1; i < pts.length; i++) s2s += (pts[i]!.x - pts[i - 1]!.x) ** 2 + (pts[i]!.y - pts[i - 1]!.y) ** 2;
+    const mx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+    const my = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+    const sd = Math.sqrt(pts.reduce((s, p) => s + (p.x - mx) ** 2 + (p.y - my) ** 2, 0) / pts.length);
+    return { precisionRmsS2SPx: Math.sqrt(s2s / (pts.length - 1)), precisionSdPx: sd };
+  };
 
-     if (buffer.length > 2) {
-        // Average raw EyeFeatures first (when available), then recompute the feature vector
-        // from the averaged coordinates. This is the correct approach: avg(lx) * avg(yaw)
-        // is more accurate than avg(lx * yaw) for cross-terms and quadratic features.
-        const avgRaw = (rawFeatBuffer && rawFeatBuffer.length > 1)
-          ? averageEyeFeatures(rawFeatBuffer)
-          : undefined;
+  /** Write (or overwrite) the training/validation sample for a dot from its fixation result. */
+  const storeDotSample = (point: CalibrationPoint, key: string, result: FixationResult, attempts: number, isValidation: boolean) => {
+    const screenX = (point.x / 100) * window.innerWidth;
+    const screenY = (point.y / 100) * window.innerHeight;
+    const features = eyeTrackingService.prepareFeatureVector(result.center, configRef.current);
 
-        // Primary feature vector: derive from averaged raw features when possible,
-        // fall back to averaging the processed vectors if rawFeatBuffer is missing.
-        let avgVector: number[];
-        if (avgRaw) {
-          avgVector = eyeTrackingService.prepareFeatureVector(avgRaw, configRef.current);
-        } else {
-          const numFeatures = buffer[0].length;
-          avgVector = new Array(numFeatures).fill(0);
-          for (const vec of buffer) {
-            for (let i = 0; i < numFeatures; i++) avgVector[i] += vec[i];
-          }
-          for (let i = 0; i < numFeatures; i++) avgVector[i] /= buffer.length;
-        }
+    // This dot's fixation window on the video clock, for offline reprocessing.
+    metaRecorderRef.current.putDot(key, screenX, screenY, isValidation, result.tStart, result.tEnd);
 
-        const screenX = (point.x / 100) * window.innerWidth;
-        const screenY = (point.y / 100) * window.innerHeight;
+    const quality: SampleQuality = {
+      method: result.ok ? 'fixation' : 'fixation_fallback',
+      nFrames: result.frames.length,
+      spanMs: Math.round(result.spanMs),
+      settleMs: Math.round(result.settleMs),
+      dispersion: result.dispersion,
+      attempts,
+    };
+    if (isValidation) {
+      const prediction = hybridRegressorRef.current.predict(features, configRef.current.regressionMethod);
+      const err = Math.hypot(prediction.x - screenX, prediction.y - screenY);
+      validationErrorByIdRef.current.set(point.id, err);
+      Object.assign(quality, validationPrecisionPx(result));
+      console.log(`Validation dot ${point.id - 1000}: error ${err.toFixed(1)}px, precision RMS-S2S ${quality.precisionRmsS2SPx?.toFixed(1) ?? 'n/a'}px`);
+    }
 
-        // Record this dot's window on the video clock for offline reprocessing.
-        metaRecorderRef.current.addDot(screenX, screenY, calibPhase === CalibrationPhase.VALIDATION);
+    const sample: TrainingSample = {
+      screenX,
+      screenY,
+      features,
+      timestamp: Date.now(),
+      head: toHeadSnapshot(headValidationRef.current),
+      patternName: isValidation ? `Validation point ${point.id - 1000}` : `Calibration point ${point.id}`,
+      rawEyeFeatures: result.center,
+      quality,
+    };
+    const sampleIndex = dotAttemptsRef.current.get(key)?.sampleIndex ?? trainingSamplesRef.current.length;
+    trainingSamplesRef.current[sampleIndex] = sample;
+    // A re-collected dot replaces its sample; the old face capture no longer belongs to it.
+    uploadedImageUrlsRef.current.delete(sampleIndex);
+    dotAttemptsRef.current.set(key, { result, sampleIndex });
+    setTrainingData([...trainingSamplesRef.current]);
+    captureCurrentFrameAsBlob().then((b) => { if (b) sample.blobForUpload = b; });
+  };
 
-        if (calibPhase !== CalibrationPhase.VALIDATION) {
-            const newSample: TrainingSample = {
-              screenX,
-              screenY,
-              features: avgVector,
-              timestamp: Date.now(),
-              head: toHeadSnapshot(headValidationRef.current),
-              patternName: `Calibration point ${point.id}`,
-              rawEyeFeatures: avgRaw,
-            };
-            trainingSamplesRef.current.push(newSample);
-            setTrainingData([...trainingSamplesRef.current]);
-            captureCurrentFrameAsBlob().then((b) => b && calibrationImagesRef.current.push(b));
-        } else {
-            const prediction = hybridRegressorRef.current.predict(avgVector, configRef.current.regressionMethod);
-            const err = Math.sqrt(Math.pow(prediction.x - screenX, 2) + Math.pow(prediction.y - screenY, 2));
-            validationErrorsRef.current.push(err);
-            const validationSample: TrainingSample = {
-              screenX,
-              screenY,
-              features: avgVector,
-              timestamp: Date.now(),
-              head: toHeadSnapshot(headValidationRef.current),
-              patternName: `Validation point ${currentCalibIndex + 1}`,
-              rawEyeFeatures: avgRaw,
-            };
-            trainingSamplesRef.current.push(validationSample);
-            setTrainingData([...trainingSamplesRef.current]);
-            console.log(`Validation Point ${currentCalibIndex + 1}: Error ${err.toFixed(1)}px`);
-        }
+  /**
+   * Tobii calibration steps 8–9: after the grid, check each dot's held-out
+   * error and show the dots that stand out once more. Returns the dots to queue.
+   */
+  const reviewGridResiduals = (): CalibrationPoint[] => {
+    const entries = [...dotAttemptsRef.current.entries()].filter(([key]) => key.startsWith('cal:'));
+    const pts = entries.map(([, a]) => {
+      const s = trainingSamplesRef.current[a.sampleIndex]!;
+      const c = a.result.center;
+      return {
+        screenX: s.screenX,
+        screenY: s.screenY,
+        gx: (c.leftRelative.x + c.rightRelative.x) / 2,
+        gy: (c.leftRelative.y + c.rightRelative.y) / 2,
+      };
+    });
+    const { indices, residualsPx } = residualOutliers(pts);
+    const byId = new Map(calibPoints.map((p) => [p.id, p]));
+    const queue: CalibrationPoint[] = [];
+    for (const i of indices) {
+      const key = entries[i]![0];
+      const point = byId.get(Number(key.slice(4)));
+      if (!point) continue;
+      recollectKeysRef.current.add(key);
+      queue.push({ ...point });
+      console.log(`[Calibration] Re-collecting ${key}: held-out error ${residualsPx[i]!.toFixed(0)}px`);
+    }
+    return queue;
+  };
 
-        // Advance only if successful
-        if (currentCalibIndex < calibPoints.length - 1) {
-            setCurrentCalibIndex(prev => prev + 1);
-        } else {
-            finishCurrentPhase();
-        }
-
-      } else {
-          console.warn(`Point ${currentCalibIndex} skipped/retrying: Insufficient data`);
-          setRetryCount(c => c + 1); 
+  /** Next dot, appending re-queued dots; at the end of the grid, one residual review. */
+  const advanceDot = (requeue: CalibrationPoint[]) => {
+    const queueLength = calibPoints.length + requeue.length;
+    if (requeue.length) setCalibPoints((prev) => [...prev, ...requeue]);
+    if (currentCalibIndex < queueLength - 1) {
+      setCurrentCalibIndex((prev) => prev + 1);
+      return;
+    }
+    // Quick mode is a pipeline smoke test; it skips the review to stay fast.
+    if (calibPhase === CalibrationPhase.INITIAL_MAPPING && !residualReviewDoneRef.current && !NEURO_QUICK_MODE) {
+      residualReviewDoneRef.current = true;
+      const review = reviewGridResiduals();
+      if (review.length) {
+        setCalibPoints((prev) => [...prev, ...review]);
+        setCurrentCalibIndex((prev) => prev + 1);
+        return;
       }
+    }
+    finishCurrentPhase();
+  };
+
+  /**
+   * What a dot's collection produced: keep the best attempt per dot, and show a
+   * dot again at the end of the queue when it gave no complete stable fixation
+   * — at most MAX_DOT_ATTEMPTS times, after which its best attempt stands (or
+   * the dot is skipped). Never blocks the participant.
+   */
+  const handleDotResult = (point: CalibrationPoint, result: FixationResult | null) => {
+    const isValidation = calibPhase === CalibrationPhase.VALIDATION;
+    const key = `${isValidation ? 'val' : 'cal'}:${point.id}`;
+    const attempts = (dotAttemptCountRef.current.get(key) ?? 0) + 1;
+    dotAttemptCountRef.current.set(key, attempts);
+
+    // A dot flagged by the residual review is replaced by its new stable fixation.
+    const recollecting = recollectKeysRef.current.delete(key);
+    const previous = dotAttemptsRef.current.get(key)?.result;
+    if (result && (recollecting ? result.ok || !previous : isBetterResult(result, previous))) {
+      storeDotSample(point, key, result, attempts, isValidation);
+    }
+
+    if (!result) console.warn(`[Calibration] ${key}: no usable fixation (attempt ${attempts})`);
+    else if (!result.ok) console.warn(`[Calibration] ${key}: no stable fixation, best run ${result.frames.length} frames (attempt ${attempts})`);
+
+    const haveStable = dotAttemptsRef.current.get(key)?.result.ok ?? false;
+    const requeue = !haveStable && !recollecting && attempts < MAX_DOT_ATTEMPTS;
+    advanceDot(requeue ? [{ ...point }] : []);
   };
 
   /**
@@ -1917,6 +1984,7 @@ function App() {
         head: s.head,
         imageUrl: imageUrlByIndex.get(i) ?? undefined,
         ...(s.patternName != null && { patternName: s.patternName }),
+        ...(s.quality && { quality: s.quality }),
       }));
       const calibrationImageUrls = calibrationGazeSamples
         .map((s) => s.imageUrl)
@@ -2067,15 +2135,12 @@ function App() {
    */
   const flushPendingImageUploads = useCallback(async () => {
     const samples = trainingSamplesRef.current;
-    const gridImages = calibrationImagesRef.current;
     const uploaded = uploadedImageUrlsRef.current;
 
     const pending: { sampleIndex: number; blob: Blob }[] = [];
     for (let i = 0; i < samples.length; i++) {
       if (uploaded.has(i)) continue;
-      const blob = i < gridImages.length
-        ? gridImages[i] ?? null
-        : (samples[i]!.blobForUpload ?? null);
+      const blob = samples[i]?.blobForUpload ?? null;
       if (blob) pending.push({ sampleIndex: i, blob });
     }
 
@@ -2150,85 +2215,58 @@ function App() {
   const processExerciseData = () => {
     const data = exerciseDataRef.current;
     const blobs = exerciseBlobsRef.current.slice();
+    const blinkTimes = exerciseBlinkTimesRef.current.slice();
     exerciseDataRef.current = [];
     exerciseBlobsRef.current = [];
+    exerciseBlinkTimesRef.current = [];
     exerciseActiveRef.current = false;
+
+    const kindName = EXERCISE_KINDS[currentExerciseIndex] || 'unknown';
+
+    // Zooming a dot on a flat screen changes neither vergence nor accommodation —
+    // the screen stays where it is — so forward/backward only adds copies of the
+    // center dot. It is still shown, but not trained on.
+    if (kindName === 'forward_backward') {
+      console.log('[Exercise:forward_backward] not used for training (no new gaze positions)');
+      advanceExercise();
+      return;
+    }
 
     if (data.length < 10) {
       console.warn(`[Exercise] Insufficient data (${data.length} frames), skipping`);
       return;
     }
 
-    // Trim first/last 10% (transition noise from countdown/completion)
-    const startIdx = Math.floor(data.length * 0.1);
-    const endIdx = Math.floor(data.length * 0.9);
-    const trimmed = data.slice(startIdx, endIdx);
-
-    if (trimmed.length === 0) {
-      return;
-    }
-
-    // Downsample to ~10 training samples per exercise.
-    // Keeping this low prevents exercise data from overwhelming the 9-point calibration grid.
-    // With 6 exercises × 10 = 60 exercise samples vs ~9 grid samples, ratio is ~6.7:1 instead of ~20:1.
-    // More importantly, exercises like "horizontal" produce samples with Y ≈ 0.5 (center) only —
-    // over-representing them biases regression toward center-Y predictions.
-    const targetCount = 10;
-    const step = Math.max(1, Math.floor(trimmed.length / targetCount));
-    let added = 0;
-    const kindName = EXERCISE_KINDS[currentExerciseIndex] || 'unknown';
+    // Endpoint pauses become static dots; moving segments become latency-
+    // compensated pursuit bins (lib/fixationSampling.buildExerciseSamples). The
+    // count stays small per exercise so the grid is not outweighed.
+    const frames: ExerciseFrame[] = data.map((d) => ({ t: d.t, targetX: d.screenX, targetY: d.screenY, f: d.rawEyeFeatures }));
+    const { samples, lagMs, lagEstimated } = buildExerciseSamples(frames, blinkTimes, fixationNoiseRef.current);
     const patternLabel = getPatternDisplayName(kindName as EyeMovementKind);
 
-    for (let i = 0; i < trimmed.length; i += step) {
-      const windowEnd = Math.min(i + step, trimmed.length);
-      const window = trimmed.slice(i, windowEnd);
-      if (window.length === 0) continue;
-
-      let avgX = 0, avgY = 0;
-      for (const sample of window) {
-        avgX += sample.screenX;
-        avgY += sample.screenY;
-      }
-      avgX /= window.length;
-      avgY /= window.length;
-
-      // Average raw EyeFeatures (when available), then recompute feature vector correctly.
-      // Falls back to averaging processed vectors if rawEyeFeatures are missing.
-      const rawFeatWindow = window.map(s => s.rawEyeFeatures).filter(Boolean) as EyeFeatures[];
-      let avgFeatures: number[];
-      if (rawFeatWindow.length === window.length) {
-        const avgRaw = averageEyeFeatures(rawFeatWindow);
-        avgFeatures = eyeTrackingService.prepareFeatureVector(avgRaw, configRef.current);
-      } else {
-        const numFeatures = window[0].features.length;
-        avgFeatures = new Array(numFeatures).fill(0);
-        for (const sample of window) {
-          for (let j = 0; j < numFeatures; j++) avgFeatures[j] += sample.features[j];
-        }
-        for (let j = 0; j < numFeatures; j++) avgFeatures[j] /= window.length;
-      }
-
-      // Also store avgRaw on the TrainingSample so re-evaluate covers exercise data too
-      const avgRawForSample = rawFeatWindow.length > 0 ? averageEyeFeatures(rawFeatWindow) : undefined;
-
-      const originalIndex = startIdx + i;
-      const blobIdx = Math.floor(originalIndex / 5);
-      const blobForUpload = blobIdx < blobs.length ? blobs[blobIdx] : undefined;
-
+    for (const s of samples) {
+      const blobForUpload = blobs[Math.floor(s.frameIndex / 5)];
       trainingSamplesRef.current.push({
-        screenX: avgX,
-        screenY: avgY,
-        features: avgFeatures,
+        screenX: s.screenX,
+        screenY: s.screenY,
+        features: eyeTrackingService.prepareFeatureVector(s.center, configRef.current),
         timestamp: Date.now(),
-        head: window[0].head,
+        head: data[s.frameIndex]?.head,
         patternName: patternLabel,
-        rawEyeFeatures: avgRawForSample,
+        rawEyeFeatures: s.center,
+        quality: {
+          method: s.kind,
+          nFrames: s.nFrames,
+          spanMs: Math.round(s.spanMs),
+          dispersion: s.dispersion,
+          ...(s.kind === 'pursuit' && { lagMs }),
+        },
         ...(blobForUpload && { blobForUpload }),
       });
-      added++;
     }
 
-    console.log(`[Exercise:${kindName}] Added ${added} samples from ${data.length} raw frames`);
+    const pauses = samples.filter((s) => s.kind === 'pause').length;
+    console.log(`[Exercise:${kindName}] ${pauses} pause + ${samples.length - pauses} pursuit samples from ${data.length} frames (lag ${lagMs} ms${lagEstimated ? '' : ', default'})`);
     setTrainingData([...trainingSamplesRef.current]);
   };
 
@@ -2239,6 +2277,7 @@ function App() {
       exerciseDataRef.current = [];
       exerciseBlobsRef.current = [];
       exerciseSampleStartRef.current = trainingSamplesRef.current.length;
+      exerciseBlinkTimesRef.current = [];
       exerciseKindRef.current = EXERCISE_KINDS[nextIndex];
       exerciseActiveRef.current = true;
       testSegmentStartTimeRef.current = performance.now();
@@ -2283,9 +2322,10 @@ function App() {
     console.log(`[Calibration] Trained regressor with ${data.length} total samples (grid + exercises)`);
 
     setCalibPhase(CalibrationPhase.VALIDATION);
-    setCalibPoints(VALIDATION_POINTS);
+    setCalibPoints(shuffled(VALIDATION_POINTS));
     setCurrentCalibIndex(0);
     validationErrorsRef.current = [];
+    validationErrorByIdRef.current.clear();
   };
 
   /**
@@ -2375,6 +2415,7 @@ function App() {
       exerciseDataRef.current = [];
       exerciseBlobsRef.current = [];
       exerciseSampleStartRef.current = trainingSamplesRef.current.length;
+      exerciseBlinkTimesRef.current = [];
       exerciseKindRef.current = EXERCISE_KINDS[0];
       exerciseActiveRef.current = true;
       currentTestSegmentRef.current = [];
@@ -2382,12 +2423,14 @@ function App() {
         } else {
             setStatus('CALIBRATION');
             setCalibPhase(CalibrationPhase.VALIDATION);
-            setCalibPoints(VALIDATION_POINTS);
+            setCalibPoints(shuffled(VALIDATION_POINTS));
             setCurrentCalibIndex(0);
             validationErrorsRef.current = [];
+            validationErrorByIdRef.current.clear();
         }
     }
     else if (calibPhase === CalibrationPhase.VALIDATION) {
+        validationErrorsRef.current = [...validationErrorByIdRef.current.values()];
         completeCalibrationAndStartTracking(validationErrorsRef.current, testTrajectoryRef.current);
     }
   };
@@ -2505,14 +2548,11 @@ function App() {
     async (params: CalibrationUploadParams, mode: 'background' | 'blocking'): Promise<{ id: string } | null> => {
       const { videoBlob, offlineGazeReport, errors, avgError, testTrajectories, deviceInfo, sessionOwner, timestamp } = params;
       try {
-        const gridImageCount = calibrationImagesRef.current.length;
         const samples = trainingSamplesRef.current;
         const imageUploads: { sampleIndex: number; blob: Blob }[] = [];
         for (let i = 0; i < samples.length; i++) {
           if (uploadedImageUrlsRef.current.has(i)) continue;
-          const blob = i < gridImageCount
-            ? calibrationImagesRef.current[i] ?? null
-            : (samples[i]!.blobForUpload ?? null);
+          const blob = samples[i]?.blobForUpload ?? null;
           if (blob) imageUploads.push({ sampleIndex: i, blob });
         }
 
@@ -2767,6 +2807,7 @@ function App() {
     exerciseBlobsRef.current = [];
     exerciseActiveRef.current = false;
     exerciseTargetRef.current = null;
+    exerciseBlinkTimesRef.current = [];
     if (typeof document !== 'undefined' && document.fullscreenElement) {
       document.exitFullscreen();
     }
@@ -3450,23 +3491,26 @@ function App() {
     exerciseBlobsRef.current = [];
     exerciseActiveRef.current = false;
     exerciseTargetRef.current = null;
+    exerciseBlinkTimesRef.current = [];
     testTrajectoryRef.current = [];
 
     setCalibPhase(CalibrationPhase.INITIAL_MAPPING);
 
     // Generate points based on config (denser grid for glasses wearers — see appHelpers).
     // Quick mode overrides both with the backend-minimum 6-dot grid for fast offline testing.
-    const points = generateCalibrationPoints(
+    // Random order: no anticipating the next dot, no predictable row-change jumps.
+    const points = shuffled(generateCalibrationPoints(
       NEURO_QUICK_MODE
         ? QUICK_CALIBRATION_POINTS
         : effectiveCalibrationPointCount(
             configRef.current.calibrationPointsCount,
             !!demographicsRef.current?.wearsGlasses,
           ),
-    );
+    ));
     setCalibPoints(points);
     
-    calibrationImagesRef.current = [];
+    resetDotBookkeeping();
+    fixationNoiseRef.current.reset();
     startVideoRecording();
     setSessionSaveStatus('idle');
     setSessionSaveError(null);
@@ -3741,18 +3785,18 @@ function App() {
                 // them once this attempt is replaced — clean them up rather
                 // than leave them as orphans for the life of the bucket.
                 void uploadApi.deleteBlobs([...uploadedImageUrlsRef.current.values()]);
-                setCalibPoints(generateCalibrationPoints(
+                setCalibPoints(shuffled(generateCalibrationPoints(
                   NEURO_QUICK_MODE
                     ? QUICK_CALIBRATION_POINTS
                     : effectiveCalibrationPointCount(
                         configRef.current.calibrationPointsCount,
                         !!demographicsRef.current?.wearsGlasses,
                       ),
-                ));
+                )));
                 setCurrentCalibIndex(0);
                 trainingSamplesRef.current = [];
-                calibrationImagesRef.current = [];
                 uploadedImageUrlsRef.current.clear();
+                resetDotBookkeeping();
                 setCalibrationProgress(0);
                 setRetryCount(0); // restarts grid
             } else if (currentPending?.type === 'exercise') {

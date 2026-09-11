@@ -13,12 +13,23 @@ export interface CapturedImage {
   timestamp: string;
 }
 
+/**
+ * Held-out validation dots: corners, edge midpoints and center of the same
+ * 12–88% field the exercises cover. The old set (four dots at 25/75% plus the
+ * center) only probed the easy middle of the screen, where every mapping does
+ * well; edge and corner error is what limits the tests and it went unmeasured.
+ * Presented in random order (see lib/fixationSampling.shuffled).
+ */
 export const VALIDATION_POINTS: CalibrationPoint[] = [
-  { id: 1001, x: 25, y: 25, completed: false },
-  { id: 1002, x: 75, y: 75, completed: false },
-  { id: 1003, x: 25, y: 75, completed: false },
-  { id: 1004, x: 75, y: 25, completed: false },
+  { id: 1001, x: 12, y: 12, completed: false },
+  { id: 1002, x: 50, y: 12, completed: false },
+  { id: 1003, x: 88, y: 12, completed: false },
+  { id: 1004, x: 12, y: 50, completed: false },
   { id: 1005, x: 50, y: 50, completed: false },
+  { id: 1006, x: 88, y: 50, completed: false },
+  { id: 1007, x: 12, y: 88, completed: false },
+  { id: 1008, x: 50, y: 88, completed: false },
+  { id: 1009, x: 88, y: 88, completed: false },
 ];
 
 /**
@@ -40,7 +51,7 @@ export const effectiveCalibrationPointCount = (
 /**
  * Quick-mode calibration grid size (NEXT_PUBLIC_NEURO_QUICK_MODE). This is the
  * backend's minimum for a degree-2 mapping fit (backend/app/calibration.py
- * _MIN_DOTS = 6) plus the 5 validation dots for the offline accuracy A/B — the
+ * _MIN_DOTS = 6) plus the validation dots for the offline accuracy A/B — the
  * smallest run that still lets the offline reprocess both fit AND validate.
  * Trades accuracy for speed; smoke-testing the pipeline only, never a real run.
  */
