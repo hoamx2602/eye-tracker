@@ -27,7 +27,7 @@ import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .calibration import CalibrationDot, fit_mapper
+from .calibration import CalibrationDot, fit_mapper, settle_frac_for
 from .events import ScreenGeometry, detect_events
 from .gaze_model import GazeModel, _WEIGHTS_DIR as WEIGHTS_DIR
 from .head_comp import build_compensator
@@ -97,11 +97,13 @@ async def process(
         for d in req.calibration_dots
     ]
     quality = frames.get("quality")
+    settle = settle_frac_for(req.settled_windows)
     try:
         mapper = fit_mapper(
             dots, frames["t_ms"], frames["yaw"], frames["pitch"],
             frame_quality=quality,
             outlier_sigma=req.calibration_outlier_sigma,
+            settle_frac=settle,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -160,6 +162,7 @@ async def process(
             frame_quality=quality,
             compensator=compensator,
             frame_head=head if compensator is not None else None,
+            settle_frac=settle,
         )
         validation = ValidationOut(
             n_points=rep.n_points,

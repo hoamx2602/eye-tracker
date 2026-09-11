@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .calibration import CalibrationDot, GazeMapper, _aggregate_dot, _classify_regions
+from .calibration import _SETTLE_FRAC, CalibrationDot, GazeMapper, _aggregate_dot, _classify_regions
 from .events import ScreenGeometry, _px_per_degree
 
 
@@ -89,6 +89,7 @@ def evaluate_mapper(
     glare_quality_thresh: float = 0.6,
     compensator=None,                                   # head_comp.HeadCompensator | None
     frame_head: dict[str, np.ndarray] | None = None,    # {"head_u","head_v","head_w"}
+    settle_frac: float = _SETTLE_FRAC,
 ) -> ValidationReport:
     """
     Evaluate a fitted `mapper` on independent validation dots.
@@ -125,7 +126,7 @@ def evaluate_mapper(
         else:
             mean_q = 1.0
 
-        agg = _aggregate_dot(yaw_w, pitch_w)
+        agg = _aggregate_dot(yaw_w, pitch_w, settle_frac=settle_frac)
         if agg is None:
             continue
         yaw_c, pitch_c, _, _ = agg
