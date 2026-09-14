@@ -72,9 +72,11 @@ export default function TestModeCharts({
   const smoothingLabel =
     cfg.method === 'NONE' || cfg.window < 2
       ? null
-      : cfg.method === 'GAUSSIAN'
-        ? `Gaussian smoothing (σ window ${cfg.window})`
-        : `Moving average (window ${cfg.window})`;
+      : cfg.method === 'ROBUST'
+        ? `Spike removal + median (window ${cfg.window})`
+        : cfg.method === 'GAUSSIAN'
+          ? `Gaussian smoothing (σ window ${cfg.window})`
+          : `Moving average (window ${cfg.window})`;
 
   return (
     <div className="space-y-4">

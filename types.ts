@@ -161,6 +161,8 @@ export enum CalibrationMethod {
 
 export enum ChartSmoothingMethod {
   NONE = 'NONE',
+  /** Hold off-screen samples, Hampel spike removal, short centered median (lib/smoothing.ts). */
+  ROBUST = 'ROBUST',
   MOVING_AVERAGE = 'MOVING_AVERAGE',
   GAUSSIAN = 'GAUSSIAN',
 }
@@ -324,8 +326,10 @@ export const DEFAULT_CONFIG: AppConfig = {
   faceCaptureInterval: 5, // Capture face every 5 seconds
 
   // Chart Display Defaults
-  chartSmoothingMethod: ChartSmoothingMethod.MOVING_AVERAGE,
-  chartSmoothingWindow: 7,
+  // ROBUST removes spikes and off-screen samples without rounding off saccades;
+  // a moving average only smears spikes into bumps (scripts/check-gaze-postprocess.ts).
+  chartSmoothingMethod: ChartSmoothingMethod.ROBUST,
+  chartSmoothingWindow: 5,
 
   // Glasses Optimization Defaults
   glassesOptimization: true,

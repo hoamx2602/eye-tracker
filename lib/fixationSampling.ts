@@ -292,11 +292,14 @@ export class FixationCollector {
     // landmark down. Judging EAR against this dot's own median also keeps the
     // test independent of gaze direction (the upper lid drops on downward gaze).
     const ear = Math.min(f.leftEAR, f.rightEAR);
-    if (Number.isFinite(ear) && this.ears.length >= 5 && ear < this.opts.partialBlinkRatio * median(this.ears)) {
+    const partial = Number.isFinite(ear) && this.ears.length >= 5 && ear < this.opts.partialBlinkRatio * median(this.ears);
+    // Every frame joins the reference, so a lasting change of aperture becomes the
+    // new normal instead of being rejected for the rest of the dot.
+    if (Number.isFinite(ear)) this.ears.push(ear);
+    if (partial) {
       this.addBlink(t);
       return;
     }
-    if (Number.isFinite(ear)) this.ears.push(ear);
     this.frames.push({ t, f });
   }
 

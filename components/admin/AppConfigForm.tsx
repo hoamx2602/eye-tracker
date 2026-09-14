@@ -529,27 +529,28 @@ export default function AppConfigForm() {
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Algorithm</label>
                 <select
-                  value={localConfig.chartSmoothingMethod ?? ChartSmoothingMethod.MOVING_AVERAGE}
+                  value={localConfig.chartSmoothingMethod ?? ChartSmoothingMethod.ROBUST}
                   onChange={(e) => handleChange('chartSmoothingMethod', e.target.value)}
                   className="w-full bg-slate-800 text-white rounded-lg px-3 py-2 text-sm border border-slate-600"
                 >
+                  <option value={ChartSmoothingMethod.ROBUST}>Spike removal + median (recommended)</option>
                   <option value={ChartSmoothingMethod.MOVING_AVERAGE}>Moving average</option>
                   <option value={ChartSmoothingMethod.GAUSSIAN}>Gaussian</option>
                   <option value={ChartSmoothingMethod.NONE}>None (raw)</option>
                 </select>
               </div>
-              {(localConfig.chartSmoothingMethod ?? ChartSmoothingMethod.MOVING_AVERAGE) !== ChartSmoothingMethod.NONE && (
+              {(localConfig.chartSmoothingMethod ?? ChartSmoothingMethod.ROBUST) !== ChartSmoothingMethod.NONE && (
                 <div>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-slate-400">Window size (frames)</span>
-                    <span className="font-mono">{localConfig.chartSmoothingWindow ?? 7}</span>
+                    <span className="font-mono">{localConfig.chartSmoothingWindow ?? 5}</span>
                   </div>
                   <input
                     type="range"
                     min={2}
                     max={30}
                     step={1}
-                    value={localConfig.chartSmoothingWindow ?? 7}
+                    value={localConfig.chartSmoothingWindow ?? 5}
                     onChange={(e) => handleChange('chartSmoothingWindow', parseInt(e.target.value, 10))}
                     className="w-full accent-violet-500 h-1 bg-slate-600 rounded-lg"
                   />

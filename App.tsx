@@ -83,6 +83,7 @@ import {
   type ExerciseFrame,
   type FixationResult,
 } from '@/lib/fixationSampling';
+import { PartialBlinkGate, isPlausibleGaze } from '@/lib/gazePostprocess';
 import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
 import { offlineBackendUrl, offlineHandlingEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
@@ -376,7 +377,9 @@ function App() {
   const [hasCameraStream, setHasCameraStream] = useState(false);
   
   // Initialize with Defaults
-  const smootherRef = useRef(new GazeSmoother(DEFAULT_CONFIG.minCutoff, DEFAULT_CONFIG.beta)); 
+  const smootherRef = useRef(new GazeSmoother(DEFAULT_CONFIG.minCutoff, DEFAULT_CONFIG.beta));
+  /** Drops partial-blink frames from the live gaze stream (zero lag; see lib/gazePostprocess). */
+  const partialBlinkGateRef = useRef(new PartialBlinkGate()); 
   const requestRef = useRef<number>(0);
   const heatmapRef = useRef<HeatmapRef>(null);
   
@@ -3289,10 +3292,18 @@ function App() {
   }, [neuroTestOrder, neuroConfigSnapshot?.testEnabled, NEURO_TEST_PROGRESS_LS_KEY, router]);
 
   const predictGaze = (features: EyeFeatures, timestamp: number) => {
+    // Both gates drop the frame and hold the last output — they never delay one,
+    // so saccade latency / velocity in the neuro tests are unaffected.
+    // A partial blink drags the iris landmark down without crossing the blink threshold.
+    if (partialBlinkGateRef.current.isPartialBlink(features, timestamp)) return;
+
     const inputVector = eyeTrackingService.prepareFeatureVector(features, configRef.current);
 
     // Pass the configured method to the regressor
     const prediction = hybridRegressorRef.current.predict(inputVector, configRef.current.regressionMethod);
+
+    // Far outside the screen the mapping is extrapolating, not measuring gaze.
+    if (!isPlausibleGaze(prediction.x, prediction.y, window.innerWidth, window.innerHeight)) return;
 
     // Compute frame quality for glasses mode: average EAR as proxy for glare/blink artifacts
     const cfg = configRef.current;
