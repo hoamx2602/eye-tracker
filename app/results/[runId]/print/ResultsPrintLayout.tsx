@@ -73,10 +73,10 @@ export default function ResultsPrintLayout({ data }: { data: PrintData }) {
   const trajectoryList = useMemo(() => {
     const raw = Array.isArray(trajectories) ? trajectories as Array<{
       patternName: string;
-      points: Array<{ t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }>;
+      points: Array<{ t: number; targetX: number; targetY: number; gazeX: number | null; gazeY: number | null }>;
     }> : [];
-    if (!chartSmoothing) return raw;
-    return raw.map(seg => smoothSegment(seg, chartSmoothing));
+    // Outliers are removed even without a stored chart setting (lib/smoothing).
+    return raw.map(seg => smoothSegment(seg, chartSmoothing ?? { method: 'REMOVE_OUTLIERS', window: 0 }));
   }, [trajectories, chartSmoothing]);
 
   return (

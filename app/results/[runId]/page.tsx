@@ -100,7 +100,7 @@ export default async function ResultsPage({ params }: Props) {
     testResults: strippedResults,
     faceDistance,
     chartSmoothing: {
-      method: appCfg.chartSmoothingMethod ?? ChartSmoothingMethod.ROBUST,
+      method: appCfg.chartSmoothingMethod ?? ChartSmoothingMethod.REMOVE_OUTLIERS,
       window: appCfg.chartSmoothingWindow ?? 5,
     },
     session: {

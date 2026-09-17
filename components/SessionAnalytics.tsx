@@ -37,7 +37,7 @@ type CalibrationSample = {
   };
 };
 
-type TestTrajectoryPoint = { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number };
+type TestTrajectoryPoint = { t: number; targetX: number; targetY: number; gazeX: number | null; gazeY: number | null };
 export type TestTrajectorySegment = { patternName: string; points: TestTrajectoryPoint[] };
 
 type Props = {
@@ -101,7 +101,7 @@ export default function SessionAnalytics({ samples, validationErrors, meanErrorP
   const shownTrajectories = useMemo(
     () => (showRawTrajectories
       ? testTrajectories
-      : testTrajectories?.map((seg) => smoothSegment(seg, { method: 'ROBUST', window: 5 }))) ?? null,
+      : testTrajectories?.map((seg) => smoothSegment(seg, { method: 'REMOVE_OUTLIERS', window: 0 }))) ?? null,
     [testTrajectories, showRawTrajectories],
   );
   const samplesWithFeatures = useMemo(
@@ -235,7 +235,7 @@ export default function SessionAnalytics({ samples, validationErrors, meanErrorP
       {testTrajectories && testTrajectories.length > 0 && (
         <SectionCard
           title="Test mode: Target vs Eye tracking"
-          subtitle="Target position (%) and predicted gaze (%) over time — each exercise step recorded in Test mode. Gaze is spike-filtered (Hampel + median) unless raw is selected."
+          subtitle="Target position (%) and predicted gaze (%) over time — each exercise step recorded in Test mode. Outliers (off-screen samples and spikes) are removed unless raw is selected; a gap is a dropped sample."
         >
           <div className="space-y-6">
             <label className="flex items-center gap-2 text-xs text-slate-400 select-none">

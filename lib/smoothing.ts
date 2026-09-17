@@ -1,63 +1,31 @@
-export type ChartPoint = { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number };
+/**
+ * Chart preparation for the Test-mode gaze traces (wiggling, horizontal, …).
+ *
+ * Outliers are *removed*, not replaced: a sample the mapping could not have
+ * produced from a real gaze leaves a gap in the line instead of a substituted
+ * value, so nothing is invented. Two kinds are dropped:
+ *
+ *   • off-screen — beyond ±25% outside the viewport, where the regression is
+ *     extrapolating (stored traces reach 1600% of the viewport);
+ *   • spikes — a sample more than 3 robust σ from its neighbours (Hampel).
+ *
+ * Removal runs for every method except NONE (raw), so it does not depend on the
+ * smoothing setting. Any smoothing then runs over the surviving samples only.
+ */
+export type ChartPoint = {
+  t: number;
+  targetX: number;
+  targetY: number;
+  /** null = removed as an outlier. */
+  gazeX: number | null;
+  gazeY: number | null;
+};
 export type ChartSegment = { patternName: string; points: ChartPoint[] };
 
 export interface ChartSmoothingConfig {
-  method: string; // 'NONE' | 'ROBUST' | 'MOVING_AVERAGE' | 'GAUSSIAN'
+  method: string; // 'NONE' | 'REMOVE_OUTLIERS' | 'MOVING_AVERAGE' | 'GAUSSIAN'
   window: number;
 }
-
-function movingAverage(data: number[], win: number): number[] {
-  const half = Math.floor(win / 2);
-  return data.map((_, i) => {
-    const start = Math.max(0, i - half);
-    const end = Math.min(data.length, i + half + 1);
-    let sum = 0;
-    for (let j = start; j < end; j++) sum += data[j];
-    return sum / (end - start);
-  });
-}
-
-function gaussianKernel(win: number): number[] {
-  const sigma = win / 4;
-  const center = Math.floor(win / 2);
-  const weights = Array.from({ length: win }, (_, i) =>
-    Math.exp(-0.5 * ((i - center) / sigma) ** 2)
-  );
-  const total = weights.reduce((a, b) => a + b, 0);
-  return weights.map((w) => w / total);
-}
-
-function gaussianSmooth(data: number[], win: number): number[] {
-  const kernel = gaussianKernel(win);
-  const half = Math.floor(win / 2);
-  return data.map((_, i) => {
-    let sum = 0, totalW = 0;
-    for (let k = 0; k < win; k++) {
-      const idx = i - half + k;
-      if (idx >= 0 && idx < data.length) {
-        sum += data[idx] * kernel[k];
-        totalW += kernel[k];
-      }
-    }
-    return sum / totalW;
-  });
-}
-
-function applySmoothing(values: number[], cfg: ChartSmoothingConfig): number[] {
-  if (cfg.method === 'NONE' || cfg.window < 2) return values;
-  if (cfg.method === 'GAUSSIAN') return gaussianSmooth(values, cfg.window);
-  // default: MOVING_AVERAGE
-  return movingAverage(values, cfg.window);
-}
-
-// ─── ROBUST: spike removal that keeps saccades sharp ────────────────────────
-//
-// Stored gaze has two kinds of jumps that are not eye movements: predictions far
-// outside the screen (the mapping extrapolating) and 1–2-sample spikes (landmark
-// glitches). Averaging only smears both into bumps. Instead: hold implausible
-// samples, replace spikes with the local median (Hampel), then a short centered
-// median, which removes what is left without rounding off a real step. Centered
-// windows add no lag; this runs on the stored series, never on the live stream.
 
 /** Chart units are % of the viewport; beyond this band the mapping is extrapolating. */
 const PLAUSIBLE_MIN_PCT = -25;
@@ -66,6 +34,10 @@ const PLAUSIBLE_MAX_PCT = 125;
 const HAMPEL_HALF = 3;
 const HAMPEL_K = 3;
 const HAMPEL_FLOOR_PCT = 1;
+/** A there-and-back excursion smaller than this is ordinary gaze noise, not a spike (% of viewport). */
+const SPIKE_FLOOR_PCT = 3;
+
+type Series = (number | null)[];
 
 function median(values: number[]): number {
   const s = [...values].sort((a, b) => a - b);
@@ -73,53 +45,125 @@ function median(values: number[]): number {
   return n % 2 ? s[(n - 1) / 2]! : (s[n / 2 - 1]! + s[n / 2]!) / 2;
 }
 
-function holdImplausible(xs: number[], ys: number[]): [number[], number[]] {
-  const first = xs.findIndex((x, i) => x >= PLAUSIBLE_MIN_PCT && x <= PLAUSIBLE_MAX_PCT && ys[i]! >= PLAUSIBLE_MIN_PCT && ys[i]! <= PLAUSIBLE_MAX_PCT);
-  let lx = first >= 0 ? xs[first]! : 50;
-  let ly = first >= 0 ? ys[first]! : 50;
-  const ox: number[] = [];
-  const oy: number[] = [];
-  for (let i = 0; i < xs.length; i++) {
-    const x = xs[i]!, y = ys[i]!;
-    if (x >= PLAUSIBLE_MIN_PCT && x <= PLAUSIBLE_MAX_PCT && y >= PLAUSIBLE_MIN_PCT && y <= PLAUSIBLE_MAX_PCT) { lx = x; ly = y; }
-    ox.push(lx);
-    oy.push(ly);
+const isNum = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** Indices whose value is more than HAMPEL_K robust σ away from their neighbourhood. */
+function hampelOutliers(values: Series): Set<number> {
+  const flagged = new Set<number>();
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (!isNum(v)) continue;
+    const window: number[] = [];
+    for (let j = Math.max(0, i - HAMPEL_HALF); j <= Math.min(values.length - 1, i + HAMPEL_HALF); j++) {
+      const w = values[j];
+      if (isNum(w)) window.push(w);
+    }
+    if (window.length < 3) continue;
+    const m = median(window);
+    const sigma = Math.max(HAMPEL_FLOOR_PCT, 1.4826 * median(window.map((x) => Math.abs(x - m))));
+    if (Math.abs(v - m) > HAMPEL_K * sigma) flagged.add(i);
   }
-  return [ox, oy];
+  return flagged;
 }
 
-function hampel(values: number[]): number[] {
+/**
+ * Indices that jump away from both neighbours and back: the neighbours agree
+ * with each other, the sample between them does not.
+ *
+ * Hampel alone misses these while the eye is moving fast, because the spread it
+ * measures over its window is then large. A real saccade is monotone — its
+ * neighbours sit far apart — so requiring the neighbours to agree keeps steps
+ * intact.
+ */
+function returnSpikes(values: Series): Set<number> {
+  const flagged = new Set<number>();
+  for (let i = 1; i < values.length - 1; i++) {
+    const a = values[i - 1], b = values[i], c = values[i + 1];
+    if (!isNum(a) || !isNum(b) || !isNum(c)) continue;
+    const excursion = Math.abs(b - (a + c) / 2);
+    const neighbourGap = Math.abs(c - a);
+    if (excursion > SPIKE_FLOOR_PCT && excursion > 2 * neighbourGap) flagged.add(i);
+  }
+  return flagged;
+}
+
+/**
+ * Drop the samples that are not plausible gaze. Both axes of a sample go
+ * together: half a coordinate is not a position.
+ */
+export function removeOutliers(xs: Series, ys: Series): { xs: Series; ys: Series; removed: number } {
+  const offScreen = (v: number | null) => !isNum(v) || v < PLAUSIBLE_MIN_PCT || v > PLAUSIBLE_MAX_PCT;
+  const plausibleX: Series = xs.map((v, i) => (offScreen(v) || offScreen(ys[i]!) ? null : v));
+  const plausibleY: Series = ys.map((v, i) => (plausibleX[i] === null ? null : v));
+
+  const flagged = new Set<number>([
+    ...hampelOutliers(plausibleX), ...hampelOutliers(plausibleY),
+    ...returnSpikes(plausibleX), ...returnSpikes(plausibleY),
+  ]);
+  let removed = 0;
+  const outX = plausibleX.map((v, i) => (flagged.has(i) ? null : v));
+  const outY = plausibleY.map((v, i) => (flagged.has(i) ? null : v));
+  for (let i = 0; i < xs.length; i++) if (isNum(xs[i]) && !isNum(outX[i])) removed++;
+  return { xs: outX, ys: outY, removed };
+}
+
+/** Removed samples stay removed; the others are averaged over their surviving neighbours. */
+function movingAverage(values: Series, win: number): Series {
+  const half = Math.floor(win / 2);
   return values.map((v, i) => {
-    const w = values.slice(Math.max(0, i - HAMPEL_HALF), i + HAMPEL_HALF + 1);
-    const m = median(w);
-    const sigma = Math.max(HAMPEL_FLOOR_PCT, 1.4826 * median(w.map((x) => Math.abs(x - m))));
-    return Math.abs(v - m) > HAMPEL_K * sigma ? m : v;
+    if (!isNum(v)) return null;
+    let sum = 0;
+    let n = 0;
+    for (let j = Math.max(0, i - half); j <= Math.min(values.length - 1, i + half); j++) {
+      const w = values[j];
+      if (isNum(w)) { sum += w; n++; }
+    }
+    return n ? sum / n : v;
   });
 }
 
-function medianFilter(values: number[], half: number): number[] {
-  return values.map((_, i) => median(values.slice(Math.max(0, i - half), i + half + 1)));
+function gaussianSmooth(values: Series, win: number): Series {
+  const sigma = win / 4;
+  const half = Math.floor(win / 2);
+  return values.map((v, i) => {
+    if (!isNum(v)) return null;
+    let sum = 0;
+    let totalW = 0;
+    for (let j = Math.max(0, i - half); j <= Math.min(values.length - 1, i + half); j++) {
+      const w = values[j];
+      if (!isNum(w)) continue;
+      const weight = Math.exp(-0.5 * ((j - i) / sigma) ** 2);
+      sum += w * weight;
+      totalW += weight;
+    }
+    return totalW ? sum / totalW : v;
+  });
 }
 
-/** Median half-width from the configured window: 5 → ±2 samples, capped at ±3 so short fixations survive. */
-const robustHalf = (window: number) => Math.min(3, Math.max(1, Math.floor(window / 2)));
-
-export function robustSmoothXY(xs: number[], ys: number[], window: number): [number[], number[]] {
-  const [hx, hy] = holdImplausible(xs, ys);
-  const half = robustHalf(window);
-  return [medianFilter(hampel(hx), half), medianFilter(hampel(hy), half)];
+function applySmoothing(values: Series, cfg: ChartSmoothingConfig): Series {
+  if (cfg.window < 2) return values;
+  if (cfg.method === 'GAUSSIAN') return gaussianSmooth(values, cfg.window);
+  if (cfg.method === 'MOVING_AVERAGE') return movingAverage(values, cfg.window);
+  return values; // REMOVE_OUTLIERS: removal only
 }
 
+/** Outlier removal (unless NONE) plus any configured smoothing. Never mutates the input. */
 export function smoothSegment<T extends { patternName: string; points: ChartPoint[] }>(
   seg: T,
   cfg?: ChartSmoothingConfig
 ): T {
-  if (!cfg || cfg.method === 'NONE' || cfg.window < 2) return seg;
-  const [gazeXs, gazeYs] = cfg.method === 'ROBUST'
-    ? robustSmoothXY(seg.points.map((p) => p.gazeX), seg.points.map((p) => p.gazeY), cfg.window)
-    : [applySmoothing(seg.points.map((p) => p.gazeX), cfg), applySmoothing(seg.points.map((p) => p.gazeY), cfg)];
+  const method = cfg?.method ?? 'REMOVE_OUTLIERS';
+  if (method === 'NONE') return seg;
+  const cleaned = removeOutliers(seg.points.map((p) => p.gazeX), seg.points.map((p) => p.gazeY));
+  const gazeXs = applySmoothing(cleaned.xs, { method, window: cfg?.window ?? 0 });
+  const gazeYs = applySmoothing(cleaned.ys, { method, window: cfg?.window ?? 0 });
   return {
     ...seg,
-    points: seg.points.map((p, i) => ({ ...p, gazeX: gazeXs[i], gazeY: gazeYs[i] })),
+    points: seg.points.map((p, i) => ({ ...p, gazeX: gazeXs[i] ?? null, gazeY: gazeYs[i] ?? null })),
   };
+}
+
+/** How many samples the removal drops — for captions and reports. */
+export function countOutliers(points: ChartPoint[]): number {
+  return removeOutliers(points.map((p) => p.gazeX), points.map((p) => p.gazeY)).removed;
 }

@@ -19,20 +19,24 @@ Số liệu lấy từ 61 lượt Test mode đã lưu, tổng 81.536 điểm. Đ
 
 ## 2. Hậu xử lý (đã triển khai)
 
-**Biểu đồ:** thêm cách làm mượt `ROBUST` (`lib/smoothing.ts`), đặt làm mặc định.
-- Các bước:
-  1. Điểm nằm ngoài dải −25% đến 125% màn hình được thay bằng giá trị hợp lệ gần nhất trước đó.
-  2. Lọc Hampel: điểm lệch quá 3σ khỏi median cục bộ (±3 mẫu) bị thay bằng chính median đó.
-  3. Median căn giữa ±2 mẫu.
-- Vì cửa sổ căn giữa nên không có độ trễ. Saccade vẫn giữ nguyên độ sắc.
-- Trung bình trượt (cách cũ) chỉ làm gai nhòe thành các "bướu", không loại được.
-- Trang admin session áp dụng mặc định, kèm ô chọn "Show raw gaze". Dữ liệu lưu không bị sửa.
+**Biểu đồ:** outlier bị **loại hẳn**, không thay bằng giá trị khác (`lib/smoothing.ts`). Điểm bị loại để trống, nên trên biểu đồ là một khoảng hở. Không có giá trị nào bị bịa ra.
+- Ba loại bị loại:
+  1. **Ngoài màn hình:** nằm ngoài dải −25% đến 125%, là lúc mô hình ngoại suy.
+  2. **Gai theo Hampel:** lệch quá 3σ khỏi median cục bộ (±3 mẫu).
+  3. **Gai vọt đi rồi về:** lệch khỏi trung điểm của hai mẫu kề quá 2 lần khoảng cách giữa chính hai mẫu đó, và quá 3% màn hình. Quy tắc này bắt các gai mà Hampel bỏ sót lúc mắt đang di chuyển nhanh, khi độ lệch cục bộ lớn làm ngưỡng bị nới ra.
+- **Bước nhảy thật được giữ nguyên.** Saccade là dãy đơn điệu, hai mẫu kề nằm xa nhau, nên không dính quy tắc 3.
+- **Việc loại outlier chạy cho mọi lựa chọn, trừ NONE (raw).** Do đó không phụ thuộc vào cấu hình làm mượt đang lưu trong DB. Phần làm mượt, nếu bật, chỉ chạy trên các mẫu còn lại.
+- Trang admin session áp dụng mặc định, kèm ô chọn "Show raw gaze". Dữ liệu lưu trong DB không bị sửa.
 
-| Trên 366 đoạn Test mode | Gai 1 mẫu >5% | Bước >10% | Bước lớn nhất |
-|---|---|---|---|
-| Thô | 3.72% | 8.77% | 1612% |
-| Trung bình trượt 6 | 0.24% | 3.18% | 319% |
-| **ROBUST 5** | **0.02%** | **2.79%** | **132%** |
+| Trên 366 đoạn Test mode | Mẫu bị loại | Gai 1 mẫu >5% | Gai vọt-đi-rồi-về | Bước >10% | Bước lớn nhất |
+|---|---|---|---|---|---|
+| Thô (NONE) | 0% | 3.72% | 197 | 8.77% | 1612% |
+| **Loại outlier** | **17.1%** | **0.55%** | **0** | **4.10%** | **129%** |
+| Loại outlier + trung bình trượt 6 | 17.1% | 0.01% | 0 | 0.58% | 28% |
+
+Về 0.55% excursion còn lại: đã kiểm tra cả 339 trường hợp, **không cái nào** có hai mẫu kề gần nhau (dưới 3%); khoảng cách trung vị giữa hai mẫu kề là 16.8% màn hình. Nghĩa là chúng nằm giữa một chuyển động nhanh có thật. Siết thêm sẽ xóa mất saccade thật chứ không phải xóa nhiễu.
+
+**Phân tích kết quả:** phần tính RMS sai lệch giữa gaze và target trong workbook (`scripts/lib/topRuns.ts`) bỏ qua các mẫu đã loại, và ghi kèm số mẫu bị loại của từng bài. Biểu đồ trong workbook vẽ các mẫu đó thành khoảng hở.
 
 **Luồng đo live** (`lib/gazePostprocess.ts`): chỉ bỏ frame, **không làm trễ**. Điều này quan trọng vì các bài saccadic đo độ trễ phản ứng trong khoảng 150–600 ms.
 - Bỏ dự đoán nằm ngoài màn hình quá 25%, giữ nguyên đầu ra trước đó.

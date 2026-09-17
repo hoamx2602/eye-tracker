@@ -529,17 +529,17 @@ export default function AppConfigForm() {
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Algorithm</label>
                 <select
-                  value={localConfig.chartSmoothingMethod ?? ChartSmoothingMethod.ROBUST}
+                  value={localConfig.chartSmoothingMethod ?? ChartSmoothingMethod.REMOVE_OUTLIERS}
                   onChange={(e) => handleChange('chartSmoothingMethod', e.target.value)}
                   className="w-full bg-slate-800 text-white rounded-lg px-3 py-2 text-sm border border-slate-600"
                 >
-                  <option value={ChartSmoothingMethod.ROBUST}>Spike removal + median (recommended)</option>
-                  <option value={ChartSmoothingMethod.MOVING_AVERAGE}>Moving average</option>
-                  <option value={ChartSmoothingMethod.GAUSSIAN}>Gaussian</option>
-                  <option value={ChartSmoothingMethod.NONE}>None (raw)</option>
+                  <option value={ChartSmoothingMethod.REMOVE_OUTLIERS}>Remove outliers (recommended)</option>
+                  <option value={ChartSmoothingMethod.MOVING_AVERAGE}>Remove outliers + moving average</option>
+                  <option value={ChartSmoothingMethod.GAUSSIAN}>Remove outliers + Gaussian</option>
+                  <option value={ChartSmoothingMethod.NONE}>None (raw, outliers kept)</option>
                 </select>
               </div>
-              {(localConfig.chartSmoothingMethod ?? ChartSmoothingMethod.ROBUST) !== ChartSmoothingMethod.NONE && (
+              {(localConfig.chartSmoothingMethod ?? ChartSmoothingMethod.REMOVE_OUTLIERS) !== ChartSmoothingMethod.NONE && (
                 <div>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-slate-400">Window size (frames)</span>

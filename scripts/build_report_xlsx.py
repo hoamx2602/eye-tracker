@@ -134,7 +134,8 @@ def render_trajectory(seg: dict, path: str) -> bool:
         t = t - t.min()
         for ax, axis in zip(axes, ("X", "Y")):
             tgt = np.array([p[f"target{axis}"] for p in pts], dtype=float)
-            eye = np.array([p[f"gaze{axis}"] for p in pts], dtype=float)
+            # Outliers were removed upstream (lib/smoothing): null -> nan draws a gap.
+            eye = np.array([np.nan if p.get(f"gaze{axis}") is None else p[f"gaze{axis}"] for p in pts], dtype=float)
             ax.plot(t, tgt, color="#4ADE80", linewidth=1.2, label="Target")
             ax.plot(t, eye, color="#A78BFA", linewidth=1.0, label="Eye")
             ax.set_ylabel(f"{axis} (%)", fontsize=6, color="#475569")
@@ -150,6 +151,9 @@ def render_trajectory(seg: dict, path: str) -> bool:
     title = seg.get("patternName", "")
     if rms is not None:
         title += f"  ·  {seg.get('pointCount', 0)} pts  ·  RMS {rms:.1f}% of screen"
+    removed = seg.get("outliersRemoved") or 0
+    if removed:
+        title += f"  ·  {removed} outliers removed"
     axes[0].set_title(title, fontsize=7, color="#0F172A", pad=3)
     fig.tight_layout(pad=0.3)
     fig.savefig(path, dpi=DPI, facecolor="white")

@@ -4,7 +4,7 @@
  * Both only *drop* a frame — the last output is held — and never delay one, so
  * saccade latency and peak-velocity measurements are untouched. Spike removal
  * that needs look-ahead (Hampel, median) belongs to the charts, where the whole
- * series is available: see lib/smoothing.ts (ROBUST). A causal spike filter on
+ * series is available: see lib/smoothing.ts (outlier removal). A causal spike filter on
  * the live stream mistakes the first samples of every real saccade for a spike
  * and delays it by two samples (measured: 133 ms at 15 Hz).
  */
