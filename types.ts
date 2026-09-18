@@ -300,7 +300,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   // Calibration Defaults
   calibrationMethod: CalibrationMethod.TIMER,
   calibrationSpeed: 'NORMAL',
-  calibrationPointsCount: 9, // Default to 9 points
+  // 24 dots = 6 x 4, a full rectangle at roughly equal angular spacing both ways.
+  // Replaying the stored sessions, validation error falls steadily with dot count
+  // (6: 277 px, 9: 226, 12: 199, 16: 195, 20: 181), and the outer ring is what
+  // holds the edges together. At ~2.5 s a dot this is about a minute of grid.
+  calibrationPointsCount: 24,
   clickDuration: 1.5, // 1.5 seconds hold
 
   // Outlier Defaults — 10% trim keeps the middle 80% of each capture window,
