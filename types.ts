@@ -280,7 +280,10 @@ export interface AppConfig {
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
-  regressionMethod: RegressionMethod.TPS, // Default to TPS now
+  // Replayed over 69 stored sessions (scripts/check-gaze-mapping.ts): TPS beat the
+  // ridge on 52% of them — a coin toss — while the standardised ridge beats the old
+  // unstandardised one on 67%. The extra machinery bought nothing, so ridge is the default.
+  regressionMethod: RegressionMethod.RIDGE,
   smoothingMethod: SmoothingMethod.ONE_EURO,
   
   // Smoothing Defaults — tuned for clinical assessment (low lag + fast saccade response).
