@@ -59,6 +59,8 @@ import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
 import { DEFAULT_TEST_ORDER } from '@/lib/neurologicalConfig';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, QUICK_CALIBRATION_POINTS, roundedRect } from '@/lib/appHelpers';
 import { CalibrationMetaRecorder, type SessionMeta } from '@/lib/calibrationMeta';
+import { ChunkedVideoUploader } from '@/lib/chunkedUpload';
+import { RECORDER_TIMESLICE_MS, VIDEO_BITS_PER_SECOND } from '@/lib/recordingConfig';
 import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
 import { offlineBackendUrl, offlineHandlingEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
@@ -301,6 +303,9 @@ function App() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordingResolveRef = useRef<((b: Blob | null) => void) | null>(null);
+  // Sends the video to S3 as it is recorded, so the end of the session is not
+  // spent waiting for the whole file. Null when no recording is in progress.
+  const videoUploaderRef = useRef<ChunkedVideoUploader | null>(null);
   // Records per-dot [t_start,t_end] windows on the video clock for offline reprocessing.
   const metaRecorderRef = useRef(new CalibrationMetaRecorder());
   const [isRecording, setIsRecording] = useState(false);
@@ -765,25 +770,39 @@ function App() {
     ];
     const mimeType = codecPriority.find(t => MediaRecorder.isTypeSupported(t)) ?? 'video/webm';
 
-    // High bitrate is the single most important recording setting for offline accuracy:
-    // the default (~1–2 Mbps at 720p) blurs the ~15–25px iris, which is exactly the
-    // detail gaze inference needs. ~16 Mbps preserves it at a manageable file size
-    // (~120 MB/min). See docs/EXPERT_ACCURACY_ASSESSMENT.md §1.1.
-    const RECORDING_BITS_PER_SECOND = 16_000_000;
-
+    // Bitrate matters for offline accuracy — the browser default (~1-2 Mbps at
+    // 720p) blurs the ~15-25px iris, which is exactly the detail gaze inference
+    // needs. It also decides how long the participant waits at the end, because
+    // a recording made faster than the connection can send it can only be
+    // caught up on after calibration. `lib/recordingConfig.ts` explains the
+    // trade-off and holds the number. See docs/EXPERT_ACCURACY_ASSESSMENT.md §1.1.
     try {
         const recorder = new MediaRecorder(stream, {
           mimeType,
-          videoBitsPerSecond: RECORDING_BITS_PER_SECOND,
+          videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
         });
         recordedChunksRef.current = [];
-        
+
+        // Start streaming this recording to S3 now. Anything that goes wrong in
+        // here is handled inside the uploader: it marks itself failed and the
+        // save path falls back to uploading the finished blob.
+        void videoUploaderRef.current?.abort();
+        const uploader = new ChunkedVideoUploader(
+          `calibration-${Date.now()}.webm`,
+          'video/webm'
+        );
+        uploader.start();
+        videoUploaderRef.current = uploader;
+
         recorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
+                // Kept in full as well: the offline gaze backend and the
+                // ?exportMeta=1 download both need the complete blob locally.
                 recordedChunksRef.current.push(event.data);
+                uploader.add(event.data);
             }
         };
-        
+
         recorder.onstop = () => {
             const blob = new Blob(recordedChunksRef.current, { type: mimeType });
             if (recordingResolveRef.current) {
@@ -795,7 +814,10 @@ function App() {
             recordedChunksRef.current = [];
         };
 
-        recorder.start();
+        // The timeslice is what makes streaming possible: with no argument,
+        // ondataavailable fires once at stop and the whole file is stuck in
+        // memory until the session ends.
+        recorder.start(RECORDER_TIMESLICE_MS);
         metaRecorderRef.current.startRecording();   // t=0 for offline dot windows
         mediaRecorderRef.current = recorder;
         setIsRecording(true);
@@ -1897,10 +1919,28 @@ function App() {
         // Upload video and all images in parallel (images with concurrency limit 6)
         const IMAGE_CONCURRENCY = 6;
 
+        /**
+         * Close off the streaming upload that has been running since recording
+         * began. Only the tail is still outstanding, so this is normally quick.
+         *
+         * If that upload failed at any point — no S3 CORS for ETag, a dropped
+         * connection, an older deployment without the multipart route — it
+         * returns null and we send the whole blob the original way instead.
+         */
+        const finishVideoUpload = async (): Promise<string | null> => {
+          if (!videoBlob || videoBlob.size === 0) return null;
+          const uploader = videoUploaderRef.current;
+          videoUploaderRef.current = null;
+          if (uploader) {
+            const streamedUrl = await uploader.finish();
+            if (streamedUrl) return streamedUrl;
+            setLoadingMsg('Uploading calibration video…');
+          }
+          return uploadApi.uploadBlob(videoBlob, `calibration-${timestamp}.webm`, 'video/webm');
+        };
+
         const [videoUrlResult, imageUrlsByOrder] = await Promise.all([
-          videoBlob && videoBlob.size > 0
-            ? uploadApi.uploadBlob(videoBlob, `calibration-${timestamp}.webm`, 'video/webm')
-            : Promise.resolve(null),
+          finishVideoUpload(),
           runWithConcurrency(
             imageUploads,
             IMAGE_CONCURRENCY,

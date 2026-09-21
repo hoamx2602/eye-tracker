@@ -3,7 +3,7 @@
  * With next dev / same origin: no env needed. Optional: set NEXT_PUBLIC_API_URL for different host.
  */
 
-const getBaseUrl = (): string => {
+export const getBaseUrl = (): string => {
   if (typeof window === 'undefined') return '';
   try {
     const url = (process.env as { NEXT_PUBLIC_API_URL?: string }).NEXT_PUBLIC_API_URL;
