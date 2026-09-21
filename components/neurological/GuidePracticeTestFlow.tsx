@@ -230,6 +230,7 @@ export default function GuidePracticeTestFlow({
     return (
       <PracticeGate
         title={practiceTitle ? `${practiceTitle} — practice` : 'Practice'}
+        instructionsVoiceKey={voiceKey}
         onStartRealTest={() => setPhase('realIntro')}
       >
         {content}

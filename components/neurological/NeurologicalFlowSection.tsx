@@ -270,7 +270,7 @@ export default function NeurologicalFlowSection({
             guideSteps={VISUAL_SEARCH_GUIDE_STEPS}
             enablePractice={!quickMode}
             practiceContent={(cfg) => <VisualSearchPractice config={cfg} />}
-            practiceTitle="Practice: Visual Search"
+            practiceTitle="Visual Search"
             testContent={<VisualSearchTest />}
             config={{
               ...globalParams,
@@ -294,7 +294,7 @@ export default function NeurologicalFlowSection({
             guideSteps={MEMORY_CARDS_GUIDE_STEPS}
             enablePractice={!quickMode}
             practiceContent={<MemoryCardsPractice />}
-            practiceTitle="Practice: Memory Cards (2x2)"
+            practiceTitle="Memory Cards (2x2)"
             testContent={<MemoryCardsTest />}
             config={{ 
               ...globalParams, 
@@ -317,7 +317,7 @@ export default function NeurologicalFlowSection({
             guideSteps={getAntiSaccadeGuideSteps(true)}
             enablePractice={!quickMode}
             practiceContent={(config) => <AntiSaccadePractice config={config} />}
-            practiceTitle="Practice: Anti-Saccade"
+            practiceTitle="Anti-Saccade"
             testContent={<AntiSaccadeTest />}
             config={{
               ...globalParams,
@@ -344,7 +344,7 @@ export default function NeurologicalFlowSection({
             guideSteps={SACCADIC_GUIDE_STEPS}
             enablePractice={!quickMode}
             practiceContent={<SaccadicPractice />}
-            practiceTitle="Practice: Saccadic"
+            practiceTitle="Saccadic"
             testContent={<SaccadicTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.saccadic as Record<string, unknown>) ?? { targetDurationMs: DEFAULT_TARGET_DURATION_MS, totalCycles: DEFAULT_TOTAL_CYCLES }) }}
             {...flowPropsFor('saccadic')}
@@ -359,7 +359,7 @@ export default function NeurologicalFlowSection({
             guideSteps={FIXATION_STABILITY_GUIDE_STEPS}
             enablePractice={!quickMode}
             practiceContent={<FixationStabilityPractice />}
-            practiceTitle="Practice: Fixation Stability"
+            practiceTitle="Fixation Stability"
             testContent={<FixationStabilityTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.fixation_stability as Record<string, unknown>) ?? { durationSec: DEFAULT_DURATION_SEC, blinkIntervalMs: DEFAULT_BLINK_INTERVAL_MS }) }}
             {...flowPropsFor('fixation_stability')}
@@ -374,7 +374,7 @@ export default function NeurologicalFlowSection({
             guideSteps={PERIPHERAL_VISION_GUIDE_STEPS}
             enablePractice={!quickMode}
             practiceContent={<PeripheralVisionPractice />}
-            practiceTitle="Practice: Peripheral Vision"
+            practiceTitle="Peripheral Vision"
             testContent={<PeripheralVisionTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.peripheral_vision as Record<string, unknown>) ?? { trialCount: PERIPHERAL_DEFAULT_TRIAL_COUNT, stimulusDurationMs: DEFAULT_STIMULUS_DURATION_MS, minDelayMs: DEFAULT_MIN_DELAY_MS, maxDelayMs: DEFAULT_MAX_DELAY_MS }) }}
             {...flowPropsFor('peripheral_vision')}

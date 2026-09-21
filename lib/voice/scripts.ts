@@ -169,11 +169,10 @@ export const VOICE_SCRIPTS = {
   },
 
   // ------------------------------------------------------- practice vs real
+  // Framing only — the task instructions follow it as a second clip, so this
+  // stays short. On its own it told a participant nothing about what to do.
   'practice.intro': {
-    text:
-      'This is a practice round. Nothing you do here is recorded, ' +
-      'so use it to get comfortable with the task. ' +
-      'When you feel ready, select Start real test.',
+    text: 'This is a practice round, and nothing here is recorded. Here is the task.',
   },
   // Spoken over a five-second countdown, so it has to fit inside it. The
   // "head still" reminder is left to each test's own instructions.

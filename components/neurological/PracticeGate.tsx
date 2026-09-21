@@ -1,8 +1,10 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import BottomActionBar from './BottomActionBar';
-import { VoiceControls } from '@/components/ui/VoiceButton';
+import { VoiceButton } from '@/components/ui/VoiceButton';
+import { useVoice, useVoiceOwnedClip } from '@/lib/voice/VoiceProvider';
+import type { VoiceKey } from '@/lib/voice/scripts';
 
 const PRACTICE_MIN_DELAY_MS = 5000;
 
@@ -14,6 +16,14 @@ export type PracticeGateProps = {
   title?: string;
   /** Min ms before "Start real test" button appears (default 5000). Practice can call markPracticeDone() to show earlier. */
   minDelayMs?: number;
+  /**
+   * The task's own instructions, spoken after a short practice framing.
+   *
+   * Without this the practice only announced that it was a practice, which
+   * tells a participant nothing about what they are supposed to do — and this
+   * is the screen where they are meant to learn exactly that.
+   */
+  instructionsVoiceKey?: VoiceKey | null;
 };
 
 type PracticeGateContextValue = {
@@ -31,8 +41,22 @@ export default function PracticeGate({
   onStartRealTest,
   title = 'Practice',
   minDelayMs = PRACTICE_MIN_DELAY_MS,
+  instructionsVoiceKey = null,
 }: PracticeGateProps) {
   const [showStartButton, setShowStartButton] = useState(false);
+
+  // A short "this is practice" framing, then the task's own instructions —
+  // this is the screen where the participant is meant to learn the task.
+  const voice = useVoice();
+  const speakSequence = voice?.speakSequence;
+  const sequence = useMemo<VoiceKey[]>(
+    () => (instructionsVoiceKey ? ['practice.intro', instructionsVoiceKey] : ['practice.intro']),
+    [instructionsVoiceKey]
+  );
+  useVoiceOwnedClip(sequence);
+  useEffect(() => {
+    speakSequence?.(sequence);
+  }, [speakSequence, sequence]);
 
   useEffect(() => {
     const t = setTimeout(() => setShowStartButton(true), minDelayMs);
@@ -65,7 +89,7 @@ export default function PracticeGate({
         <div className="flex-shrink-0 border-b border-gray-800/60 bg-gradient-to-b from-amber-500/10 to-transparent">
           <div className="p-6 max-w-3xl mx-auto relative">
             <div className="absolute right-0 top-4">
-              <VoiceControls voiceKey="practice.intro" label="Listen" />
+              <VoiceButton voiceKey="practice.intro" sequence={sequence} iconOnly />
             </div>
             <h2 id="practice-gate-title" className="text-2xl font-bold text-white text-center tracking-tight">
               {title}
