@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import type { GuideStep } from './types';
 import BottomActionBar from './BottomActionBar';
+import { VoiceControls } from '@/components/ui/VoiceButton';
+import type { VoiceKey } from '@/lib/voice/scripts';
 
 function InstructionIcon({ className }: { className?: string }) {
   return (
@@ -42,12 +44,15 @@ export type GuideStepsProps = {
   onComplete: () => void;
   /** Label for the final step button. Default: "Start Test" */
   completeButtonLabel?: string;
+  /** Spoken version of these steps, played on arrival. */
+  voiceKey?: VoiceKey | null;
 };
 
 export default function GuideSteps({
   steps,
   onComplete,
   completeButtonLabel = 'Start Test',
+  voiceKey = null,
 }: GuideStepsProps) {
   const [showAll] = useState(true);
   if (!steps?.length) return null;
@@ -62,7 +67,12 @@ export default function GuideSteps({
       aria-labelledby="guide-step-title"
     >
       <div className="flex-shrink-0 border-b border-gray-800/60 bg-gradient-to-b from-blue-600/10 to-transparent">
-        <div className="p-6 max-w-3xl mx-auto">
+        <div className="p-6 max-w-3xl mx-auto relative">
+          {voiceKey && (
+            <div className="absolute right-0 top-4">
+              <VoiceControls voiceKey={voiceKey} label="Listen" />
+            </div>
+          )}
           <h2 id="guide-step-title" className="text-2xl font-bold text-white text-center tracking-tight">
             {title}
           </h2>

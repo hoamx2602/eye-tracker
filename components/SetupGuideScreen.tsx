@@ -2,6 +2,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import EyeSpinner from './ui/EyeSpinner';
+import { VoiceControls } from './ui/VoiceButton';
+import type { VoiceKey } from '@/lib/voice/scripts';
 
 type SetupStep = 'camera' | 'lighting' | 'posture';
 
@@ -62,9 +64,9 @@ function CameraStep({
   }, []);
 
   return (
-    <div className="flex flex-col items-center gap-6">
+    <div className="flex flex-col items-center gap-5">
       {/* Camera icon / preview */}
-      <div className="relative w-full max-w-xs aspect-video rounded-2xl overflow-hidden bg-gray-800 border border-gray-700 flex items-center justify-center">
+      <div className="relative w-full max-w-[16rem] aspect-video rounded-2xl overflow-hidden bg-gray-800 border border-gray-700 flex items-center justify-center">
         <video
           ref={videoRef}
           className={`w-full h-full object-cover scale-x-[-1] ${status === 'granted' ? 'block' : 'hidden'}`}
@@ -92,9 +94,9 @@ function CameraStep({
 
       {/* Status message */}
       {status === 'idle' && (
-        <p className="text-sm text-gray-400 text-center leading-relaxed max-w-xs">
-          We need access to your camera to track your eye movements. Your video is processed
-          entirely on-device and is never uploaded.
+        <p className="text-sm text-gray-400 text-center leading-relaxed max-w-sm">
+          We need your camera to track your eye movements. Your video and face images are
+          stored securely, as set out in the consent you have just given.
         </p>
       )}
 
@@ -185,11 +187,11 @@ function LightingStep() {
       <p className="text-sm text-gray-400 text-center leading-relaxed mb-1">
         Good lighting helps the camera detect your eyes accurately.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         {LIGHTING_TIPS.map((tip, i) => (
           <div
             key={i}
-            className={`flex items-start gap-3 rounded-xl p-3.5 border ${
+            className={`flex items-start gap-3 rounded-xl p-3 border ${
               tip.good
                 ? 'bg-green-500/5 border-green-500/20'
                 : 'bg-red-500/5 border-red-500/20'
@@ -214,27 +216,113 @@ function LightingStep() {
 // ────────────────────────────────────────────────────────────────
 // Posture step
 // ────────────────────────────────────────────────────────────────
+
+/**
+ * The same tip-card format as the lighting step.
+ *
+ * This replaced a single illustration. The drawing showed a man at a desk with
+ * a fixed "50 cm" printed on it, which contradicted the configured distance
+ * whenever an administrator changed it, and none of it could be read by the
+ * voice guidance. Cards carry the real number and are read aloud with
+ * everything else.
+ */
+function postureTips(distanceCm: number) {
+  return [
+    {
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
+          <path strokeLinecap="round" d="M3 12h18M3 9v6M21 9v6" />
+        </svg>
+      ),
+      label: `Sit about ${distanceCm} cm from the screen`,
+      desc: 'About an arm\u2019s length. Keep it constant.',
+      good: true,
+    },
+    {
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
+          <rect x="3" y="4" width="18" height="13" rx="2" />
+          <path strokeLinecap="round" d="M9 21h6M12 17v4" />
+        </svg>
+      ),
+      label: 'Screen at eye level',
+      desc: 'Look straight ahead, not down at it.',
+      good: true,
+    },
+    {
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v10M8 7l4-4 4 4M5 21h14" />
+        </svg>
+      ),
+      label: 'Sit upright, back supported',
+      desc: 'Shoulders relaxed, back against the chair.',
+      good: true,
+    },
+    {
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+          <circle cx="12" cy="10" r="3" />
+          <path strokeLinecap="round" d="M7 19a5 5 0 0 1 10 0" />
+        </svg>
+      ),
+      label: 'Centre your face in the camera',
+      desc: 'Whole face in frame, a little space above.',
+      good: true,
+    },
+    {
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      label: 'Do not lean in or slouch',
+      desc: 'It changes your distance and spoils the calibration.',
+      good: false,
+    },
+    {
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      label: 'Do not move your head',
+      desc: 'Move only your eyes once the session starts.',
+      good: false,
+    },
+  ];
+}
+
 function PostureStep({ distanceCm, onAllViewed }: { distanceCm: number; onAllViewed: (done: boolean) => void }) {
   useEffect(() => {
     onAllViewed(true);
   }, [onAllViewed]);
 
-  // Only these three postures have been photographed. With 30 cm now a legal
-  // target the old `else 60` would have shown a 60 cm picture captioned 30 cm,
-  // so fall back to the nearest one that exists and caption it as itself.
-  const validDistances = [50, 55, 60];
-  const imageDistance = validDistances.reduce((best, d) =>
-    Math.abs(d - distanceCm) < Math.abs(best - distanceCm) ? d : best,
-  );
-  const imgSrc = `/guide/${imageDistance}cm.png`;
+  const tips = postureTips(distanceCm);
 
   return (
-    <div className="flex flex-col gap-4 w-full items-center">
-      <img
-        src={imgSrc}
-        alt={`Posture guide ${imageDistance}cm`}
-        className="w-full max-h-[50vh] object-contain rounded-xl shadow-md border border-gray-700 bg-gray-800"
-      />
+    <div className="flex flex-col gap-3 w-full">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        {tips.map((tip) => (
+          <div
+            key={tip.label}
+            className={`flex items-start gap-3 rounded-xl p-3 border ${
+              tip.good ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'
+            }`}
+          >
+            <div className={`mt-0.5 shrink-0 ${tip.good ? 'text-green-400' : 'text-red-400'}`}>
+              {tip.icon}
+            </div>
+            <div>
+              <p className={`text-sm font-semibold ${tip.good ? 'text-green-300' : 'text-red-300'}`}>
+                {tip.label}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{tip.desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -288,12 +376,19 @@ export default function SetupGuideScreen({
     posture: 'Position yourself correctly before we begin calibration.',
   };
 
+  const stepVoiceKeys: Record<SetupStep, VoiceKey> = {
+    camera: 'setup.camera',
+    lighting: 'setup.lighting',
+    posture: 'setup.posture',
+  };
+
+
   return (
     <div className="min-h-screen w-full bg-gray-900 flex items-center justify-center p-4">
       <div className="w-full max-w-lg">
 
         {/* Brand header */}
-        <div className="flex items-center gap-3 justify-center mb-8">
+        <div className="flex items-center gap-3 justify-center mb-5">
           <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
             <svg viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.5" className="w-4.5 h-4.5">
               <circle cx="10" cy="10" r="8" />
@@ -305,7 +400,7 @@ export default function SetupGuideScreen({
         </div>
 
         {/* Step progress dots */}
-        <div className="flex items-center justify-center gap-2 mb-6">
+        <div className="flex items-center justify-center gap-2 mb-4">
           {STEPS.map((s, idx) => (
             <React.Fragment key={s.id}>
               <div className="flex flex-col items-center gap-1.5">
@@ -348,13 +443,16 @@ export default function SetupGuideScreen({
         {/* Card */}
         <div className="bg-gray-800 border border-gray-700 rounded-3xl shadow-2xl overflow-hidden">
           {/* Card header */}
-          <div className="px-6 pt-6 pb-4 border-b border-gray-700">
-            <h2 className="text-lg font-bold text-white">{stepTitles[step]}</h2>
-            <p className="text-sm text-gray-400 mt-1 leading-relaxed">{stepDescriptions[step]}</p>
+          <div className="px-6 pt-5 pb-4 border-b border-gray-700 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-white">{stepTitles[step]}</h2>
+              <p className="text-sm text-gray-400 mt-1 leading-relaxed">{stepDescriptions[step]}</p>
+            </div>
+            <VoiceControls voiceKey={stepVoiceKeys[step]} />
           </div>
 
           {/* Card body */}
-          <div className="p-6">
+          <div className="px-6 py-5">
             {step === 'camera' && (
               <CameraStep
                 onGranted={() => setCameraGranted(true)}
@@ -388,7 +486,7 @@ export default function SetupGuideScreen({
         </div>
 
         {/* Step counter */}
-        <p className="text-center text-xs text-gray-600 mt-4">
+        <p className="text-center text-xs text-gray-600 mt-3">
           Step {currentIdx + 1} of {STEPS.length}
         </p>
       </div>

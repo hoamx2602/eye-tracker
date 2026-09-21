@@ -20,8 +20,12 @@ model Session {
   calibrationImageUrls   Json?
   calibrationGazeSamples Json?
   demographics           Json?
+  /// Participant-supplied email. Indexed so the same person can be found across runs.
+  participantEmail       String?
   neurologicalRun        NeurologicalRun?
   testRun                TestRun?
+
+  @@index([participantEmail])
 }
 
 model TestRun {

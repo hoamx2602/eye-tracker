@@ -16,185 +16,26 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { isOfflineMetaExportEnabled, withOfflineMetaExportFlag } from '@/lib/offlineExportMeta';
+import { VoiceButton } from '@/components/ui/VoiceButton';
+import { overviewVoiceKey, type VoiceKey } from '@/lib/voice/scripts';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Steps ───────────────────────────────────────────────────────────────────
+//
+// The wording and durations live in lib/assessmentSteps.ts, shared with the
+// voice scripts so the spoken version cannot drift from what is on screen.
+// Only the icons are local — they are JSX, and that file has to stay
+// importable from plain Node scripts.
 
-interface Step {
-  id: string;
-  label: string;
-  duration: string;
-  durationSec: number;
-  icon: React.ReactNode;
-  tagline: string;
-  description: string;
-  section: 'calibration' | 'neuro';
-}
+import {
+  CALIBRATION_STEPS as STEP_CONTENT_SET_1,
+  NEURO_STEPS as STEP_CONTENT_SET_2,
+  type AssessmentStep,
+} from '@/lib/assessmentSteps';
 
-// ─── Step data ────────────────────────────────────────────────────────────────
+type Step = AssessmentStep & { icon: React.ReactNode };
 
-// Set 1: initial calibration grid + all 6 exercise kinds (from EXERCISE_KINDS in types.ts)
-const CALIBRATION_STEPS: Step[] = [
-  {
-    id: 'calibration',
-    label: 'Calibration',
-    duration: '~45 sec',
-    durationSec: 45,
-    section: 'calibration',
-    icon: <DotGridIcon />,
-    tagline: 'Follow a series of dots to calibrate the eye tracker to your gaze.',
-    description:
-      'The eye tracker needs to learn your unique gaze patterns before any testing begins. A series of dots will appear at different positions on the screen — simply look directly at each dot as it appears. Keep your head still and relaxed throughout. The more accurately you follow the dots, the better the tracker will perform during all tests.',
-  },
-  {
-    id: 'wiggling',
-    label: 'Wiggling',
-    duration: '15-20 sec',
-    durationSec: 20,
-    section: 'calibration',
-    icon: <WiggleIcon />,
-    tagline: 'Follow a target that moves in a quick back-and-forth pattern.',
-    description:
-      'A small target will move rapidly in a short wiggling motion. Follow it as precisely as you can. This pattern exercises fine lateral eye movements and helps the tracker learn how your eyes respond to rapid small-range motion.',
-  },
-  {
-    id: 'horizontal',
-    label: 'Horizontal',
-    duration: '15-20 sec',
-    durationSec: 20,
-    section: 'calibration',
-    icon: <HArrowIcon />,
-    tagline: 'Track a target sweeping smoothly from left to right.',
-    description:
-      'A target will move steadily from one side of the screen to the other and back. Follow it with a smooth, continuous eye movement. This calibrates the tracker across the full horizontal range of your screen.',
-  },
-  {
-    id: 'vertical',
-    label: 'Vertical',
-    duration: '15-20 sec',
-    durationSec: 20,
-    section: 'calibration',
-    icon: <VArrowIcon />,
-    tagline: 'Track a target sweeping smoothly from top to bottom.',
-    description:
-      'Similar to horizontal, but the target moves from the top of the screen to the bottom and back. Follow with smooth, continuous vertical eye movement. This calibrates the tracker across the full vertical range.',
-  },
-  {
-    id: 'forward_backward',
-    label: 'Forward-Backward',
-    duration: '15-20 sec',
-    durationSec: 20,
-    section: 'calibration',
-    icon: <ZoomIcon />,
-    tagline: 'Focus on a target as it appears to move toward and away from you.',
-    description:
-      'A target will appear to approach and recede, simulating depth movement. Follow it naturally. This pattern helps the tracker account for changes in perceived gaze depth and slight shifts in head position during natural viewing.',
-  },
-  {
-    id: 'diagonal',
-    label: 'Diagonal',
-    duration: '15-20 sec',
-    durationSec: 20,
-    section: 'calibration',
-    icon: <DiagIcon />,
-    tagline: 'Track a target moving diagonally across the screen.',
-    description:
-      'The target will travel along diagonal paths — corner to corner. Follow with smooth eye movements. Diagonal patterns combine horizontal and vertical motion, ensuring the tracker is well-calibrated for all gaze directions.',
-  },
-  {
-    id: 'h_pattern',
-    label: 'H-Pattern',
-    duration: '15-20 sec',
-    durationSec: 20,
-    section: 'calibration',
-    icon: <HPatternIcon />,
-    tagline: 'Follow a target tracing the shape of the letter H.',
-    description:
-      'The target traces the outline of an H — up, across, and down on both sides. This structured pattern ensures the eye tracker is accurately calibrated in the corners and edges of the screen, where accuracy is hardest to maintain.',
-  },
-];
-
-// Set 2: 7 neurological tests (from DEFAULT_TEST_ORDER in lib/neurologicalConfig.ts)
-const NEURO_STEPS: Step[] = [
-  {
-    id: 'head_orientation',
-    label: 'Head Orientation',
-    duration: '~30 sec',
-    durationSec: 30,
-    section: 'neuro',
-    icon: <CompassIcon />,
-    tagline: 'Look in different directions while holding your head still.',
-    description:
-      'On-screen cues will guide you to look left, right, up, and down. Keep your head as still as possible — only your eyes should move. Hold your gaze in each direction until the cue changes. This test measures the range and steadiness of your eye movement in all four directions.',
-  },
-  {
-    id: 'visual_search',
-    label: 'Visual Search',
-    duration: '~30 sec',
-    durationSec: 30,
-    section: 'neuro',
-    icon: <SearchIcon />,
-    tagline: 'Find numbered targets scattered across the screen in order.',
-    description:
-      'Numbers will be scattered randomly across the screen. Find and look at each number in order from 1 upward, as quickly as you can — no clicking required, just gaze at the correct number. This measures how efficiently your eyes scan and search a visual scene.',
-  },
-  {
-    id: 'memory_cards',
-    label: 'Memory Cards',
-    duration: '~1 min',
-    durationSec: 60,
-    section: 'neuro',
-    icon: <CardIcon />,
-    tagline: 'Find matching pairs of cards using your gaze.',
-    description:
-      'A grid of face-down cards is shown. Look at a card to reveal its symbol, then find its matching pair by looking at another card. Once matched, the pair stays revealed. Find all pairs to complete the test. This measures visual memory — how well you recall and use what you have already seen.',
-  },
-  {
-    id: 'anti_saccade',
-    label: 'Anti-Saccade',
-    duration: '~45 sec',
-    durationSec: 45,
-    section: 'neuro',
-    icon: <SwapIcon />,
-    tagline: 'Look in the opposite direction to a moving shape.',
-    description:
-      'A shape will appear and move toward one side of the screen. Your task is to immediately look to the opposite side — not at the shape. This is intentionally challenging because your natural reflex is to follow movement. The test measures your ability to override that reflex and direct your gaze intentionally.',
-  },
-  {
-    id: 'saccadic',
-    label: 'Saccadic Eye Movement',
-    duration: '~20 sec',
-    durationSec: 20,
-    section: 'neuro',
-    icon: <BoltIcon />,
-    tagline: 'React quickly to targets appearing alternately on each side.',
-    description:
-      'Targets will appear alternately on the left and right sides of the screen. Move your eyes to each target as fast as possible the moment it appears. Speed matters here. This test measures the raw speed and accuracy of voluntary eye movement responses.',
-  },
-  {
-    id: 'fixation_stability',
-    label: 'Fixation Stability',
-    duration: '15-20 sec',
-    durationSec: 20,
-    section: 'neuro',
-    icon: <TargetIcon />,
-    tagline: 'Hold your gaze perfectly still on a central dot.',
-    description:
-      'A small dot will appear at the centre of the screen. Your only task is to stare at it as steadily as you can for the full duration. Do not let your eyes wander or make unnecessary movements. This measures the stability of your gaze when you actively try to keep it completely fixed.',
-  },
-  {
-    id: 'peripheral_vision',
-    label: 'Peripheral Vision',
-    duration: '~30 sec',
-    durationSec: 30,
-    section: 'neuro',
-    icon: <EyeIcon />,
-    tagline: 'Detect flashes of light at the edges of your vision.',
-    description:
-      'Keep your eyes fixed on the centre of the screen at all times. Whenever you notice a flash of light anywhere on the screen — even far in your peripheral vision — press the spacebar or tap the screen as quickly as possible. Do not move your eyes toward the flash. This measures peripheral awareness and reaction time.',
-  },
-];
-
-const ALL_STEPS: Step[] = [...CALIBRATION_STEPS, ...NEURO_STEPS];
+const withIcons = (steps: AssessmentStep[]): Step[] =>
+  steps.map((step) => ({ ...step, icon: STEP_ICONS[step.id] ?? <DotGridIcon /> }));
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -362,6 +203,28 @@ function TimelineItem({
 
 // ─── Section label ────────────────────────────────────────────────────────────
 
+/** Icon per step id, keyed to lib/assessmentSteps.ts. */
+const STEP_ICONS: Record<string, React.ReactNode> = {
+  calibration: <DotGridIcon />,
+  wiggling: <WiggleIcon />,
+  horizontal: <HArrowIcon />,
+  vertical: <VArrowIcon />,
+  forward_backward: <ZoomIcon />,
+  diagonal: <DiagIcon />,
+  h_pattern: <HPatternIcon />,
+  head_orientation: <CompassIcon />,
+  visual_search: <SearchIcon />,
+  memory_cards: <CardIcon />,
+  anti_saccade: <SwapIcon />,
+  saccadic: <BoltIcon />,
+  fixation_stability: <TargetIcon />,
+  peripheral_vision: <EyeIcon />,
+};
+
+const CALIBRATION_STEPS: Step[] = withIcons(STEP_CONTENT_SET_1);
+const NEURO_STEPS: Step[] = withIcons(STEP_CONTENT_SET_2);
+const ALL_STEPS: Step[] = [...CALIBRATION_STEPS, ...NEURO_STEPS];
+
 function SectionLabel({ part, title }: { part: string; title: string }) {
   return (
     <div className="mb-4">
@@ -376,14 +239,25 @@ function SectionLabel({ part, title }: { part: string; title: string }) {
 
 // ─── Step description panel ───────────────────────────────────────────────────
 
+/**
+ * Spoken guidance for a preview step.
+ *
+ * Reads the words on the panel, not the instructions given later at the step
+ * itself — the participant is looking at this paragraph while it plays.
+ */
+function stepVoiceKey(step: Step): VoiceKey | null {
+  return overviewVoiceKey(step.id);
+}
+
 function StepPanel({ step }: { step: Step }) {
   const isCalibration = step.section === 'calibration';
   const globalIndex = ALL_STEPS.findIndex(s => s.id === step.id);
+  const voiceKey = stepVoiceKey(step);
 
   return (
     <>
       {/* Part badge */}
-      <div className="mb-5">
+      <div className="mb-5 flex items-start justify-between gap-4">
         <span className={`
           inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full
           text-[11px] font-semibold uppercase tracking-wide border
@@ -394,6 +268,11 @@ function StepPanel({ step }: { step: Step }) {
           <span className={`w-1.5 h-1.5 rounded-full ${isCalibration ? 'bg-blue-500' : 'bg-gray-500'}`} />
           {isCalibration ? 'Neurological Assessment — Set 1' : 'Neurological Assessment — Set 2'}
         </span>
+        {/*
+          Preview only, so nothing plays on its own — a participant clicking
+          down the fourteen steps would set off fourteen clips.
+        */}
+        {voiceKey && <VoiceButton voiceKey={voiceKey} iconOnly />}
       </div>
 
       {/* Icon + title */}

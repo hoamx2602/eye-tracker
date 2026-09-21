@@ -15,7 +15,9 @@ const getBaseUrl = (): string => {
 export interface CreateSessionPayload {
   config?: Record<string, unknown>;
   /** Demographics at calibration time (age, gender, country, eyeConditions) */
-  demographics?: { age?: number; gender?: string; country?: string; eyeConditions?: string[] };
+  demographics?: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[] };
+  /** Participant email, also stored in its own indexed column for lookup. */
+  participantEmail?: string;
   validationErrors?: number[];
   meanErrorPx?: number;
   status?: string;
@@ -36,7 +38,8 @@ export interface Session {
   createdAt: string;
   updatedAt: string;
   config: Record<string, unknown> | null;
-  demographics: { age?: number; gender?: string; country?: string; eyeConditions?: string[] } | null;
+  demographics: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[] } | null;
+  participantEmail?: string | null;
   validationErrors: number[];
   meanErrorPx: number | null;
   status: string | null;

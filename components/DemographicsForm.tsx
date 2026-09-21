@@ -2,15 +2,24 @@
 
 import React, { useState } from 'react';
 import Modal from './ui/Modal';
+import { VoiceControls } from './ui/VoiceButton';
 
 export type DemographicsData = {
   age: number | '';
   gender: string;
+  /** Participant email. Required — links the parts of one person's session together. */
+  email: string;
   country: string;
   device: string;
   eyeConditions: string[];
   wearsGlasses: boolean;
 };
+
+/**
+ * Deliberately permissive: something@something.tld with no spaces. A stricter
+ * pattern rejects valid addresses and would block a participant mid-study.
+ */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 import countriesData from '@/lib/countries.json';
 
@@ -44,10 +53,12 @@ type DemographicsFormProps = {
 export default function DemographicsForm({ onSubmit, onBack, isPage = false }: DemographicsFormProps) {
   const [age, setAge] = useState<number | ''>('');
   const [gender, setGender] = useState('');
+  const [email, setEmail] = useState('');
   const [country, setCountry] = useState('');
   const [eyeConditions, setEyeConditions] = useState<string[]>([]);
   const [wearsGlasses, setWearsGlasses] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
 
   const toggleEyeCondition = (id: string) => {
     if (id === 'none') {
@@ -73,9 +84,19 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
       setError('Please select your gender.');
       return;
     }
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError('Please enter your email address.');
+      return;
+    }
+    if (!EMAIL_PATTERN.test(trimmedEmail)) {
+      setError('That email address does not look right. Please check it.');
+      return;
+    }
     onSubmit({
       age: ageNum,
       gender: gender.trim(),
+      email: trimmedEmail,
       country: country.trim() || 'not_specified',
       device: 'not_specified',
       eyeConditions: eyeConditions.length === 0 ? ['none'] : eyeConditions.filter((x) => x !== 'none'),
@@ -85,9 +106,12 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
 
   const content = (
     <form onSubmit={handleSubmit} className={`bg-gray-900 border border-gray-700 rounded-3xl shadow-2xl max-w-xl w-full flex flex-col ${isPage ? 'h-[640px]' : 'max-h-[90vh]'}`}>
-      <div className="p-6 border-b border-gray-700">
-        <h2 className="text-xl font-bold text-white">Your information</h2>
-        <p className="text-sm text-gray-400 mt-1">Optional demographic data for analysis.</p>
+      <div className="p-6 border-b border-gray-700 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-white">Your information</h2>
+          <p className="text-sm text-gray-400 mt-1">Fields marked * are required.</p>
+        </div>
+        <VoiceControls voiceKey="demographics" />
       </div>
       <div className="p-6 space-y-5 overflow-y-auto flex-1 scrollbar-invisible">
         {error && (
@@ -148,6 +172,25 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
               ))}
             </select>
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="demographics-email" className="block text-sm font-medium text-gray-300 mb-1">
+            Email *
+          </label>
+          <input
+            id="demographics-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="h-11 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="you@example.com"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1.5">
+            Used only to link the parts of your session and to contact you about your data.
+          </p>
         </div>
 
         {/* Glasses question — drives the glasses-optimization feature flag */}

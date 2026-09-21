@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
       videoUrl,
       calibrationImageUrls,
       calibrationGazeSamples,
+      participantEmail,
     } = body;
 
     // Store test trajectories in TestRun table, not in config
@@ -66,6 +67,11 @@ export async function POST(request: NextRequest) {
       data: {
         config: config ?? undefined,
         demographics: demographics != null && typeof demographics === 'object' ? demographics : undefined,
+        // Normalised so the same participant is one value across sessions.
+        participantEmail:
+          typeof participantEmail === 'string' && participantEmail.trim()
+            ? participantEmail.trim().toLowerCase()
+            : null,
         validationErrors: Array.isArray(validationErrors) ? validationErrors : [],
         meanErrorPx: typeof meanErrorPx === 'number' ? meanErrorPx : null,
         status: typeof status === 'string' ? status : 'completed',

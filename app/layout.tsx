@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import VoiceProvider from '@/lib/voice/VoiceProvider';
 
 export const metadata: Metadata = {
   title: 'Bradford Eye Tracking System',
@@ -13,7 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <VoiceProvider>{children}</VoiceProvider>
+      </body>
     </html>
   );
 }

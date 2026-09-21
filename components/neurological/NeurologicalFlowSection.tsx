@@ -2,6 +2,7 @@
 
 import React from 'react';
 import EyeSpinner from '@/components/ui/EyeSpinner';
+import FullscreenLoader from '@/components/ui/FullscreenLoader';
 import SymptomAssessment from '@/components/SymptomAssessment';
 import type { SymptomScores } from '@/lib/symptomAssessment';
 import {
@@ -74,6 +75,17 @@ const TEST_LABELS: Record<string, string> = {
   peripheral_vision: 'Peripheral Vision',
 };
 
+/** One line per test, for the break screen's "coming up next" and the real-test countdown. */
+const TEST_SUMMARIES: Record<string, string> = {
+  head_orientation: 'Turn your head slowly left, right, up and down, holding each position.',
+  visual_search: 'Find the numbers scattered on screen and look at them in order, 1, 2, 3…',
+  memory_cards: 'Turn cards over two at a time and find every matching pair.',
+  anti_saccade: 'Two shapes move apart — look at the dim one, not the bright one.',
+  saccadic: 'A target jumps between left and right. Look at it as soon as it appears.',
+  fixation_stability: 'Hold your gaze on a single dot in the centre of the screen.',
+  peripheral_vision: 'Keep looking at the centre and press space when you spot a flash at the edge.',
+};
+
 const DEFAULT_SELF_ASSESSMENT: SelfAssessmentConfig = {
   enabled: true,
   questionCount: 2,
@@ -118,6 +130,12 @@ type NeurologicalFlowSectionProps = {
   onPostSubmit: (scores: SymptomScores) => Promise<void>;
   onExitRun: () => Promise<void>;
   onTestComplete: (testId: string, payload: TestResultPayload) => void;
+  /** Banks a finished test while the participant is on the break screen. */
+  onTestResultReady?: (testId: string, payload: TestResultPayload) => void;
+  /** Progress of that early save. */
+  testSaveState?: 'idle' | 'saving' | 'saved' | 'error';
+  /** True while Continue is writing the final result and moving on. */
+  isSavingTest?: boolean;
   onDoneBack: () => void;
   showPostSubmitConfirm: boolean;
   onPostSubmitConfirmSave: () => Promise<void>;
@@ -148,6 +166,9 @@ export default function NeurologicalFlowSection({
   onPostSubmit,
   onExitRun,
   onTestComplete,
+  onTestResultReady,
+  testSaveState = 'idle',
+  isSavingTest = false,
   onDoneBack,
   showPostSubmitConfirm,
   onPostSubmitConfirmSave,
@@ -170,8 +191,42 @@ export default function NeurologicalFlowSection({
   const quickMode =
     (neuroConfigSnapshot?.testParameters?.['_quickMode'] as { enabled?: boolean } | undefined)?.enabled === true;
 
+  /**
+   * Everything a test flow needs that is the same for all seven: where this
+   * test sits in the battery, what follows it, and how its result is saved.
+   */
+  const flowPropsFor = (id: string) => {
+    const enabled = neuroConfigSnapshot?.testEnabled ?? {};
+    const order = neuroTestOrder.filter((t) => enabled[t] !== false);
+    const idx = order.indexOf(id);
+    const nextId = idx >= 0 ? order[idx + 1] ?? null : null;
+    return {
+      onTestComplete: (payload: TestResultPayload) => onTestComplete(id, payload),
+      onTestResultReady: (payload: TestResultPayload) => onTestResultReady?.(id, payload),
+      selfAssessmentConfig,
+      testSummary: TEST_SUMMARIES[id] ?? null,
+      stepIndex: idx >= 0 ? idx + 1 : undefined,
+      stepTotal: order.length > 0 ? order.length : undefined,
+      nextTestLabel: nextId ? TEST_LABELS[nextId] ?? nextId : null,
+      nextTestDescription: nextId ? TEST_SUMMARIES[nextId] ?? null : null,
+      nextTestId: nextId,
+      saveState: testSaveState,
+      saving: isSavingTest,
+    };
+  };
+
   return (
     <>
+      {/*
+        The server round-trip between two steps used to look like a frozen
+        screen; this is the missing feedback.
+      */}
+      {status === 'NEURO_FLOW' && isSavingTest && (
+        <FullscreenLoader
+          message="Saving your results…"
+          detail="Setting up the next step. Please keep this window open."
+        />
+      )}
       {status === 'NEURO_FLOW' && neuroRunStatus === 'creating' && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950">
           <EyeSpinner size="lg" label="Starting neurological run…" />
@@ -201,8 +256,7 @@ export default function NeurologicalFlowSection({
               enablePractice={false}
               testContent={<HeadOrientationTest />}
               config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.head_orientation as Record<string, unknown>) ?? { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] }) }}
-              onTestComplete={(payload) => onTestComplete('head_orientation', payload)}
-              selfAssessmentConfig={selfAssessmentConfig}
+              {...flowPropsFor('head_orientation')}
             />
           </NeuroHeadPoseProvider>
         </NeuroPanelLayoutContext.Provider>
@@ -227,8 +281,7 @@ export default function NeurologicalFlowSection({
                 clickHoldDurationMs: DEFAULT_CLICK_HOLD_DURATION_MS,
               }),
             }}
-            onTestComplete={(payload) => onTestComplete('visual_search', payload)}
-            selfAssessmentConfig={selfAssessmentConfig}
+            {...flowPropsFor('visual_search')}
           />
         </NeuroGazeProvider>
       )}
@@ -251,8 +304,7 @@ export default function NeurologicalFlowSection({
                 cardGapPx: DEFAULT_CARD_GAP_PX
               }) 
             }}
-            onTestComplete={(payload) => onTestComplete('memory_cards', payload)}
-            selfAssessmentConfig={selfAssessmentConfig}
+            {...flowPropsFor('memory_cards')}
           />
         </NeuroGazeProvider>
       )}
@@ -279,8 +331,7 @@ export default function NeurologicalFlowSection({
                 dimRectColor: 'blue',
               }),
             }}
-            onTestComplete={(payload) => onTestComplete('anti_saccade', payload)}
-            selfAssessmentConfig={selfAssessmentConfig}
+            {...flowPropsFor('anti_saccade')}
           />
         </NeuroGazeProvider>
       )}
@@ -295,8 +346,7 @@ export default function NeurologicalFlowSection({
             practiceTitle="Practice: Saccadic"
             testContent={<SaccadicTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.saccadic as Record<string, unknown>) ?? { targetDurationMs: DEFAULT_TARGET_DURATION_MS, totalCycles: DEFAULT_TOTAL_CYCLES }) }}
-            onTestComplete={(payload) => onTestComplete('saccadic', payload)}
-            selfAssessmentConfig={selfAssessmentConfig}
+            {...flowPropsFor('saccadic')}
           />
         </NeuroGazeProvider>
       )}
@@ -311,8 +361,7 @@ export default function NeurologicalFlowSection({
             practiceTitle="Practice: Fixation Stability"
             testContent={<FixationStabilityTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.fixation_stability as Record<string, unknown>) ?? { durationSec: DEFAULT_DURATION_SEC, blinkIntervalMs: DEFAULT_BLINK_INTERVAL_MS }) }}
-            onTestComplete={(payload) => onTestComplete('fixation_stability', payload)}
-            selfAssessmentConfig={selfAssessmentConfig}
+            {...flowPropsFor('fixation_stability')}
           />
         </NeuroGazeProvider>
       )}
@@ -327,8 +376,7 @@ export default function NeurologicalFlowSection({
             practiceTitle="Practice: Peripheral Vision"
             testContent={<PeripheralVisionTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.peripheral_vision as Record<string, unknown>) ?? { trialCount: PERIPHERAL_DEFAULT_TRIAL_COUNT, stimulusDurationMs: DEFAULT_STIMULUS_DURATION_MS, minDelayMs: DEFAULT_MIN_DELAY_MS, maxDelayMs: DEFAULT_MAX_DELAY_MS }) }}
-            onTestComplete={(payload) => onTestComplete('peripheral_vision', payload)}
-            selfAssessmentConfig={selfAssessmentConfig}
+            {...flowPropsFor('peripheral_vision')}
           />
         </NeuroGazeProvider>
       )}

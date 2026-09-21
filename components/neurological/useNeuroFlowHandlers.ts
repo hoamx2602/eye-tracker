@@ -84,6 +84,33 @@ export function useNeuroFlowHandlers({
   onStartRealTimeTracking,
 }: UseNeuroFlowHandlersParams) {
   const [isSaving, setIsSaving] = useState(false);
+  const [testSaveState, setTestSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  /**
+   * Write a finished test to the server as soon as it ends, before the
+   * participant has pressed anything.
+   *
+   * The authoritative write still happens on Continue, once the check-in
+   * ratings are attached. This early one exists so a session abandoned during
+   * a break has already banked every completed test.
+   */
+  const handleNeuroTestResultReady = useCallback(
+    async (testId: string, payload: TestResultPayload) => {
+      if (!neuroRunId) {
+        setTestSaveState('idle');
+        return;
+      }
+      setTestSaveState('saving');
+      try {
+        await neurologicalRunsApi.patch(neuroRunId, { testResults: { [testId]: payload } });
+        setTestSaveState('saved');
+      } catch (e) {
+        neuroPersistWarn(`PATCH interim result failed (${testId})`, e);
+        setTestSaveState('error');
+      }
+    },
+    [neuroRunId]
+  );
 
   const handleNeuroTestComplete = useCallback(
     async (testId: string, payload: TestResultPayload) => {
@@ -303,6 +330,8 @@ export function useNeuroFlowHandlers({
 
   return {
     isSaving,
+    testSaveState,
+    handleNeuroTestResultReady,
     handleNeuroTestComplete,
     handleNeuroPreSubmit,
     handleNeuroPostSubmit,

@@ -1,11 +1,24 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { EyeMovementKind } from '../types';
+import { useVoiceRepeat } from '@/lib/voice/VoiceProvider';
+import { exerciseVoiceKey } from '@/lib/voice/scripts';
+
+/**
+ * How often the short spoken reminder repeats while a dot is moving.
+ *
+ * The full instruction is spoken on the break screen before the exercise
+ * starts; here we only nudge, so the cue must stay short and infrequent enough
+ * that it never competes with the task.
+ */
+const VOICE_CUE_INTERVAL_MS = 20000;
 
 interface EyeMovementLayerProps {
   kind: EyeMovementKind;
   /** Ref updated each frame with current dot position in screen pixels (for data collection) */
   targetRef: React.MutableRefObject<{ x: number; y: number } | null>;
   onComplete: () => void;
+  /** Silences the cue while the break screen is layered over this one. */
+  voicePaused?: boolean;
 }
 
 const COUNTDOWN_MS = 2000;
@@ -28,7 +41,7 @@ function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, onComplete }) => {
+const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, onComplete, voicePaused = false }) => {
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<number | null>(null);
   const completedRef = useRef(false);
@@ -332,6 +345,12 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
   }, [durationMs, path, kind, onComplete, targetRef]);
 
   const kindLabel = kind.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const voiceKey = exerciseVoiceKey(kind);
+
+  // Cue only after the countdown, so it never lands on "get ready" — then say
+  // it straight away, because by that point the dot is already moving. No
+  // replay button: the dot is the only thing that should be worth looking at.
+  useVoiceRepeat(voiceKey, VOICE_CUE_INTERVAL_MS, countdown === 0 && !voicePaused, { immediate: true });
 
   return (
     <div className="absolute inset-0 z-50 bg-black bg-opacity-95 flex items-center justify-center cursor-none">

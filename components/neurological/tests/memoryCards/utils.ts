@@ -22,20 +22,25 @@ export function createShuffledDeck(cardCount: number): number[] {
 }
 
 /**
- * Choose grid cols × rows = cardCount (no empty cells), as square as possible (min |cols − rows|).
- * E.g. 6→2×3, 8→2×4, 12→3×4, 16→4×4, 20→4×5, 24→4×6, 28→4×7, 32→4×8.
+ * Choose grid cols × rows = cardCount (no empty cells), as square as possible
+ * (min |cols − rows|), laid out landscape — the wider side becomes the columns.
+ *
+ * Landscape because screens are: a portrait grid wastes the width, pushes the
+ * cards small to fit the height, and stretches the gaze path vertically where
+ * the tracker is least accurate.
+ * E.g. 6→3×2, 8→4×2, 12→4×3, 16→4×4, 20→5×4, 24→6×4, 28→7×4, 32→8×4.
  */
 export function getGridDimensions(cardCount: number): { cols: number; rows: number; cellCount: number } {
   const n = Math.max(2, Math.floor(cardCount));
-  let cols = 1;
+  let shortSide = 1;
   for (let c = Math.floor(Math.sqrt(n)); c >= 1; c--) {
     if (n % c === 0) {
-      cols = c;
+      shortSide = c;
       break;
     }
   }
-  const rows = n / cols;
-  return { cols, rows, cellCount: n };
+  const longSide = n / shortSide;
+  return { cols: longSide, rows: shortSide, cellCount: n };
 }
 
 /** Board with exactly cardCount cells, no empty cells. */

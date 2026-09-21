@@ -79,8 +79,6 @@ export default function MemoryCardsTest() {
   const symbolPx = SYMBOL_SIZE_PX[presetSize] ?? 46;
   const symbolStyle = { fontSize: `${symbolPx}px` };
   const cardGapPx = Math.max(0, Number(config.cardGapPx ?? DEFAULT_CARD_GAP_PX));
-  // Card = icon + 20px padding on each side, never smaller than icon + 12px
-  const cardSizePx = symbolPx + 40;
 
   // Log config for debugging.
   useEffect(() => {
@@ -88,6 +86,26 @@ export default function MemoryCardsTest() {
   }, [config.cardCount, config.dwellMs, config.symbolSize, cardCount, presetSize, symbolStyle.fontSize]);
 
   const [{ cards: board, cols, rows }] = useState(() => createBoard(cardCount));
+
+  // The grid is landscape (cols ≥ rows), so on a narrow window it is width
+  // that runs out first. Shrink the cards to fit rather than letting the grid
+  // overflow — a card the participant cannot see is a card they cannot look at.
+  const [viewport, setViewport] = useState({ width: 1280, height: 800 });
+  useEffect(() => {
+    const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  /** Chrome around the grid: page padding plus the two caption lines. */
+  const GRID_MARGIN_X = 48;
+  const GRID_MARGIN_Y = 140;
+  const maxByWidth = (viewport.width - GRID_MARGIN_X - cardGapPx * (cols - 1)) / cols;
+  const maxByHeight = (viewport.height - GRID_MARGIN_Y - cardGapPx * (rows - 1)) / rows;
+  // Card = icon + 20px padding on each side, shrunk only when it will not fit.
+  const cardSizePx = Math.max(36, Math.floor(Math.min(symbolPx + 40, maxByWidth, maxByHeight)));
+  const renderedSymbolPx = Math.min(symbolPx, Math.max(16, cardSizePx - 16));
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [matched, setMatched] = useState<Set<number>>(new Set());
   const [firstSelected, setFirstSelected] = useState<number | null>(null);
@@ -320,7 +338,7 @@ export default function MemoryCardsTest() {
             data-card-index={index}
             disabled={value < 0 || matched.has(index) || secondSelected !== null}
             onClick={() => selectCard(index)}
-            style={{ width: cardSizePx, height: cardSizePx, fontSize: symbolPx }}
+            style={{ width: cardSizePx, height: cardSizePx, fontSize: renderedSymbolPx }}
             className={`
               rounded-lg border-2 flex items-center justify-center font-bold
               transition-all duration-200

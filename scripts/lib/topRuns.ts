@@ -209,7 +209,12 @@ function shapeRun(r: RunRow, opts: SelectOptions) {
       };
     }),
 
-    ...(opts.withDemographics ? { demographics: r.session!.demographics ?? null } : {}),
+    ...(opts.withDemographics
+      ? {
+          demographics: r.session!.demographics ?? null,
+          participantEmail: r.session!.participantEmail ?? null,
+        }
+      : {}),
   };
 }
 
@@ -234,6 +239,7 @@ type RunRow = {
     validationErrors: number[];
     config: unknown;
     demographics: unknown;
+    participantEmail: string | null;
     videoUrl: string | null;
     testRun: { trajectories: unknown } | null;
   } | null;
@@ -257,6 +263,7 @@ export async function selectTopRuns(prisma: PrismaClient, opts: SelectOptions) {
           validationErrors: true,
           config: true,
           demographics: true,
+          participantEmail: true,
           videoUrl: true,
           // The Test-mode exercise steps (Wiggling, Horizontal, …). Stored on
           // TestRun for newer sessions and inside session config for older

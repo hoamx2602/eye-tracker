@@ -11,6 +11,7 @@ import {
   type SymptomScores,
   type SymptomScoreValue,
 } from '@/lib/symptomAssessment';
+import { VoiceControls } from './ui/VoiceButton';
 
 export type SymptomAssessmentVariant = 'pre' | 'post';
 
@@ -31,6 +32,8 @@ export default function SymptomAssessment({
 
   const instruction = variant === 'pre' ? SYMPTOM_INSTRUCTION_PRE : SYMPTOM_INSTRUCTION_POST;
   const title = variant === 'pre' ? TITLE_PRE : TITLE_POST;
+  const voiceKey = variant === 'pre' ? 'symptom.pre' : 'symptom.post';
+
 
   const setScore = (questionId: string, value: SymptomScoreValue) => {
     setScores((prev) => ({ ...prev, [questionId]: value }));
@@ -75,17 +78,20 @@ export default function SymptomAssessment({
     >
       <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
         {/* Header */}
-        <div className="flex-shrink-0 p-6 border-b border-gray-800">
-          <h1
-            id="symptom-assessment-title"
-            className="text-xl font-bold text-white uppercase tracking-widest"
-          >
-            {title}
-          </h1>
-          <p id="symptom-assessment-instruction" className="text-gray-400 text-sm mt-2">
-            {instruction}
-          </p>
-          <p className="text-gray-500 text-xs mt-1">{SYMPTOM_SCALE_LEGEND}</p>
+        <div className="flex-shrink-0 p-6 border-b border-gray-800 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1
+              id="symptom-assessment-title"
+              className="text-xl font-bold text-white uppercase tracking-widest"
+            >
+              {title}
+            </h1>
+            <p id="symptom-assessment-instruction" className="text-gray-400 text-sm mt-2">
+              {instruction}
+            </p>
+            <p className="text-gray-500 text-xs mt-1">{SYMPTOM_SCALE_LEGEND}</p>
+          </div>
+          <VoiceControls voiceKey={voiceKey} />
         </div>
 
         {/* Scrollable list: contain scroll so wheel doesn't move the page; overflow-anchor-none prevents jump when content reflows */}

@@ -159,6 +159,17 @@ function App() {
   }, []);
   const [exerciseRetryCount, setExerciseRetryCount] = useState(0);
 
+  // --- Incremental save during breaks ---
+  // The face captures for a finished step are uploaded while the participant
+  // rests, so the wait at the end is short and an abandoned session has
+  // already banked everything up to the last completed step.
+  const [stepSaveState, setStepSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [stepSaveError, setStepSaveError] = useState<string | null>(null);
+  /** Sample index → uploaded image URL. Seeds the final save so nothing uploads twice. */
+  const uploadedImageUrlsRef = useRef<Map<number, string>>(new Map());
+  /** trainingSamples length when the current exercise began — lets Redo drop just that exercise. */
+  const exerciseSampleStartRef = useRef(0);
+
   const statusRef = useRef<AppState>('IDLE');
   const configRef = useRef<AppConfig>(DEFAULT_CONFIG);
 
@@ -1500,6 +1511,72 @@ function App() {
       }
   };
 
+  /**
+   * Upload the face captures collected so far that have not been uploaded yet.
+   *
+   * Called on every break, where the participant is resting anyway. Failures
+   * are deliberately soft: an image that does not upload here is simply left
+   * for the final save, so a flaky connection never blocks the session.
+   */
+  const flushPendingImageUploads = useCallback(async () => {
+    const samples = trainingSamplesRef.current;
+    const gridImages = calibrationImagesRef.current;
+    const uploaded = uploadedImageUrlsRef.current;
+
+    const pending: { sampleIndex: number; blob: Blob }[] = [];
+    for (let i = 0; i < samples.length; i++) {
+      if (uploaded.has(i)) continue;
+      const blob = i < gridImages.length
+        ? gridImages[i] ?? null
+        : (samples[i]!.blobForUpload ?? null);
+      if (blob) pending.push({ sampleIndex: i, blob });
+    }
+
+    if (pending.length === 0) {
+      setStepSaveState('saved');
+      setStepSaveError(null);
+      return;
+    }
+
+    setStepSaveState('saving');
+    setStepSaveError(null);
+
+    const stamp = Date.now();
+    const CONCURRENCY = 4;
+    let cursor = 0;
+    let failures = 0;
+
+    const worker = async (): Promise<void> => {
+      while (cursor < pending.length) {
+        const { sampleIndex, blob } = pending[cursor++]!;
+        try {
+          const url = await uploadApi.uploadBlob(
+            blob,
+            `calibration-sample-${stamp}-${sampleIndex}.jpg`,
+            'image/jpeg'
+          );
+          if (url) uploaded.set(sampleIndex, url);
+        } catch (e) {
+          failures++;
+          console.warn('[Break upload] sample', sampleIndex, e);
+        }
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, pending.length) }, () => worker())
+    );
+
+    if (failures > 0) {
+      setStepSaveState('error');
+      setStepSaveError(
+        `${failures} of ${pending.length} images could not be sent yet — they will be saved at the end.`
+      );
+    } else {
+      setStepSaveState('saved');
+    }
+  }, []);
+
   const processExerciseData = () => {
     const data = exerciseDataRef.current;
     const blobs = exerciseBlobsRef.current.slice();
@@ -1509,7 +1586,6 @@ function App() {
 
     if (data.length < 10) {
       console.warn(`[Exercise] Insufficient data (${data.length} frames), skipping`);
-      advanceExercise();
       return;
     }
 
@@ -1519,7 +1595,6 @@ function App() {
     const trimmed = data.slice(startIdx, endIdx);
 
     if (trimmed.length === 0) {
-      advanceExercise();
       return;
     }
 
@@ -1585,7 +1660,6 @@ function App() {
 
     console.log(`[Exercise:${kindName}] Added ${added} samples from ${data.length} raw frames`);
     setTrainingData([...trainingSamplesRef.current]);
-    advanceExercise();
   };
 
   const advanceExercise = () => {
@@ -1594,6 +1668,7 @@ function App() {
       setCurrentExerciseIndex(nextIndex);
       exerciseDataRef.current = [];
       exerciseBlobsRef.current = [];
+      exerciseSampleStartRef.current = trainingSamplesRef.current.length;
       exerciseKindRef.current = EXERCISE_KINDS[nextIndex];
       exerciseActiveRef.current = true;
       testSegmentStartTimeRef.current = performance.now();
@@ -1643,30 +1718,34 @@ function App() {
     validationErrorsRef.current = [];
   };
 
+  /**
+   * An exercise has finished. Bank its data, start uploading it, and hand the
+   * participant a break — the next exercise begins only when they say so.
+   *
+   * The data is processed here rather than on Continue so the upload has the
+   * whole break to run. Redo discards it again by truncating back to
+   * exerciseSampleStartRef.
+   */
   const handleExerciseComplete = useCallback(() => {
-    const saEnabled = (neuroConfigSnapshot?.testParameters?.['_selfAssessment'] as any)?.enabled !== false;
-    if (saEnabled) {
-        setAssessmentPending({ type: 'exercise', kind: exerciseKindRef.current, index: currentExerciseIndex });
-    } else {
-        testTrajectoryRef.current.push({
-            patternName: getPatternDisplayName(exerciseKindRef.current),
-            points: [...currentTestSegmentRef.current],
-        });
-        if (runModeRef.current === 'test') {
-            advanceExercise();
-        } else {
-            processExerciseData();
-        }
+    testTrajectoryRef.current.push({
+        patternName: getPatternDisplayName(exerciseKindRef.current),
+        points: [...currentTestSegmentRef.current],
+    });
+    if (runModeRef.current !== 'test') {
+        processExerciseData();
+        void flushPendingImageUploads();
     }
+    setAssessmentPending({ type: 'exercise', kind: exerciseKindRef.current, index: currentExerciseIndex });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentExerciseIndex, neuroConfigSnapshot]);
+  }, [currentExerciseIndex, flushPendingImageUploads]);
 
   const finishCurrentPhase = () => {
     if (calibPhase === CalibrationPhase.INITIAL_MAPPING) {
-        // If self-assessment is enabled and we haven't shown it yet for this phase, trigger it now.
-        const saEnabled = (neuroConfigSnapshot?.testParameters?.['_selfAssessment'] as any)?.enabled !== false;
-        if (!assessmentPending && saEnabled) {
+        // Break after the calibration grid: rest the eyes, upload the grid
+        // captures, and let the participant start the exercises when ready.
+        if (!assessmentPending) {
             setAssessmentPending({ type: 'grid' });
+            void flushPendingImageUploads();
             return;
         }
 
@@ -1725,6 +1804,7 @@ function App() {
             setCurrentExerciseIndex(0);
       exerciseDataRef.current = [];
       exerciseBlobsRef.current = [];
+      exerciseSampleStartRef.current = trainingSamplesRef.current.length;
       exerciseKindRef.current = EXERCISE_KINDS[0];
       exerciseActiveRef.current = true;
       currentTestSegmentRef.current = [];
@@ -1801,9 +1881,12 @@ function App() {
         const samples = trainingSamplesRef.current;
         const timestamp = Date.now();
 
-        // Build list of image uploads: { sampleIndex, blob }
+        // Build list of image uploads: { sampleIndex, blob }.
+        // Anything already sent during a break is skipped — usually that is
+        // everything, which is what keeps this final wait short.
         const imageUploads: { sampleIndex: number; blob: Blob }[] = [];
         for (let i = 0; i < samples.length; i++) {
+          if (uploadedImageUrlsRef.current.has(i)) continue;
           const blob = i < gridImageCount
             ? calibrationImagesRef.current[i] ?? null
             : (samples[i]!.blobForUpload ?? null);
@@ -1832,7 +1915,7 @@ function App() {
         ]);
 
         const videoUrl = videoUrlResult ?? undefined;
-        const imageUrlByIndex = new Map<number, string>();
+        const imageUrlByIndex = new Map<number, string>(uploadedImageUrlsRef.current);
         imageUrlsByOrder.forEach(({ sampleIndex, url }) => {
           if (url) imageUrlByIndex.set(sampleIndex, url);
         });
@@ -1884,6 +1967,7 @@ function App() {
           demographics: demographicsRef.current
             ? { ...demographicsRef.current, age: demographicsRef.current.age === '' ? undefined : demographicsRef.current.age }
             : undefined,
+          participantEmail: demographicsRef.current?.email || undefined,
           validationErrors: errors,
           meanErrorPx: errors.length > 0 ? avgError : undefined,
           status: 'completed',
@@ -1933,6 +2017,9 @@ function App() {
     demographicsRef.current = null;
     setTrainingData([]);
     trainingSamplesRef.current = [];
+    uploadedImageUrlsRef.current.clear();
+    setStepSaveState('idle');
+    setStepSaveError(null);
     trackingHistoryRef.current = [];
     hybridRegressorRef.current = new HybridRegressor();
     setGazeModelReady(false);
@@ -1958,6 +2045,9 @@ function App() {
   }, [reset, router]);
 
   const {
+    isSaving: isSavingNeuroTest,
+    testSaveState: neuroTestSaveState,
+    handleNeuroTestResultReady,
     handleNeuroTestComplete,
     handleNeuroPreSubmit,
     handleNeuroPostSubmit,
@@ -2880,26 +2970,26 @@ function App() {
         selfAssessmentConfig={(neuroConfigSnapshot?.testParameters?.['_selfAssessment'] || { enabled: true, questionCount: 2 }) as unknown as SelfAssessmentConfig}
         assessmentPending={assessmentPending}
         exerciseRetryCount={exerciseRetryCount}
+        stepSaveState={stepSaveState}
+        stepSaveError={stepSaveError}
         onAssessmentContinue={() => {
             const currentPending = assessmentPendingRef.current;
             setAssessmentPending(null);
+            setStepSaveState('idle');
+            setStepSaveError(null);
             if (currentPending?.type === 'grid') {
                 finishCurrentPhase();
             } else if (currentPending?.type === 'exercise') {
-                testTrajectoryRef.current.push({
-                    patternName: getPatternDisplayName(exerciseKindRef.current),
-                    points: [...currentTestSegmentRef.current],
-                });
-                if (runModeRef.current === 'test') {
-                    advanceExercise();
-                } else {
-                    processExerciseData();
-                }
+                // The trajectory and samples were banked when the exercise
+                // finished; all that is left is to move on.
+                advanceExercise();
             }
         }}
         onAssessmentRedo={() => {
             const currentPending = assessmentPendingRef.current;
             setAssessmentPending(null);
+            setStepSaveState('idle');
+            setStepSaveError(null);
             if (currentPending?.type === 'grid') {
                 setCalibPoints(generateCalibrationPoints(
                   NEURO_QUICK_MODE
@@ -2912,15 +3002,24 @@ function App() {
                 setCurrentCalibIndex(0);
                 trainingSamplesRef.current = [];
                 calibrationImagesRef.current = [];
+                uploadedImageUrlsRef.current.clear();
                 setCalibrationProgress(0);
                 setRetryCount(0); // restarts grid
             } else if (currentPending?.type === 'exercise') {
+                // Drop the samples this exercise produced — the repeat replaces them.
+                const start = exerciseSampleStartRef.current;
+                if (trainingSamplesRef.current.length > start) {
+                    trainingSamplesRef.current = trainingSamplesRef.current.slice(0, start);
+                    setTrainingData([...trainingSamplesRef.current]);
+                    for (const index of [...uploadedImageUrlsRef.current.keys()]) {
+                        if (index >= start) uploadedImageUrlsRef.current.delete(index);
+                    }
+                }
                 exerciseDataRef.current = [];
                 exerciseBlobsRef.current = [];
-                if (runModeRef.current === 'test') {
-                    currentTestSegmentRef.current = [];
-                    testSegmentStartTimeRef.current = performance.now();
-                }
+                testTrajectoryRef.current.pop();
+                currentTestSegmentRef.current = [];
+                testSegmentStartTimeRef.current = performance.now();
                 setExerciseRetryCount(c => c + 1); // unmounts/remounts EyeMovementLayer
             }
         }}
@@ -2945,6 +3044,9 @@ function App() {
         onPreSubmit={handleNeuroPreSubmit}
         onPostSubmit={handlePostSubmitRequested}
         onTestComplete={handleNeuroTestComplete}
+        onTestResultReady={handleNeuroTestResultReady}
+        testSaveState={neuroTestSaveState}
+        isSavingTest={isSavingNeuroTest}
         onDoneBack={startRealTimeTracking}
         showPostSubmitConfirm={showPostSubmitConfirm}
         onPostSubmitConfirmSave={handlePostSubmitSave}

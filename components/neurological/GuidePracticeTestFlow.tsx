@@ -1,13 +1,20 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import GuideSteps from './GuideSteps';
 import PracticeGate from './PracticeGate';
+import RealTestIntro from './RealTestIntro';
+import StepBreak from '@/components/StepBreak';
 import { TestRunnerProvider } from './TestRunnerContext';
+import { useVoiceRepeat } from '@/lib/voice/VoiceProvider';
+import { neuroTestVoiceKey, type VoiceKey } from '@/lib/voice/scripts';
 import type { GuideStep } from './types';
 import type { TestResultPayload } from './types';
 
-export type GuidePracticeTestFlowPhase = 'guide' | 'practice' | 'test';
+export type GuidePracticeTestFlowPhase = 'guide' | 'practice' | 'realIntro' | 'test';
+
+/** How often the short cue repeats while a test is running. */
+const IN_TEST_CUE_INTERVAL_MS = 30000;
 
 /** Self-assessment config passed down from admin config snapshot. */
 export interface SelfAssessmentConfig {
@@ -35,6 +42,21 @@ export type GuidePracticeTestFlowProps = {
   testLabel?: string;
   /** If provided, embeds self-assessment rating directly in the post-test overlay. */
   selfAssessmentConfig?: SelfAssessmentConfig | null;
+  /** One line on what this test asks, shown on the real-test countdown. */
+  testSummary?: string | null;
+  /** Position of this test in the battery, for the break screen. */
+  stepIndex?: number;
+  stepTotal?: number;
+  /** The test that follows, so the break can say what is coming. */
+  nextTestLabel?: string | null;
+  nextTestDescription?: string | null;
+  nextTestId?: string | null;
+  /** Called the moment the test ends, so its result can be banked during the break. */
+  onTestResultReady?: (payload: TestResultPayload) => void;
+  /** Progress of that early save, shown on the break screen. */
+  saveState?: 'idle' | 'saving' | 'saved' | 'error';
+  /** True while Continue is writing the final result. */
+  saving?: boolean;
 };
 
 /** Single star-row used inside the inline post-test overlay. */
@@ -100,6 +122,15 @@ export default function GuidePracticeTestFlow({
   completeButtonLabel = 'Start Test',
   testLabel,
   selfAssessmentConfig,
+  testSummary,
+  stepIndex,
+  stepTotal,
+  nextTestLabel,
+  nextTestDescription,
+  nextTestId,
+  onTestResultReady,
+  saveState = 'idle',
+  saving = false,
 }: GuidePracticeTestFlowProps) {
   const [phase, setPhase] = useState<GuidePracticeTestFlowPhase>('guide');
   const [pendingPayload, setPendingPayload] = useState<TestResultPayload | null>(null);
@@ -110,12 +141,17 @@ export default function GuidePracticeTestFlow({
   const [accuracyRating, setAccuracyRating] = useState<number | null>(null);
 
   /** Stable callback — avoids "Maximum update depth" in tests that call completeTest in useEffect. */
-  const handleRunnerComplete = useCallback((payload: TestResultPayload) => {
-    setPendingPayload(payload);
-    // Reset ratings for each new test result
-    setFocusRating(null);
-    setAccuracyRating(null);
-  }, []);
+  const handleRunnerComplete = useCallback(
+    (payload: TestResultPayload) => {
+      setPendingPayload(payload);
+      // Reset ratings for each new test result
+      setFocusRating(null);
+      setAccuracyRating(null);
+      // Bank it now; the break is dead time otherwise.
+      onTestResultReady?.(payload);
+    },
+    [onTestResultReady]
+  );
 
   const saEnabled = selfAssessmentConfig?.enabled === true;
   const saQ2Visible = saEnabled && selfAssessmentConfig!.questionCount >= 2;
@@ -144,6 +180,17 @@ export default function GuidePracticeTestFlow({
     setAccuracyRating(null);
   }
 
+  /** Stable — RealTestIntro drives its countdown from this in an effect. */
+  const handleStartRealTest = useCallback(() => setPhase('test'), []);
+
+  // A short reminder during the task itself. Only the longer tests run past
+  // one interval, which is the point: the short ones are never interrupted.
+  useVoiceRepeat(
+    neuroTestVoiceKey(testId),
+    IN_TEST_CUE_INTERVAL_MS,
+    phase === 'test' && pendingPayload === null
+  );
+
   function handleRedo() {
     setPendingPayload(null);
     setFocusRating(null);
@@ -151,18 +198,21 @@ export default function GuidePracticeTestFlow({
     setTestRunKey((k) => k + 1);
   }
 
+  const voiceKey: VoiceKey | null = neuroTestVoiceKey(testId);
+
   if (phase === 'guide') {
     return (
       <GuideSteps
         steps={guideSteps}
+        voiceKey={voiceKey}
         onComplete={() => {
           if (enablePractice && practiceContent) {
             setPhase('practice');
           } else {
-            setPhase('test');
+            setPhase('realIntro');
           }
         }}
-        completeButtonLabel={completeButtonLabel}
+        completeButtonLabel={enablePractice && practiceContent ? 'Try a practice round' : completeButtonLabel}
       />
     );
   }
@@ -172,11 +222,21 @@ export default function GuidePracticeTestFlow({
       typeof practiceContent === 'function' ? practiceContent(config) : practiceContent;
     return (
       <PracticeGate
-        title={practiceTitle}
-        onStartRealTest={() => setPhase('test')}
+        title={practiceTitle ? `${practiceTitle} — practice` : 'Practice'}
+        onStartRealTest={() => setPhase('realIntro')}
       >
         {content}
       </PracticeGate>
+    );
+  }
+
+  if (phase === 'realIntro') {
+    return (
+      <RealTestIntro
+        testLabel={testLabel ?? testId}
+        summary={testSummary}
+        onStart={handleStartRealTest}
+      />
     );
   }
 
@@ -191,80 +251,60 @@ export default function GuidePracticeTestFlow({
         {testContent}
       </TestRunnerProvider>
 
-      {pendingPayload !== null && (
-        /* z-[60] → always above test overlays which use z-50 */
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-sm flex flex-col gap-0 overflow-hidden">
-
-            {/* Header */}
-            <div className="px-6 pt-5 pb-4 text-center border-b border-gray-700">
-              <p className="text-xs text-gray-400 uppercase tracking-widest font-semibold mb-1">Complete</p>
-              <p className="text-white font-bold text-base">
-                {testLabel ?? testId}
-              </p>
-            </div>
-
-            {/* Inline self-assessment — shown immediately, no extra click */}
-            {saEnabled && selfAssessmentConfig && (
-              <div className="px-6 py-5 flex flex-col gap-4 border-b border-gray-700">
-                <p className="text-xs text-gray-400 text-center uppercase tracking-widest font-semibold">
-                  Quick check-in
-                </p>
-                <InlineStarRow
-                  question={selfAssessmentConfig.question1}
-                  emoji1="😴"
-                  emoji5="🎯"
-                  value={focusRating}
-                  onChange={setFocusRating}
-                />
-                {saQ2Visible && (
-                  <InlineStarRow
-                    question={selfAssessmentConfig.question2}
-                    emoji1="🤔"
-                    emoji5="✅"
-                    value={accuracyRating}
-                    onChange={setAccuracyRating}
-                  />
-                )}
-                {!canContinue && (
-                  <p className="text-xs text-gray-500 text-center">
-                    Answer {saQ2Visible ? 'both questions' : 'the question above'} to continue
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Action buttons */}
-            <div className="px-6 py-5 flex gap-3">
-              <button
-                type="button"
-                onClick={handleRedo}
-                className="flex-1 px-4 py-3 rounded-2xl border border-gray-500 bg-gray-700 hover:bg-gray-600 hover:border-gray-400 text-white font-semibold text-sm transition active:translate-y-[1px]"
-              >
-                Redo
-              </button>
-              <button
-                type="button"
-                onClick={handleContinue}
-                disabled={!canContinue}
-                className={[
-                  'group flex-1 px-4 py-3 font-semibold text-sm rounded-2xl transition active:translate-y-[1px]',
-                  canContinue
-                    ? 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white shadow-[0_8px_24px_rgba(0,140,255,0.18)]'
-                    : 'bg-gray-700 text-gray-500 cursor-not-allowed',
-                ].join(' ')}
-              >
-                <span className="inline-flex items-center justify-center gap-1.5">
-                  <span>Continue</span>
-                  {canContinue && (
-                    <span className="opacity-90 group-hover:translate-x-0.5 transition">→</span>
-                  )}
-                </span>
-              </button>
-            </div>
-
-          </div>
+      {/* Recording badge — the running counterpart to the practice banner. */}
+      {pendingPayload === null && (
+        <div className="fixed top-4 left-4 z-[55] pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-950/80 border border-red-600/50 backdrop-blur">
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" aria-hidden />
+          <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-red-200">
+            Real test — recording
+          </span>
         </div>
+      )}
+
+      {pendingPayload !== null && (
+        <StepBreak
+          stepLabel={testLabel ?? testId}
+          stepIndex={stepIndex}
+          stepTotal={stepTotal}
+          nextLabel={nextTestLabel ?? null}
+          nextDescription={nextTestDescription ?? null}
+          nextVoiceKey={nextTestId ? neuroTestVoiceKey(nextTestId) : null}
+          saveState={saving ? 'saving' : saveState}
+          onNext={handleContinue}
+          onRedo={handleRedo}
+          canContinue={canContinue && !saving}
+          blockedReason={
+            saving
+              ? 'Saving this test…'
+              : saQ2Visible
+                ? 'Answer both questions to continue'
+                : 'Answer the question above to continue'
+          }
+        >
+          {saEnabled && selfAssessmentConfig && (
+            <div className="rounded-2xl border border-gray-800/70 bg-gray-900/50 p-5 flex flex-col gap-4">
+              <p className="text-xs text-gray-400 text-center uppercase tracking-widest font-semibold">
+                Quick check-in
+              </p>
+              <InlineStarRow
+                question={selfAssessmentConfig.question1}
+                emoji1="😴"
+                emoji5="🎯"
+                value={focusRating}
+                onChange={setFocusRating}
+              />
+              {saQ2Visible && (
+                <InlineStarRow
+                  question={selfAssessmentConfig.question2}
+                  emoji1="🤔"
+                  emoji5="✅"
+                  value={accuracyRating}
+                  onChange={setAccuracyRating}
+                />
+              )}
+            </div>
+          )}
+        </StepBreak>
       )}
     </>
   );

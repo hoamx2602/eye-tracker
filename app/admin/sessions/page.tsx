@@ -10,6 +10,7 @@ type SessionRow = {
   createdAt: string;
   updatedAt: string;
   status: string | null;
+  participantEmail: string | null;
   meanErrorPx: number | null;
   videoUrl: string | null;
   calibrationImageUrls: unknown;
@@ -103,6 +104,7 @@ export default function AdminSessionsPage() {
                   <tr className="border-b border-slate-700 bg-slate-800/80">
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">ID</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Created</th>
+                    <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Participant</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Mean error (px)</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Video</th>
@@ -116,6 +118,9 @@ export default function AdminSessionsPage() {
                       <td className="px-4 py-3 font-mono text-sm text-slate-300">{s.id.slice(0, 10)}…</td>
                       <td className="px-4 py-3 text-sm text-slate-300">
                         {new Date(s.createdAt).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-300 max-w-[16rem] truncate" title={s.participantEmail ?? undefined}>
+                        {s.participantEmail ?? <span className="text-slate-500">—</span>}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-300">{s.status ?? '—'}</td>
                       <td className="px-4 py-3 text-sm tabular-nums text-slate-300">

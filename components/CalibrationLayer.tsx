@@ -1,6 +1,10 @@
 
 import React from 'react';
 import { CalibrationPoint, CalibrationPhase, CalibrationMethod } from '../types';
+import { useVoiceRepeat } from '@/lib/voice/VoiceProvider';
+
+/** How often the short spoken reminder repeats while dots are being shown. */
+const VOICE_CUE_INTERVAL_MS = 25000;
 
 interface CalibrationLayerProps {
   points: CalibrationPoint[];
@@ -11,6 +15,14 @@ interface CalibrationLayerProps {
   progress: number; // 0 to 1
   onPointMouseDown: () => void;
   onPointMouseUp: () => void;
+  /**
+   * Silences this screen's cue while something is layered over it.
+   *
+   * The break screen appears on top without unmounting this one, so without
+   * the flag the calibration cue carries on firing underneath and talks over
+   * the break's own guidance.
+   */
+  voicePaused?: boolean;
 }
 
 const CalibrationLayer: React.FC<CalibrationLayerProps> = ({ 
@@ -21,7 +33,8 @@ const CalibrationLayer: React.FC<CalibrationLayerProps> = ({
   method,
   progress,
   onPointMouseDown,
-  onPointMouseUp
+  onPointMouseUp,
+  voicePaused = false,
 }) => {
   // Format phase string for display (e.g., "INITIAL_MAPPING" -> "Mapping")
   const phaseLabel = phase === CalibrationPhase.INITIAL_MAPPING ? "Initial Mapping" : 
@@ -44,6 +57,16 @@ const CalibrationLayer: React.FC<CalibrationLayerProps> = ({
   };
 
   const cursorClass = method === CalibrationMethod.CLICK_HOLD ? 'cursor-pointer' : 'cursor-none';
+
+  // Dots are already appearing, so the voice says what to do with them and
+  // keeps saying it — not why calibration exists, which was covered on the
+  // overview screen and is no use to someone mid-task.
+  //
+  // No replay button here: this screen is a task, and the only thing on it a
+  // participant should be looking at is the dot. The full explanation was
+  // given on the screen before, and the cue below repeats the instruction.
+  const voiceKey = phase === CalibrationPhase.VALIDATION ? 'calib.validation' : 'calib.intro';
+  useVoiceRepeat(voiceKey, VOICE_CUE_INTERVAL_MS, !voicePaused, { immediate: true });
 
   return (
     <div className={`absolute inset-0 z-50 bg-black bg-opacity-95 flex items-center justify-center ${cursorClass}`}>

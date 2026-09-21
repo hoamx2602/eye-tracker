@@ -167,6 +167,16 @@ export const EXERCISE_KIND_LABELS: Record<EyeMovementKind, string> = {
   h_pattern: 'H-Pattern',
 };
 
+/** One line per exercise, shown on the break screen so the next task is never a surprise. */
+export const EXERCISE_KIND_DESCRIPTIONS: Record<EyeMovementKind, string> = {
+  wiggling: 'A dot traces a smooth looping path. Follow it with your eyes, head still.',
+  horizontal: 'A dot moves side to side, pausing at each edge. Follow it left and right.',
+  vertical: 'A dot moves up and down, pausing at the top and bottom. Keep your chin level.',
+  forward_backward: 'A dot in the centre grows and shrinks. Keep your eyes on its centre.',
+  diagonal: 'A dot jumps between the corners of the screen. Follow it into each corner.',
+  h_pattern: 'A dot traces the shape of a letter H, pausing at each turning point.',
+};
+
 export function getPatternDisplayName(kind: EyeMovementKind): string {
   return EXERCISE_KIND_LABELS[kind] ?? kind;
 }

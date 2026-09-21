@@ -1,7 +1,19 @@
 'use client';
 
 import React, { useState } from 'react';
-import { AppState, CalibrationPhase, CalibrationMethod, EXERCISE_KINDS, EXERCISE_KIND_LABELS, TrackingMode, type AppConfig, type EyeMovementKind } from '../types';
+import {
+  AppState,
+  CalibrationPhase,
+  CalibrationMethod,
+  EXERCISE_KINDS,
+  EXERCISE_KIND_LABELS,
+  EXERCISE_KIND_DESCRIPTIONS,
+  TrackingMode,
+  type AppConfig,
+  type EyeMovementKind,
+} from '../types';
+import StepBreak, { type StepBreakSaveState } from './StepBreak';
+import { exerciseVoiceKey } from '@/lib/voice/scripts';
 import type { SelfAssessmentConfig } from './neurological/GuidePracticeTestFlow';
 import { InlineStarRow } from './neurological/GuidePracticeTestFlow';
 import type { HeadValidationResult } from '../services/eyeTrackingService';
@@ -10,7 +22,7 @@ import EyeMovementLayer from './EyeMovementLayer';
 import GazeCursor from './GazeCursor';
 import HeatmapLayer, { type HeatmapRef } from './HeatmapLayer';
 import HeadPositionGuide from './HeadPositionGuide';
-import DiagnosticsPanel from './DiagnosticsPanel';
+import DiagnosticsPanel, { DIAGNOSTICS_ENABLED } from './DiagnosticsPanel';
 import ConsentModal from './ConsentModal';
 import DemographicsForm, { type DemographicsData } from './DemographicsForm';
 import RandomDotsOverlay from './RandomDotsOverlay';
@@ -91,6 +103,8 @@ type AppMainOverlaysProps = {
   selfAssessmentConfig?: SelfAssessmentConfig | null;
   assessmentPending?: { type: 'grid' } | { type: 'exercise'; kind: EyeMovementKind; index: number } | null;
   exerciseRetryCount?: number;
+  stepSaveState?: StepBreakSaveState;
+  stepSaveError?: string | null;
   onAssessmentContinue?: () => void;
   onAssessmentRedo?: () => void;
 };
@@ -159,6 +173,8 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
     selfAssessmentConfig,
     assessmentPending,
     exerciseRetryCount = 0,
+    stepSaveState = 'idle',
+    stepSaveError,
     onAssessmentContinue,
     onAssessmentRedo,
   } = props;
@@ -178,11 +194,24 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
     }
   }, [assessmentPending]);
 
-  const assessmentLabel = assessmentPending?.type === 'grid' 
-    ? 'Calibration' 
-    : (assessmentPending?.type === 'exercise' 
-        ? (EXERCISE_KIND_LABELS[assessmentPending.kind] || assessmentPending.kind) 
+  const assessmentLabel = assessmentPending?.type === 'grid'
+    ? 'Calibration'
+    : (assessmentPending?.type === 'exercise'
+        ? (EXERCISE_KIND_LABELS[assessmentPending.kind] || assessmentPending.kind)
         : '');
+
+  // What the break announces as coming up. Always the specific exercise by
+  // name — "eye-movement exercises" told a participant nothing about what they
+  // were about to be asked to do, and the clip that played with it described
+  // the block rather than the task.
+  const nextExerciseKind: EyeMovementKind | null =
+    assessmentPending?.type === 'grid'
+      ? EXERCISE_KINDS[0] ?? null
+      : assessmentPending?.type === 'exercise'
+        ? EXERCISE_KINDS[assessmentPending.index + 1] ?? null
+        : null;
+  const nextExerciseNumber =
+    nextExerciseKind != null ? EXERCISE_KINDS.indexOf(nextExerciseKind) + 1 : 0;
 
   return (
     <div className="absolute inset-0 pointer-events-none font-sans">
@@ -283,6 +312,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
           progress={calibrationProgress}
           onPointMouseDown={onPointMouseDown}
           onPointMouseUp={onPointMouseUp}
+          voicePaused={!!assessmentPending}
         />
       )}
 
@@ -292,6 +322,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
           kind={EXERCISE_KINDS[currentExerciseIndex]}
           targetRef={exerciseTargetRef}
           onComplete={onExerciseComplete}
+          voicePaused={!!assessmentPending}
         />
       )}
 
@@ -375,7 +406,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
         </>
       )}
 
-      {(status === 'CALIBRATION' || status === 'TRACKING') && (
+      {DIAGNOSTICS_ENABLED && (status === 'CALIBRATION' || status === 'TRACKING') && (
         <DiagnosticsPanel
           showCamera={showCamera}
           setShowCamera={onSetShowCamera}
@@ -392,73 +423,58 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
       )}
 
       {assessmentPending && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 pointer-events-auto">
-          <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-sm flex flex-col gap-0 overflow-hidden">
-            <div className="px-6 pt-5 pb-4 text-center border-b border-gray-700">
-              <p className="text-xs text-gray-400 uppercase tracking-widest font-semibold mb-1">Step Complete</p>
-              <p className="text-white font-bold text-base">
-                {assessmentLabel}
+        <StepBreak
+          stepLabel={assessmentLabel}
+          stepIndex={assessmentPending.type === 'exercise' ? assessmentPending.index + 1 : undefined}
+          stepTotal={assessmentPending.type === 'exercise' ? EXERCISE_KINDS.length : undefined}
+          nextLabel={
+            nextExerciseKind
+              ? `${EXERCISE_KIND_LABELS[nextExerciseKind]} — exercise ${nextExerciseNumber} of ${EXERCISE_KINDS.length}`
+              : null
+          }
+          nextDescription={
+            nextExerciseKind
+              ? `${EXERCISE_KIND_DESCRIPTIONS[nextExerciseKind]}${
+                  assessmentPending.type === 'grid'
+                    ? ` It is the first of ${EXERCISE_KINDS.length} short exercises, with a break after each one.`
+                    : ''
+                }`
+              : null
+          }
+          nextVoiceKey={nextExerciseKind ? exerciseVoiceKey(nextExerciseKind) : null}
+          saveState={stepSaveState}
+          saveError={stepSaveError}
+          onNext={() => onAssessmentContinue?.()}
+          onRedo={() => onAssessmentRedo?.()}
+          canContinue={canContinue}
+          blockedReason={
+            saQ2Visible ? 'Answer both questions to continue' : 'Answer the question above to continue'
+          }
+        >
+          {saEnabled && selfAssessmentConfig && (
+            <div className="rounded-2xl border border-gray-800/70 bg-gray-900/50 p-5 flex flex-col gap-4">
+              <p className="text-xs text-gray-400 text-center uppercase tracking-widest font-semibold">
+                Quick check-in
               </p>
-            </div>
-
-            {saEnabled && selfAssessmentConfig && (
-              <div className="px-6 py-5 flex flex-col gap-4 border-b border-gray-700">
-                <p className="text-xs text-gray-400 text-center uppercase tracking-widest font-semibold">
-                  Quick check-in
-                </p>
+              <InlineStarRow
+                question={selfAssessmentConfig.question1}
+                emoji1="😴"
+                emoji5="🎯"
+                value={focusRating}
+                onChange={setFocusRating}
+              />
+              {saQ2Visible && (
                 <InlineStarRow
-                  question={selfAssessmentConfig.question1}
-                  emoji1="😴"
-                  emoji5="🎯"
-                  value={focusRating}
-                  onChange={setFocusRating}
+                  question={selfAssessmentConfig.question2}
+                  emoji1="🤔"
+                  emoji5="✅"
+                  value={accuracyRating}
+                  onChange={setAccuracyRating}
                 />
-                {saQ2Visible && (
-                  <InlineStarRow
-                    question={selfAssessmentConfig.question2}
-                    emoji1="🤔"
-                    emoji5="✅"
-                    value={accuracyRating}
-                    onChange={setAccuracyRating}
-                  />
-                )}
-                {!canContinue && (
-                  <p className="text-xs text-gray-500 text-center">
-                    Answer {saQ2Visible ? 'both questions' : 'the question above'} to continue
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="px-6 py-5 flex gap-3">
-              <button
-                type="button"
-                onClick={onAssessmentRedo}
-                className="flex-1 px-4 py-3 font-semibold text-sm rounded-2xl border border-gray-600 bg-gray-700 hover:bg-gray-600 text-white transition active:translate-y-[1px]"
-              >
-                Redo
-              </button>
-              <button
-                type="button"
-                onClick={onAssessmentContinue}
-                disabled={!canContinue}
-                className={[
-                  'group flex-1 px-4 py-3 font-semibold text-sm rounded-2xl transition active:translate-y-[1px] w-full',
-                  canContinue
-                    ? 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white shadow-[0_8px_24px_rgba(0,140,255,0.18)]'
-                    : 'bg-gray-700 text-gray-500 cursor-not-allowed',
-                ].join(' ')}
-              >
-                <span className="inline-flex items-center justify-center gap-1.5">
-                  <span>Continue</span>
-                  {canContinue && (
-                    <span className="opacity-90 group-hover:translate-x-0.5 transition">→</span>
-                  )}
-                </span>
-              </button>
+              )}
             </div>
-          </div>
-        </div>
+          )}
+        </StepBreak>
       )}
       </div>
     </div>

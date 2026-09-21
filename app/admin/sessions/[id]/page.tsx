@@ -28,7 +28,8 @@ type SessionDetail = {
   calibrationGazeSamples?: CalibrationSample[] | null;
   validationErrors?: number[];
   config?: unknown;
-  demographics?: { age?: number; gender?: string; country?: string; eyeConditions?: string[] } | null;
+  participantEmail?: string | null;
+  demographics?: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[] } | null;
   /** From TestRun table (or legacy: config.testTrajectories) */
   testTrajectories?: TestTrajectorySegment[] | null;
 };
@@ -254,7 +255,7 @@ export default function AdminSessionDetailPage() {
     );
   }
 
-  const demographics = session.demographics ?? (session.config && typeof session.config === 'object' ? (session.config as Record<string, unknown>).demographics as { age?: number; gender?: string; country?: string; eyeConditions?: string[] } | undefined : undefined);
+  const demographics = session.demographics ?? (session.config && typeof session.config === 'object' ? (session.config as Record<string, unknown>).demographics as { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[] } | undefined : undefined);
 
   return (
     <div className="space-y-8">
@@ -327,6 +328,14 @@ export default function AdminSessionDetailPage() {
             Demographics
           </h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {(session.participantEmail || demographics.email) && (
+              <div className="sm:col-span-2">
+                <dt className="text-xs text-slate-500 uppercase">Email</dt>
+                <dd className="text-sm text-slate-200 mt-0.5 break-all">
+                  {session.participantEmail ?? demographics.email}
+                </dd>
+              </div>
+            )}
             {demographics.age != null && (
               <div>
                 <dt className="text-xs text-slate-500 uppercase">Age</dt>
