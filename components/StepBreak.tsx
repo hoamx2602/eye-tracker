@@ -21,6 +21,9 @@ import EyeSpinner from './ui/EyeSpinner';
 
 export type StepBreakSaveState = 'idle' | 'saving' | 'saved' | 'error';
 
+/** How long Continue waits for a save before opening anyway. */
+const SAVE_WAIT_LIMIT_MS = 20000;
+
 export type StepBreakProps = {
   /** The step that just finished, e.g. "Horizontal". */
   stepLabel: string;
@@ -59,14 +62,26 @@ function formatElapsed(seconds: number): string {
   return m > 0 ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
 }
 
-function SaveStatus({ state, error }: { state: StepBreakSaveState; error?: string | null }) {
+function SaveStatus({
+  state,
+  error,
+  slow,
+}: {
+  state: StepBreakSaveState;
+  error?: string | null;
+  slow?: boolean;
+}) {
   if (state === 'idle') return null;
 
   if (state === 'saving') {
     return (
       <div className="flex items-center gap-2 text-sm text-blue-300">
         <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" aria-hidden />
-        <span>Saving your data…</span>
+        <span>
+          {slow
+            ? 'Still saving — the connection is slow. You can carry on; it will be saved again at the end.'
+            : 'Saving your data…'}
+        </span>
       </div>
     );
   }
@@ -108,6 +123,20 @@ export default function StepBreak({
 }: StepBreakProps) {
   const isLast = !nextLabel;
   const [elapsed, setElapsed] = useState(0);
+
+  // Continue stays dark until the step's data is on the server. A participant
+  // who moves on mid-upload can close the window a second later believing they
+  // are done, and the step is lost.
+  //
+  // A failed save does not block: the message says so, it will be retried with
+  // the final save, and trapping someone on a break screen is worse than
+  // carrying on.
+  // …but never for ever. Uploads have no timeout of their own, so a stalled
+  // connection would leave Continue dark with no way out. After this long the
+  // button opens anyway; the step is written again with the final save.
+  const [saveWaitedTooLong, setSaveWaitedTooLong] = useState(false);
+  const savePending = saveState === 'saving' && !saveWaitedTooLong;
+  const allowContinue = canContinue && !savePending;
   const voice = useVoice();
   const speakSequence = voice?.speakSequence;
   const breakKey: VoiceKey = isLast ? 'break.last' : 'break.rest';
@@ -129,6 +158,15 @@ export default function StepBreak({
     const id = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (saveState !== 'saving') {
+      setSaveWaitedTooLong(false);
+      return;
+    }
+    const id = setTimeout(() => setSaveWaitedTooLong(true), SAVE_WAIT_LIMIT_MS);
+    return () => clearTimeout(id);
+  }, [saveState]);
 
   return (
     <div
@@ -199,7 +237,7 @@ export default function StepBreak({
             </div>
           )}
 
-          <SaveStatus state={saveState} error={saveError} />
+          <SaveStatus state={saveState} error={saveError} slow={saveWaitedTooLong} />
         </div>
       </div>
 
@@ -212,30 +250,36 @@ export default function StepBreak({
                 onClick={onRedo}
                 className="px-6 py-3.5 rounded-2xl border border-gray-600 bg-gray-800 hover:bg-gray-700 hover:border-gray-500 text-white font-semibold text-sm transition active:translate-y-[1px]"
               >
-                Repeat this step
+                Try again
               </button>
             )}
             <button
               type="button"
               onClick={onNext}
-              disabled={!canContinue}
+              disabled={!allowContinue}
               className={[
                 'group flex-1 px-7 py-3.5 font-semibold rounded-2xl transition active:translate-y-[1px]',
-                canContinue
+                allowContinue
                   ? 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white shadow-[0_10px_30px_rgba(0,140,255,0.18)]'
                   : 'bg-gray-800 text-gray-500 cursor-not-allowed',
               ].join(' ')}
             >
               <span className="inline-flex items-center justify-center gap-2">
-                <span>{nextLabelOverride ?? (isLast ? 'Next' : "I'm ready — continue")}</span>
-                {canContinue && (
+                <span>
+                  {savePending
+                    ? 'Saving…'
+                    : nextLabelOverride ?? (isLast ? 'Next' : "I'm ready — continue")}
+                </span>
+                {allowContinue && (
                   <span className="opacity-90 group-hover:translate-x-0.5 transition">→</span>
                 )}
               </span>
             </button>
           </div>
-          {!canContinue && blockedReason && (
-            <p className="text-xs text-gray-500 text-center">{blockedReason}</p>
+          {!allowContinue && (savePending || blockedReason) && (
+            <p className="text-xs text-gray-500 text-center">
+              {savePending ? 'Saving your data from this step…' : blockedReason}
+            </p>
           )}
         </div>
       </div>
