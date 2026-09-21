@@ -1,20 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppState, EyeFeatures } from '../types';
 import { HeadValidationResult } from '../services/eyeTrackingService';
-
-/**
- * Off unless NEXT_PUBLIC_SHOW_DIAGNOSTICS is set.
- *
- * This panel exposes face-width numbers, feature vectors and LOOCV errors —
- * useful while tuning, meaningless and distracting to a participant who is
- * supposed to be looking at a dot. Hidden by default now that real sessions
- * are being recorded.
- */
-export const DIAGNOSTICS_ENABLED =
-  typeof process !== 'undefined' &&
-  ['1', 'true', 'yes', 'on'].includes(
-    (process.env.NEXT_PUBLIC_SHOW_DIAGNOSTICS ?? '').trim().toLowerCase(),
-  );
+export { DIAGNOSTICS_ENABLED } from '@/lib/featureFlags';
 
 interface DiagnosticsPanelProps {
   showCamera: boolean;
