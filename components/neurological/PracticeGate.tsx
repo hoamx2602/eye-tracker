@@ -66,9 +66,8 @@ export default function PracticeGate({
   return (
     <PracticeGateContext.Provider value={{ markPracticeDone }}>
       {/*
-        Practice is amber from edge to edge — banner, frame and watermark — so
-        it can never be mistaken for the recorded test, which is blue with a
-        red REC badge.
+        Practice is amber at the edges — banner and frame — so it can never be
+        mistaken for the recorded test, which is blue with a red REC badge.
       */}
       <div
         className="fixed inset-0 z-50 flex flex-col bg-gray-950 overflow-hidden ring-4 ring-inset ring-amber-500/50"
@@ -97,15 +96,8 @@ export default function PracticeGate({
             </p>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-6 w-full relative">
-          {/* Watermark: visible at a glance, never in the way of the task. */}
-          <span
-            aria-hidden
-            className="pointer-events-none select-none absolute inset-0 flex items-center justify-center text-[18vw] font-black text-amber-400/[0.04] -rotate-12 leading-none"
-          >
-            PRACTICE
-          </span>
-          <div className="max-w-3xl mx-auto relative">
+        <div className="flex-1 overflow-y-auto p-6 w-full">
+          <div className="max-w-3xl mx-auto">
             {children}
           </div>
         </div>

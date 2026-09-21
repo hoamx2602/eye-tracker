@@ -11,8 +11,21 @@ import { randomPeripheralStimulusPosition } from './utils';
 
 /**
  * Practice: a few peripheral stimuli, same UI, no recording.
+ *
+ * Both dots come from the same config as the real test; they were hard-coded,
+ * so a configured size or colour applied only to the recorded run.
  */
-export default function PeripheralVisionPractice() {
+export default function PeripheralVisionPractice({
+  config,
+}: {
+  config?: Record<string, unknown>;
+}) {
+  const centerDotSizePx = Math.max(4, Math.min(64, Number(config?.centerDotSizePx) || 8));
+  const centerDotColor =
+    typeof config?.centerDotColor === 'string' ? config.centerDotColor : '#f59e0b';
+  const stimulusDotSizePx = Math.max(4, Math.min(64, Number(config?.stimulusDotSizePx) || 16));
+  const stimulusDotColor =
+    typeof config?.stimulusDotColor === 'string' ? config.stimulusDotColor : '#ffffff';
   const boxRef = useRef<HTMLDivElement>(null);
   const [trialIndex, setTrialIndex] = useState(0);
   const [showStimulus, setShowStimulus] = useState(false);
@@ -52,16 +65,26 @@ export default function PeripheralVisionPractice() {
       </p>
       <div ref={boxRef} className="relative w-full h-48" style={{ maxWidth: 400 }}>
         <div
-          className="absolute w-2 h-2 rounded-full bg-amber-400"
-          style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)', marginLeft: -4, marginTop: -4 }}
+          className="absolute rounded-full"
+          style={{
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: centerDotSizePx,
+            height: centerDotSizePx,
+            backgroundColor: centerDotColor,
+          }}
         />
         {showStimulus && (
           <div
-            className="absolute w-4 h-4 rounded-full bg-white border border-gray-300"
+            className="absolute rounded-full"
             style={{
               left: stimulusPos.x,
               top: stimulusPos.y,
               transform: 'translate(-50%, -50%)',
+              width: stimulusDotSizePx,
+              height: stimulusDotSizePx,
+              backgroundColor: stimulusDotColor,
             }}
           />
         )}

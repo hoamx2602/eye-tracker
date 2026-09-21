@@ -370,7 +370,7 @@ export default function NeurologicalFlowSection({
             testLabel={TEST_LABELS.fixation_stability}
             guideSteps={FIXATION_STABILITY_GUIDE_STEPS}
             enablePractice={!quickMode}
-            practiceContent={<FixationStabilityPractice />}
+            practiceContent={(cfg) => <FixationStabilityPractice config={cfg} />}
             practiceTitle="Fixation Stability"
             testContent={<FixationStabilityTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.fixation_stability as Record<string, unknown>) ?? { durationSec: DEFAULT_DURATION_SEC, blinkIntervalMs: DEFAULT_BLINK_INTERVAL_MS }) }}
@@ -385,7 +385,7 @@ export default function NeurologicalFlowSection({
             testLabel={TEST_LABELS.peripheral_vision}
             guideSteps={PERIPHERAL_VISION_GUIDE_STEPS}
             enablePractice={!quickMode}
-            practiceContent={<PeripheralVisionPractice />}
+            practiceContent={(cfg) => <PeripheralVisionPractice config={cfg} />}
             practiceTitle="Peripheral Vision"
             testContent={<PeripheralVisionTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.peripheral_vision as Record<string, unknown>) ?? { trialCount: PERIPHERAL_DEFAULT_TRIAL_COUNT, stimulusDurationMs: DEFAULT_STIMULUS_DURATION_MS, minDelayMs: DEFAULT_MIN_DELAY_MS, maxDelayMs: DEFAULT_MAX_DELAY_MS }) }}

@@ -6,8 +6,20 @@ import { DEFAULT_BLINK_INTERVAL_MS, PRACTICE_DURATION_SEC } from './constants';
 
 /**
  * Optional practice: dot blinks for a while then stops; no time display, just instruct to look until it stops blinking.
+ *
+ * The dot is drawn from the same config as the real test. It used to be a
+ * hard-coded 12 px amber circle, so as soon as an administrator changed the
+ * size or colour the participant practised on a different dot from the one
+ * they were about to be tested with.
  */
-export default function FixationStabilityPractice() {
+export default function FixationStabilityPractice({
+  config,
+}: {
+  config?: Record<string, unknown>;
+}) {
+  const centerDotSizePx = Math.max(6, Math.min(64, Number(config?.centerDotSizePx) || 12));
+  const centerDotColor =
+    typeof config?.centerDotColor === 'string' ? config.centerDotColor : '#f59e0b';
   const practiceGate = usePracticeGate();
   const practiceGateRef = useRef(practiceGate);
   practiceGateRef.current = practiceGate;
@@ -41,8 +53,14 @@ export default function FixationStabilityPractice() {
         Look here until the dot stops blinking.
       </p>
       <div
-        className="w-3 h-3 rounded-full bg-amber-400"
-        style={{ opacity: blinkVisible ? 1 : 0.35, transition: 'opacity 0.1s ease' }}
+        className="rounded-full shadow-lg"
+        style={{
+          width: centerDotSizePx,
+          height: centerDotSizePx,
+          backgroundColor: centerDotColor,
+          opacity: blinkVisible ? 1 : 0.35,
+          transition: 'opacity 0.1s ease',
+        }}
       />
     </div>
   );
