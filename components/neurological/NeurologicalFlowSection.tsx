@@ -255,6 +255,7 @@ export default function NeurologicalFlowSection({
               guideSteps={HEAD_ORIENTATION_GUIDE_STEPS}
               enablePractice={false}
               testContent={<HeadOrientationTest />}
+              repeatCue={false}
               config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.head_orientation as Record<string, unknown>) ?? { durationPerDirectionSec: 4, order: ['left', 'right', 'up', 'down'] }) }}
               {...flowPropsFor('head_orientation')}
             />

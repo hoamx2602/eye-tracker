@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTestRunner } from '../../TestRunnerContext';
+import { useVoice, useVoiceOwnedClip } from '@/lib/voice/VoiceProvider';
+import { headDirectionVoiceKey } from '@/lib/voice/scripts';
 import { useNeuroHeadPose } from '../../NeuroHeadPoseContext';
 import { useNeuroPanelLayout } from '../../NeuroPanelLayoutContext';
 import {
@@ -177,6 +179,19 @@ export default function HeadOrientationTest() {
   }, [directionIndex, order.length, durationSec]); // use completeTestRef.current in timeout; omit config/completeTest so parent re-render doesn't reset timer
 
   const inPanel = useNeuroPanelLayout();
+
+  // Announce each direction as it comes up. The instruction is to turn away
+  // from the screen, so reading it is exactly what the participant cannot do
+  // while following it.
+  const voice = useVoice();
+  const speak = voice?.speak;
+  const currentDirection = directionIndex < order.length ? order[directionIndex] : null;
+  const directionVoiceKey = currentDirection ? headDirectionVoiceKey(currentDirection) : null;
+  useVoiceOwnedClip(directionVoiceKey);
+  useEffect(() => {
+    if (!directionVoiceKey || !speak) return;
+    speak(directionVoiceKey);
+  }, [directionVoiceKey, speak]);
 
   if (directionIndex >= order.length) {
     return (

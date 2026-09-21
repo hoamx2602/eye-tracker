@@ -258,6 +258,16 @@ export const VOICE_SCRIPTS = {
       'When you are ready, select Next to finish the session.',
   },
 
+  // ------------------------------------------- head orientation directions
+  // Announced as each direction comes up, so the participant can keep their
+  // head moving without having to read the screen — which is awkward when the
+  // instruction is to turn away from it. Short enough to finish well inside
+  // the four seconds each direction is held for.
+  'headori.left': { text: 'Turn your head to the left, and hold it there.' },
+  'headori.right': { text: 'Turn your head to the right, and hold it there.' },
+  'headori.up': { text: 'Tilt your head up, and hold it there.' },
+  'headori.down': { text: 'Tilt your head down, and hold it there.' },
+
   // ------------------------------------------------- assessment overview
   // The step previews on the home page. Text comes from lib/assessmentSteps.ts,
   // the same strings the page renders, because here the participant is reading
@@ -320,6 +330,12 @@ export function headPromptVoiceKey(message: string): VoiceKey | null {
     case 'perfect! hold steady': return 'head.hold';
     default: return null;
   }
+}
+
+/** Voice key for one head-orientation direction. */
+export function headDirectionVoiceKey(direction: string): VoiceKey | null {
+  const key = `headori.${direction}`;
+  return key in VOICE_SCRIPTS ? (key as VoiceKey) : null;
 }
 
 /** Voice key for a step preview on the overview screen. */

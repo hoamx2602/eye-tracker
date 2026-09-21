@@ -25,6 +25,6 @@ export type HeadOrientationDirection = 'left' | 'right' | 'up' | 'down';
 export const DIRECTION_LABELS: Record<HeadOrientationDirection, string> = {
   left: 'Turn head LEFT',
   right: 'Turn head RIGHT',
-  up: 'Look UP',
-  down: 'Look DOWN',
+  up: 'Tilt head UP',
+  down: 'Tilt head DOWN',
 };

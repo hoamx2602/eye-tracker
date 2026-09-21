@@ -57,6 +57,12 @@ export type GuidePracticeTestFlowProps = {
   saveState?: 'idle' | 'saving' | 'saved' | 'error';
   /** True while Continue is writing the final result. */
   saving?: boolean;
+  /**
+   * Repeat this test's short cue while it runs. Off for tests that speak for
+   * themselves — head orientation announces every direction as it comes up,
+   * and a generic reminder on top of that is just two voices competing.
+   */
+  repeatCue?: boolean;
 };
 
 /** Single star-row used inside the inline post-test overlay. */
@@ -131,6 +137,7 @@ export default function GuidePracticeTestFlow({
   onTestResultReady,
   saveState = 'idle',
   saving = false,
+  repeatCue = true,
 }: GuidePracticeTestFlowProps) {
   const [phase, setPhase] = useState<GuidePracticeTestFlowPhase>('guide');
   const [pendingPayload, setPendingPayload] = useState<TestResultPayload | null>(null);
@@ -188,7 +195,7 @@ export default function GuidePracticeTestFlow({
   useVoiceRepeat(
     neuroTestVoiceKey(testId),
     IN_TEST_CUE_INTERVAL_MS,
-    phase === 'test' && pendingPayload === null
+    repeatCue && phase === 'test' && pendingPayload === null
   );
 
   function handleRedo() {
