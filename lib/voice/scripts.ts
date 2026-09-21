@@ -285,13 +285,6 @@ export const VOICE_SCRIPTS = {
   'overview.fixation_stability': { text: stepSpokenText('fixation_stability') },
   'overview.peripheral_vision': { text: stepSpokenText('peripheral_vision') },
 
-  // --------------------------------------------------------------- finished
-  'neuro.done': {
-    text:
-      'That is the end of the session. Thank you very much for taking part — ' +
-      'your data has been saved and will help this research. ' +
-      'You may now close this window.',
-  },
 } as const satisfies Record<string, VoiceScript>;
 
 export type VoiceKey = keyof typeof VOICE_SCRIPTS;

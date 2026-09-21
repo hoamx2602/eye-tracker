@@ -1,610 +1,95 @@
 'use client';
 
 /**
- * ResultsPageClient — full user-facing results page (Phase 5).
- * Sections A–F per mvp-plan.md.
+ * What a participant sees when the session ends: that it is finished, and
+ * thank you. Nothing else.
+ *
+ * This used to be a full results report — scores, a radar chart, gaze-error
+ * diagrams, per-test breakdowns. Participants are not the audience for any of
+ * that: the numbers are only meaningful against the study's own baselines, and
+ * a low tracking-accuracy dial is alarming to read about yourself while
+ * carrying no advice about what to do with it. The tool is explicitly not a
+ * medical device, and the consent form says so.
+ *
+ * The full report is still there for the research team:
+ *   - /admin/neurological-runs/[id]          — every test, with visualisations
+ *   - /admin/neurological-runs/[id]/report   — the printable write-up
+ *   - /results/[runId]/print                 — the PDF layout, unchanged
  */
 
-import React, { useMemo, useState } from 'react';
-import { VoiceButton } from '@/components/ui/VoiceButton';
-import {
-  RadarChart,
-  Radar,
-  PolarGrid,
-  PolarAngleAxis,
-  ResponsiveContainer,
-  Tooltip,
-} from 'recharts';
+import React from 'react';
 import Link from 'next/link';
-import TestModeCharts, { TestTrajectorySegment } from '@/components/neurological/TestModeCharts';
-import {
-  computeAllScores,
-  calibrationQualityLabel,
-  calibrationQualityColour,
-  eyeTrackingAccuracyScore,
-  angularErrorDeg,
-  selfAssessmentInsight,
-  symptomTotal,
-  DOMAIN_ICONS,
-  DOMAIN_NAMES,
-  SYMPTOM_LABELS,
-} from '@/lib/resultScoring';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface CalibrationGazeSample {
-  screenX?: number;
-  screenY?: number;
-  x?: number;
-  y?: number;
-  timestamp?: number;
-  t?: number;
-}
 
 interface RunData {
   id: string;
-  status: string;
   createdAt: string;
-  testOrderSnapshot: string[];
-  configSnapshot: Record<string, unknown>;
-  preSymptomScores: Record<string, number> | null;
-  postSymptomScores: Record<string, number> | null;
-  testResults: Record<string, Record<string, unknown>>;
-  faceDistance?: number;
-  chartSmoothing?: { method: string; window: number };
-  session: {
-    id: string;
-    meanErrorPx: number | null;
-    demographics: Record<string, unknown> | null;
-    createdAt: string | null;
-    calibrationGazeSamples: unknown[];
-    testTrajectories?: unknown[] | null;
-  };
+  session: { id: string };
 }
-
-// ---------------------------------------------------------------------------
-// Helper components
-// ---------------------------------------------------------------------------
-
-function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <div className="mb-6 print:break-after-avoid">
-      <h2 className="text-xl font-bold text-white">{title}</h2>
-      {subtitle && <p className="text-sm text-gray-400 mt-1">{subtitle}</p>}
-    </div>
-  );
-}
-
-function ScoreBar({ score, disabled }: { score: number | null; disabled?: boolean }) {
-  if (disabled || score === null) {
-    return (
-      <div className="w-full h-2 rounded-full bg-gray-800">
-        <div className="h-full w-0 rounded-full" />
-      </div>
-    );
-  }
-  const pct = `${score}%`;
-  const colour = score >= 70 ? 'from-emerald-500 to-green-400'
-    : score >= 40 ? 'from-blue-500 to-cyan-400'
-    : 'from-amber-500 to-yellow-400';
-  return (
-    <div className="w-full h-2 rounded-full bg-gray-800">
-      <div
-        className={`h-full rounded-full bg-gradient-to-r ${colour} transition-all duration-700`}
-        style={{ width: pct }}
-      />
-    </div>
-  );
-}
-
-/**
- * Diagram showing pixel error (line) + angular error (arc θ).
- * Gaze point position is scaled proportionally to the actual pixelError.
- * Hover reveals an exact-value tooltip.
- */
-function GazeErrorDiagram({
-  pixelError,
-  angularError,
-  viewingDistanceCm,
-}: {
-  pixelError: number;
-  angularError: number;
-  viewingDistanceCm: number;
-}) {
-  const [lineHover, setLineHover] = React.useState(false);
-  const [arcHover, setArcHover] = React.useState(false);
-
-  const W = 220, H = 148;
-  const tx = 58, ty = 108;       // target — fixed
-  const ANGLE = -Math.PI / 5.5; // ~32.7° above horizontal
-
-  // Scale pixelError → visual distance (18–85 px in SVG coords)
-  const visualDist = 18 + (Math.min(pixelError, 110) / 110) * 67;
-  const gx = tx + visualDist * Math.cos(ANGLE);
-  const gy = ty + visualDist * Math.sin(ANGLE);
-
-  const arcR = Math.max(13, Math.min(visualDist * 0.42, 34));
-  const arcEndX = tx + arcR * Math.cos(ANGLE);
-  const arcEndY = ty + arcR * Math.sin(ANGLE);
-  const refEndX = Math.min(gx + 18, W - 4);
-
-  // ── Line callout geometry ──────────────────────────────────────────────────
-  const lineMidX = (tx + gx) / 2;
-  const lineMidY = (ty + gy) / 2;
-  const lineLen = Math.hypot(gx - tx, gy - ty);
-  const lineUx = lineLen > 0 ? (gx - tx) / lineLen : 0;
-  const lineUy = lineLen > 0 ? (gy - ty) / lineLen : -1;
-  // Perpendicular pointing upper-left (away from the gaze direction)
-  const linePerpX = lineUy;   // negative → leftward
-  const linePerpY = -lineUx;  // negative → upward
-  const lineLeaderEndX = lineMidX + linePerpX * 22;
-  const lineLeaderEndY = lineMidY + linePerpY * 22;
-  const lineShelfDir = lineLeaderEndX >= lineMidX ? 1 : -1;
-  const lineShelfEndX = lineLeaderEndX + lineShelfDir * 16;
-  const lineTextX = lineShelfEndX + lineShelfDir * 2;
-
-  // ── Arc callout geometry ──────────────────────────────────────────────────
-  const midAngle = ANGLE / 2;
-  const arcAnchorX = tx + arcR * Math.cos(midAngle);
-  const arcAnchorY = ty + arcR * Math.sin(midAngle);
-  const arcLeaderEndX = arcAnchorX + Math.cos(midAngle) * 22;
-  const arcLeaderEndY = arcAnchorY + Math.sin(midAngle) * 22;
-  const arcShelfDir = arcLeaderEndX >= tx ? 1 : -1;
-  const arcShelfEndX = arcLeaderEndX + arcShelfDir * 16;
-  const arcTextX = arcShelfEndX + arcShelfDir * 2;
-
-  const CALLOUT = '#22c55e';
-  const GRID = 22;
-
-  return (
-    <div className="relative cursor-default">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ overflow: 'visible' }}>
-        {/* Grid */}
-        {Array.from({ length: Math.ceil(W / GRID) }, (_, i) => (
-          <line key={`v${i}`} x1={(i + 1) * GRID} y1={0} x2={(i + 1) * GRID} y2={H} stroke="#1f2937" strokeWidth="1" />
-        ))}
-        {Array.from({ length: Math.ceil(H / GRID) }, (_, i) => (
-          <line key={`h${i}`} x1={0} y1={(i + 1) * GRID} x2={W} y2={(i + 1) * GRID} stroke="#1f2937" strokeWidth="1" />
-        ))}
-
-        {/* Horizontal reference */}
-        <line x1={tx} y1={ty} x2={refEndX} y2={ty} stroke="#374151" strokeWidth="1.5" strokeDasharray="4 3" />
-
-        {/* ── Pixel error line (hoverable) ── */}
-        <g onMouseEnter={() => setLineHover(true)} onMouseLeave={() => setLineHover(false)} style={{ cursor: 'pointer' }}>
-          <line
-            x1={tx} y1={ty} x2={gx} y2={gy}
-            stroke={lineHover ? '#94a3b8' : '#6b7280'}
-            strokeWidth={lineHover ? 2.5 : 1.5}
-            style={{ transition: 'stroke 0.12s, stroke-width 0.12s' }}
-          />
-          <line x1={tx} y1={ty} x2={gx} y2={gy} stroke="transparent" strokeWidth="14" />
-        </g>
-
-        {/* ── Angular arc (hoverable) ── */}
-        <g onMouseEnter={() => setArcHover(true)} onMouseLeave={() => setArcHover(false)} style={{ cursor: 'pointer' }}>
-          <path
-            d={`M ${tx} ${ty} L ${tx + arcR} ${ty} A ${arcR} ${arcR} 0 0 1 ${arcEndX.toFixed(1)} ${arcEndY.toFixed(1)} Z`}
-            fill={arcHover ? 'rgba(96,165,250,0.15)' : 'transparent'}
-            style={{ transition: 'fill 0.18s' }}
-          />
-          <path
-            d={`M ${(tx + arcR).toFixed(1)} ${ty} A ${arcR} ${arcR} 0 0 1 ${arcEndX.toFixed(1)} ${arcEndY.toFixed(1)}`}
-            fill="none" stroke="#60a5fa"
-            strokeWidth={arcHover ? 2.5 : 1.5}
-            style={{ transition: 'stroke-width 0.12s' }}
-          />
-          {/* Wide invisible hit area */}
-          <path
-            d={`M ${tx} ${ty} L ${tx + arcR} ${ty} A ${arcR} ${arcR} 0 0 1 ${arcEndX.toFixed(1)} ${arcEndY.toFixed(1)} Z`}
-            fill="transparent" stroke="transparent" strokeWidth="8"
-          />
-        </g>
-
-        {/* θ static label — hidden while callout is shown */}
-        {!arcHover && (
-          <text x={tx + arcR + 4} y={ty - 4} fill="#60a5fa" fontSize="11" fontStyle="italic">θ</text>
-        )}
-
-        {/* Target cross */}
-        <line x1={tx - 8} y1={ty} x2={tx + 8} y2={ty} stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
-        <line x1={tx} y1={ty - 8} x2={tx} y2={ty + 8} stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
-
-        {/* Gaze circle */}
-        <circle cx={gx} cy={gy} r="9" fill="#3b82f6" />
-
-        {/* Static labels */}
-        {gx + 14 < W - 46 && (
-          <>
-            <text x={gx + 14} y={gy - 3} fill="#93c5fd" fontSize="8.5">Measured</text>
-            <text x={gx + 14} y={gy + 8} fill="#93c5fd" fontSize="8.5">Gaze Point</text>
-          </>
-        )}
-        <text x={tx - 4} y={ty + 18} fill="#fca5a5" fontSize="8.5">Target</text>
-        <text x={tx - 4} y={ty + 28} fill="#fca5a5" fontSize="8.5">Point</text>
-
-        {/* ── Pixel error callout: dot → leader → shelf → value ── */}
-        {lineHover && (
-          <g>
-            <circle cx={lineMidX} cy={lineMidY} r="2.5" fill={CALLOUT} />
-            <line x1={lineMidX} y1={lineMidY} x2={lineLeaderEndX} y2={lineLeaderEndY} stroke={CALLOUT} strokeWidth="1" />
-            <line x1={lineLeaderEndX} y1={lineLeaderEndY} x2={lineShelfEndX} y2={lineLeaderEndY} stroke={CALLOUT} strokeWidth="1" />
-            <text
-              x={lineTextX} y={lineLeaderEndY}
-              fontSize="7.5" fill={CALLOUT} fontFamily="monospace"
-              textAnchor={lineShelfDir > 0 ? 'start' : 'end'}
-              dominantBaseline="middle"
-            >
-              {pixelError.toFixed(1)} px
-            </text>
-          </g>
-        )}
-
-        {/* ── Angular error callout: dot → leader → shelf → value ── */}
-        {arcHover && (
-          <g>
-            <circle cx={arcAnchorX} cy={arcAnchorY} r="2.5" fill={CALLOUT} />
-            <line x1={arcAnchorX} y1={arcAnchorY} x2={arcLeaderEndX} y2={arcLeaderEndY} stroke={CALLOUT} strokeWidth="1" />
-            <line x1={arcLeaderEndX} y1={arcLeaderEndY} x2={arcShelfEndX} y2={arcLeaderEndY} stroke={CALLOUT} strokeWidth="1" />
-            <text
-              x={arcTextX} y={arcLeaderEndY}
-              fontSize="7.5" fill={CALLOUT} fontFamily="monospace"
-              textAnchor={arcShelfDir > 0 ? 'start' : 'end'}
-              dominantBaseline="middle"
-            >
-              θ = {angularError.toFixed(2)}°{' '}
-              <tspan fill="#6b7280">@ {viewingDistanceCm}cm</tspan>
-            </text>
-          </g>
-        )}
-      </svg>
-    </div>
-  );
-}
-
-/** Accuracy dial / gauge (SVG arc) */
-function AccuracyDial({ score }: { score: number }) {
-  const radius = 52;
-  const cx = 70;
-  const cy = 70;
-  const strokeWidth = 10;
-  const circumference = Math.PI * radius; // half circle
-  const filled = (score / 100) * circumference;
-
-  // Arc path: start at left, end at right (180° sweep)
-  const startX = cx - radius;
-  const startY = cy;
-  const endX = cx + radius;
-  const endY = cy;
-
-  const arcPath = `M ${startX} ${startY} A ${radius} ${radius} 0 0 1 ${endX} ${endY}`;
-
-  const colour = score >= 70 ? '#34d399' : score >= 40 ? '#60a5fa' : '#f59e0b';
-
-  return (
-    <svg viewBox="0 0 140 90" className="w-full max-w-[200px]">
-      {/* Background arc */}
-      <path d={arcPath} fill="none" stroke="#1f2937" strokeWidth={strokeWidth} strokeLinecap="round" />
-      {/* Score arc */}
-      <path
-        d={arcPath}
-        fill="none"
-        stroke={colour}
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeDasharray={`${filled} ${circumference}`}
-        style={{ filter: `drop-shadow(0 0 6px ${colour}88)` }}
-      />
-      {/* Score number */}
-      <text x={cx} y={cy - 4} textAnchor="middle" fill="white" fontSize="22" fontWeight="bold">
-        {score}
-      </text>
-      {/* Label */}
-      <text x={cx} y={cy + 14} textAnchor="middle" fill="#9ca3af" fontSize="8.5">
-        Eye Tracking Accuracy
-      </text>
-    </svg>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
 
 export default function ResultsPageClient({ runData }: { runData: RunData }) {
-  const { session, testOrderSnapshot, testResults, configSnapshot, preSymptomScores, postSymptomScores } = runData;
-
-  // This is where a participant lands when the session ends, so it thanks
-  // them out loud as well as on screen.
-
-  const meanErrorPx = session.meanErrorPx;
-  const viewingDistanceCm = runData.faceDistance ?? 60;
-  const angularErr = meanErrorPx != null ? angularErrorDeg(meanErrorPx, viewingDistanceCm) : null;
-
-  // Extract scoring config from configSnapshot
-  const configSnap = configSnapshot as {
-    testParameters?: Record<string, Record<string, unknown>>;
-    testEnabled?: Record<string, boolean>;
-  };
-  const scoringConfig = (configSnap?.testParameters?.['_scoring'] as Record<string, Record<string, number>> | undefined) ?? undefined;
-  const enabledTests: Record<string, boolean> = configSnap?.testEnabled ?? {};
-
-  // Compute all domain scores
-  const scores = useMemo(
-    () => computeAllScores(testResults, testOrderSnapshot, enabledTests, scoringConfig),
-    [testResults, testOrderSnapshot, enabledTests, scoringConfig]
-  );
-
-  // Eye tracking accuracy
-  const etScore = angularErr != null ? eyeTrackingAccuracyScore(angularErr) : null;
-
-
-
-  const selfAssessInsight = selfAssessmentInsight(testResults, scores);
-  const selfAssessConfig = configSnap?.testParameters?.['_selfAssessment'] as Record<string, unknown> | undefined;
-  const selfAssessEnabled = selfAssessInsight !== null && (selfAssessConfig?.enabled !== false);
-
-  const preTotal = symptomTotal(preSymptomScores);
-  const postTotal = symptomTotal(postSymptomScores);
-  const hasSymptoms = preSymptomScores !== null && postSymptomScores !== null;
-
-  const [pdfLoading, setPdfLoading] = useState(false);
-
-  // Radar chart data
-  const radarData = scores.map((s) => ({
-    domain: s.domainName,
-    score: s.score ?? 0,
-    notAssessed: s.score === null,
-  }));
-
-  // Date
-  const assessmentDate = runData.createdAt
-    ? new Date(runData.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-    : '';
-
-  // Demographics
-  const demographics = session.demographics;
-  const firstName = demographics
-    ? (demographics.firstName as string | undefined) ?? (demographics.name as string | undefined) ?? null
-    : null;
+  const finishedOn = new Date(runData.createdAt).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 
   return (
-    <>
-      <style>{`
-        @media print {
-          @page { margin: 0; }
-          body {
-            background-color: #030712 !important; /* bg-gray-950 */
-          }
-          /* Force exact identical rendering */
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            color-adjust: exact !important;
-          }
-        }
-      `}</style>
-      <div 
-        className="h-screen overflow-y-auto print:h-auto print:overflow-visible bg-gray-950 text-white scrollbar-thin"
-      >
-        {/* Nav bar */}
-        <div className="sticky top-0 z-40 border-b border-gray-800/60 bg-gray-950/90 backdrop-blur-sm print:hidden">
-          <div className="mx-auto max-w-4xl flex items-center gap-3 px-4 py-3">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
-              <svg viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.5" className="w-4 h-4">
-                <circle cx="10" cy="10" r="8" />
-                <circle cx="10" cy="10" r="3.5" />
-                <circle cx="10" cy="10" r="1" fill="white" stroke="none" />
-              </svg>
-            </div>
-            <span className="text-sm font-semibold text-white">Eye Assessment</span>
-            {/* Closing thank-you, on request — the page itself is read, not heard. */}
-            <VoiceButton voiceKey="neuro.done" iconOnly className="ml-auto print:hidden" />
-            <Link
-              href={`/tracking?sessionId=${runData.session.id}`}
-              className="px-4 py-1.5 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 text-[10px] sm:text-xs font-semibold hover:bg-blue-600/20 hover:border-blue-500/40 transition-all flex items-center gap-2"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-              Real-time Eye Tracking
-            </Link>
+    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
+      <div className="border-b border-gray-800/60">
+        <div className="mx-auto max-w-4xl flex items-center gap-3 px-4 py-3">
+          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+            <svg viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.5" className="w-4 h-4">
+              <circle cx="10" cy="10" r="8" />
+              <circle cx="10" cy="10" r="3.5" />
+              <circle cx="10" cy="10" r="1" fill="white" stroke="none" />
+            </svg>
           </div>
+          <span className="text-sm font-semibold text-white">Eye Assessment</span>
+          <Link
+            href={`/tracking?sessionId=${runData.session.id}`}
+            className="ml-auto px-4 py-1.5 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 text-[10px] sm:text-xs font-semibold hover:bg-blue-600/20 hover:border-blue-500/40 transition-all flex items-center gap-2"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+            Real-time Eye Tracking
+          </Link>
+        </div>
       </div>
 
-      <div className="mx-auto max-w-4xl px-4 py-10 print:py-16 print:px-8 space-y-12">
-
-        {/* ——————————————————————————————————————————————
-            Section A — Header
-        —————————————————————————————————————————————— */}
-        <section>
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 sm:p-8 print:break-inside-avoid flex flex-col gap-5">
-            {/* Top row: text info + dial */}
-            <div className="flex items-start justify-between gap-6">
-              <div className="flex-1">
-                <p className="text-xs text-gray-500 uppercase tracking-widest mb-2 font-semibold">Assessment complete</p>
-                <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
-                  Your Assessment Results
-                  {firstName ? <span className="text-blue-400">, {firstName}</span> : null}
-                </h1>
-                <p className="text-sm text-gray-400">{assessmentDate}</p>
-              </div>
-              {etScore != null && (
-                <div className="shrink-0">
-                  <AccuracyDial score={etScore} />
-                </div>
-              )}
-            </div>
-
-            {/* Quality label + diagram + metric cards — full width, centred */}
-            {meanErrorPx != null && (
-              <div className="flex flex-col items-center gap-3">
-                <div className={`inline-flex items-center gap-2 text-sm font-medium ${calibrationQualityColour(angularErr)}`}>
-                  <span className="text-lg">●</span>
-                  <span>{calibrationQualityLabel(angularErr)}</span>
-                </div>
-                <div className="w-full max-w-[320px] rounded-xl border border-gray-800 bg-gray-900/70 p-2 overflow-visible">
-                  <GazeErrorDiagram
-                    pixelError={meanErrorPx}
-                    angularError={angularErr ?? 0}
-                    viewingDistanceCm={viewingDistanceCm}
-                  />
-                </div>
-                <div className="w-full max-w-[320px] grid grid-cols-2 gap-2">
-                  <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2">
-                    <div className="text-[9px] text-gray-500 uppercase tracking-wider">Pixel error</div>
-                    <div className="text-sm font-mono font-semibold text-white tabular-nums mt-0.5">
-                      {meanErrorPx.toFixed(1)} px
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-blue-900/30 bg-blue-950/15 px-3 py-2">
-                    <div className="text-[9px] text-blue-400/60 uppercase tracking-wider">Angular error</div>
-                    <div className="text-sm font-mono font-semibold text-blue-300 tabular-nums mt-0.5">
-                      {(angularErr ?? 0).toFixed(2)}° <span className="text-[9px] text-gray-600">@ {viewingDistanceCm}cm</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* ——————————————————————————————————————————————
-            Section B — Eye Tracking Profile
-        —————————————————————————————————————————————— */}
-        <section>
-          <SectionHeader
-            title="Eye Tracking Profile"
-            subtitle="How accurately the eye tracker followed your gaze."
-          />
-          <TestModeCharts
-            testTrajectories={session.testTrajectories as TestTrajectorySegment[] | null}
-            smoothing={runData.chartSmoothing}
-          />
-        </section>
-
-        {/* ——————————————————————————————————————————————
-            Section C — Assessment Scores
-        —————————————————————————————————————————————— */}
-        <section>
-          <SectionHeader
-            title="Assessment Scores"
-            subtitle="Your performance across all neurological assessment domains."
-          />
-
-
-
-          {selfAssessEnabled && selfAssessInsight && (() => {
-            const selfAssessRows = scores.filter((s) => {
-              const sa = testResults[s.testId]?.selfAssessment as { focusRating?: number } | undefined;
-              return sa?.focusRating != null && s.score !== null;
-            });
-            if (selfAssessRows.length === 0) return null;
-            return (
-              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-5 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b border-gray-800">
-                      <th className="pb-3 font-medium">Test</th>
-                      <th className="pb-3 font-medium">Your focus</th>
-                      <th className="pb-3 font-medium">Your prediction</th>
-                      <th className="pb-3 font-medium text-right">Actual score</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800/50">
-                    {selfAssessRows.map((s) => {
-                      const sa = testResults[s.testId]?.selfAssessment as { focusRating?: number; accuracyPrediction?: number };
-                      return (
-                        <tr key={s.testId} className="text-gray-300">
-                          <td className="py-3 font-medium text-white">{DOMAIN_NAMES[s.testId] ?? s.testId}</td>
-                          <td className="py-3">
-                            <span className="text-yellow-400">{'★'.repeat(sa.focusRating ?? 0)}</span><span className="text-gray-600">{'☆'.repeat(5 - (sa.focusRating ?? 0))}</span>
-                          </td>
-                          <td className="py-3">
-                            {sa.accuracyPrediction != null ? (
-                              <><span className="text-yellow-400">{'★'.repeat(sa.accuracyPrediction)}</span><span className="text-gray-600">{'☆'.repeat(5 - sa.accuracyPrediction)}</span></>
-                            ) : '—'}
-                          </td>
-                          <td className="py-3 text-right font-semibold">{s.score} / 100</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <div className={`mt-5 p-4 rounded-xl border text-sm ${
-                  selfAssessInsight.insight === 'well-calibrated' ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-300'
-                  : selfAssessInsight.insight === 'under-confident' ? 'bg-blue-950/30 border-blue-800/40 text-blue-300'
-                  : 'bg-amber-950/30 border-amber-800/40 text-amber-300'
-                }`}>
-                  {selfAssessInsight.text}
-                </div>
-              </div>
-            );
-          })()}
-        </section>
-
-
-
-
-
-        {/* ——————————————————————————————————————————————
-            Section F — Download
-        —————————————————————————————————————————————— */}
-        <section className="print:hidden">
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-6 text-center">
-            <p className="text-gray-400 text-sm mb-4">Save a copy of your results for your personal records.</p>
-            <button
-              onClick={async () => {
-                if (pdfLoading) return;
-                setPdfLoading(true);
-                try {
-                  const res = await fetch(`/api/results/${runData.id}/pdf`);
-                  if (!res.ok) {
-                    const errorJson = await res.json().catch(() => ({ error: 'Unexpected error' }));
-                    console.error('PDF Generation failed:', errorJson);
-                    alert(`Failed to generate PDF: ${errorJson.details || errorJson.error || 'Check server logs'}`);
-                    return;
-                  }
-                  const blob = await res.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `assessment-report-${runData.id.slice(-8)}.pdf`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                } finally {
-                  setPdfLoading(false);
-                }
-              }}
-              disabled={pdfLoading}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 disabled:opacity-70 disabled:cursor-not-allowed text-white font-semibold text-sm transition shadow-[0_8px_24px_rgba(0,140,255,0.22)]"
+      <main className="flex-1 flex items-center justify-center px-4 py-16">
+        <div className="w-full max-w-lg text-center flex flex-col items-center gap-6">
+          <div
+            className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center"
+            aria-hidden
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="rgb(52 211 153)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="w-8 h-8"
             >
-              {pdfLoading ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Generating PDF…
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 12v3a1 1 0 001 1h10a1 1 0 001-1v-3M10 3v9m0 0l-3-3m3 3l3-3" />
-                  </svg>
-                  Download My Results (PDF)
-                </>
-              )}
-            </button>
-            <p className="text-xs text-gray-600 mt-3">
-              This report is for personal reference only and does not constitute a medical diagnosis.
-              <br />Session: <span className="font-mono text-gray-700">{runData.id}</span>
+              <path d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+
+          <div>
+            <p className="text-xs uppercase tracking-widest text-emerald-300/90 font-semibold">
+              Assessment complete
+            </p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight">Thank you for taking part</h1>
+            <p className="mt-3 text-gray-300/90 leading-relaxed">
+              Your session is finished and your responses have been saved. They will help this
+              research into neurological assessment using eye tracking.
             </p>
           </div>
-        </section>
 
-      </div>
+          <p className="text-sm text-gray-500">
+            You can close this window now. Completed {finishedOn}.
+          </p>
+        </div>
+      </main>
     </div>
-    </>
   );
 }

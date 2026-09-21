@@ -35,7 +35,6 @@
   "headori.up",
   "neuro.anti_saccade",
   "neuro.anti_saccade.cue",
-  "neuro.done",
   "neuro.fixation_stability",
   "neuro.fixation_stability.cue",
   "neuro.head_orientation",
