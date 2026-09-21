@@ -13,14 +13,19 @@ import {
 } from './constants';
 import type { VisualSearchConfirmMode } from './constants';
 import { generateNumberPositions } from './utils';
+import {
+  HoldRingKeyframes,
+  TargetButton,
+  confirmModeInstruction,
+  useHoldConfirm,
+  type ConfirmDetail,
+} from './TargetButton';
 import { neuroDebugLog } from '@/lib/neuroDebugLog';
 import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 
 const VISUAL_SEARCH_RESULT_LS_KEY = 'neuro_visual_search_result_v1';
 
 // SVG progress ring: circumference of r=26 circle inside 56×56 button
-const RING_R = 26;
-const RING_C = Math.round(2 * Math.PI * RING_R); // ≈ 163 px
 
 export interface NumberPosition {
   number: number;
@@ -94,18 +99,7 @@ export default function VisualSearchTest() {
   // ── Hold-confirmation state ────────────────────────────────────────────────
   // holdingNumber: which target is currently being held (shows progress ring)
   // confirmedNumbers: targets held for DWELL_CONFIRM_MS (turn green)
-  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [holdingNumber, setHoldingNumber] = useState<number | null>(null);
   const [confirmedNumbers, setConfirmedNumbers] = useState<ReadonlySet<number>>(new Set());
-
-  // Cancel any in-progress hold without confirming
-  const cancelHold = useCallback(() => {
-    if (holdTimerRef.current !== null) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-    setHoldingNumber(null);
-  }, []);
 
   // Legacy: record fixation on pointer release (only when confirmMode is 'hold')
   const recordPointerConfirmation = useCallback(
@@ -198,142 +192,61 @@ export default function VisualSearchTest() {
     [finishTest]
   );
 
-  // ── Pointer handlers (always active) ──────────────────────────────────────
-  const onPointerDownTarget = useCallback(
-    (number: number, e: React.PointerEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+  // ── Pointer handlers ──────────────────────────────────────────────────────
+  // The gesture and the visuals live in TargetButton, shared with the practice
+  // round; recording stays here, where the gaze refs are.
+  const handleConfirm = useCallback(
+    (number: number, detail: ConfirmDetail) => {
+      const g = neuroLiveGazeRef.current;
+      fixationsRef.current.push({
+        number,
+        timestamp: performance.now(),
+        gazeX: g.x,
+        gazeY: g.y,
+        source: 'pointer',
+        ...(detail.pointerX != null ? { pointerX: detail.pointerX } : {}),
+        ...(detail.pointerY != null ? { pointerY: detail.pointerY } : {}),
+        holdDurationMs: detail.holdDurationMs,
+      });
+      if (!sequenceRef.current.includes(number)) {
+        sequenceRef.current.push(number);
+      }
 
+      // Every mode turns the target green. Gaze mode previously did not, while
+      // its own instruction line promised "hold each number until it turns
+      // green" — so a participant following the instruction got no feedback at
+      // all and had no way to tell which numbers they had already done.
+      setConfirmedNumbers((prev) => {
+        const next = new Set(prev);
+        next.add(number);
+        // Click and hold end by themselves once every target is green. Gaze
+        // still waits for SPACE, because there the pointer is a fallback and
+        // the participant may want another look before finishing.
+        if (
+          (confirmMode === 'click' || confirmMode === 'hold') &&
+          next.size >= positions.length
+        ) {
+          setTimeout(() => finishTest(), 100);
+        }
+        return next;
+      });
+    },
+    [confirmMode, finishTest, positions.length]
+  );
+
+  const { holdingNumber, onPointerDown, onPointerUp, onPointerCancel } = useHoldConfirm({
+    confirmMode,
+    onConfirm: handleConfirm,
+    onPointerDownExtra: (number, e) => {
       // Legacy fixation tracking on release (hold mode only)
       if (confirmMode === 'hold') {
         pointerHoldRef.current = { number, t0: performance.now(), pointerId: e.pointerId };
       }
-
-      // ── Click mode: confirm immediately on pointer down ──
-      if (confirmMode === 'click') {
-        cancelHold();
-        const g = neuroLiveGazeRef.current;
-        const t = performance.now();
-        fixationsRef.current.push({
-          number,
-          timestamp: t,
-          gazeX: g.x,
-          gazeY: g.y,
-          source: 'pointer',
-          pointerX: e.clientX,
-          pointerY: e.clientY,
-          holdDurationMs: 0,
-        });
-        if (!sequenceRef.current.includes(number)) {
-          sequenceRef.current.push(number);
-        }
-        setConfirmedNumbers(prev => {
-          const next = new Set(prev);
-          next.add(number);
-          if (next.size >= positions.length) {
-            setTimeout(() => finishTest(), 100);
-          }
-          return next;
-        });
-        return;
-      }
-
-      // Start hold-confirmation timer (gaze & hold modes)
-      cancelHold();
-      setHoldingNumber(number);
-      const t0 = performance.now();
-      holdTimerRef.current = setTimeout(() => {
-        holdTimerRef.current = null;
-        setHoldingNumber(null);
-        const g = neuroLiveGazeRef.current;
-        const t = performance.now();
-        fixationsRef.current.push({
-          number,
-          timestamp: t,
-          gazeX: g.x,
-          gazeY: g.y,
-          source: 'pointer',
-          holdDurationMs: Math.round(t - t0),
-        });
-        if (!sequenceRef.current.includes(number)) {
-          sequenceRef.current.push(number);
-        }
-
-        // Auto-complete if all confirmed (hold mode)
-        if (confirmMode === 'hold') {
-          setConfirmedNumbers(prev => {
-            const next = new Set(prev);
-            next.add(number);
-            if (next.size >= positions.length) {
-              setTimeout(() => finishTest(), 100);
-            }
-            return next;
-          });
-        }
-      }, DWELL_CONFIRM_MS);
     },
-    [confirmMode, cancelHold, finishTest, positions.length]
-  );
-
-  const onPointerUpTarget = useCallback(
-    (number: number, e: React.PointerEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      try {
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-          e.currentTarget.releasePointerCapture(e.pointerId);
-        }
-      } catch (_) {}
-      cancelHold();
+    onPointerUpExtra: (number, e) => {
       if (confirmMode === 'hold') recordPointerConfirmation(number, e);
     },
-    [confirmMode, cancelHold, recordPointerConfirmation]
-  );
-
-  const onPointerCancelTarget = useCallback(
-    (e: React.PointerEvent<HTMLButtonElement>) => {
-      pointerHoldRef.current = null;
-      try {
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-          e.currentTarget.releasePointerCapture(e.pointerId);
-        }
-      } catch (_) {}
-      cancelHold();
-    },
-    [cancelHold]
-  );
-
-  // ── Init ──────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    startTimeRef.current = performance.now();
-    fixationsRef.current = [];
-    sequenceRef.current = [];
-    gazePathRef.current = [];
-    lastInNumberRef.current = null;
-    try {
-      localStorage.setItem(
-        VISUAL_SEARCH_RESULT_LS_KEY,
-        JSON.stringify({
-          savedAt: new Date().toISOString(),
-          status: 'in_progress',
-          completionTimeMs: 0,
-          gazeFixationPerNumber: {},
-          gazeSequence: [],
-          scanningPath: [],
-        })
-      );
-    } catch (_) {}
-    const pathInterval = window.setInterval(() => {
-      const g = neuroLiveGazeRef.current;
-      const t = (performance.now() - startTimeRef.current) / 1000;
-      gazePathRef.current.push({ t, x: g.x, y: g.y });
-    }, gazeIntervalMs);
-    return () => window.clearInterval(pathInterval);
-  }, [gazeIntervalMs]);
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+  });
 
   // ── AOI check (gaze recording only — no dwell logic here) ─────────────────
   useEffect(() => {
@@ -376,21 +289,10 @@ export default function VisualSearchTest() {
       role="region"
       aria-label="Visual search test: look at numbers in order, then press SPACE"
     >
-      {/* Inject progress-ring keyframe — only needed once in the DOM */}
-      <style>{`
-        @keyframes vs-hold-ring {
-          from { stroke-dashoffset: ${RING_C}; }
-          to   { stroke-dashoffset: 0; }
-        }
-      `}</style>
+      <HoldRingKeyframes />
 
       <p className="text-center text-gray-400 text-sm mt-4 mb-2">
-        {confirmMode === 'click'
-          ? `Click each number in order (1 → 2 → … → ${numberCount}).`
-          : confirmMode === 'hold'
-            ? `Click and hold each number in order (1 → 2 → … → ${numberCount}) until it turns green.`
-            : `Look at each number in order (1 → 2 → … → ${numberCount}). Hold each number for 1.5 s until it turns green, then move on.`
-        }
+        {confirmModeInstruction(confirmMode, numberCount)}
         {confirmMode === 'gaze' && (
           <> Press <kbd className="px-1.5 py-0.5 rounded bg-gray-700 font-mono">SPACE</kbd> when done.</>
         )}
@@ -408,56 +310,17 @@ export default function VisualSearchTest() {
           const holding = holdingNumber === pos.number;
 
           return (
-            <button
+            <TargetButton
               key={pos.number}
-              type="button"
-              aria-label={`Target ${pos.number}${confirmed ? ' (confirmed)' : ' — hold to confirm'}`}
-              className={[
-                'absolute w-14 h-14 flex items-center justify-center rounded-full',
-                'text-white text-2xl font-bold border-2 touch-none select-none [-webkit-touch-callout:none]',
-                'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400',
-                confirmed
-                  ? 'bg-emerald-500 border-emerald-300 shadow-lg shadow-emerald-500/50'
-                  : holding
-                    ? 'bg-blue-500 border-white shadow-lg shadow-blue-400/60'
-                    : 'bg-blue-600/90 border-blue-400 shadow-lg',
-              ].join(' ')}
-              style={{
-                left: `${pos.x}%`,
-                top: `${pos.y}%`,
-                transform: 'translate(-50%, -50%)',
-                transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
-              }}
-              onPointerDown={(e) => onPointerDownTarget(pos.number, e)}
-              onPointerUp={(e) => onPointerUpTarget(pos.number, e)}
-              onPointerCancel={onPointerCancelTarget}
-            >
-              {/* Progress ring — only shown while actively holding */}
-              {holding && !confirmed && (
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 56 56"
-                  className="pointer-events-none absolute inset-0 w-full h-full"
-                  style={{ transform: 'rotate(-90deg)' }}
-                >
-                  <circle
-                    cx="28"
-                    cy="28"
-                    r={RING_R}
-                    fill="none"
-                    stroke="rgba(255,255,255,0.9)"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeDasharray={RING_C}
-                    strokeDashoffset={RING_C}
-                    style={{
-                      animation: `vs-hold-ring ${DWELL_CONFIRM_MS}ms linear forwards`,
-                    }}
-                  />
-                </svg>
-              )}
-              {pos.number}
-            </button>
+              number={pos.number}
+              x={pos.x}
+              y={pos.y}
+              confirmed={confirmed}
+              holding={holding}
+              onPointerDown={onPointerDown}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerCancel}
+            />
           );
         })}
       </div>

@@ -269,7 +269,7 @@ export default function NeurologicalFlowSection({
             testLabel={TEST_LABELS.visual_search}
             guideSteps={VISUAL_SEARCH_GUIDE_STEPS}
             enablePractice={!quickMode}
-            practiceContent={<VisualSearchPractice />}
+            practiceContent={(cfg) => <VisualSearchPractice config={cfg} />}
             practiceTitle="Practice: Visual Search"
             testContent={<VisualSearchTest />}
             config={{
