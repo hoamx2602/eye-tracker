@@ -245,16 +245,18 @@ export const VOICE_SCRIPTS = {
   },
 
   // ------------------------------------------------------------------ break
+  // Said after the data has already been written, and before the *next* step —
+  // not before finishing, which is what break.last is for.
   'break.rest': {
     text:
-      'That step is complete. Take a moment to rest your eyes — ' +
-      'look away from the screen, and blink a few times. ' +
-      'Your data is being saved. ' +
-      'When you are ready to continue, select Next.',
+      'That step is complete, and your data from it has been saved. ' +
+      'Take a moment to rest your eyes — look away from the screen and blink a few times. ' +
+      'When you are ready for the next step, select Continue.',
   },
   'break.last': {
     text:
-      'That was the last step. Take a moment to rest your eyes. ' +
+      'That was the last step, and your data has been saved. ' +
+      'Take a moment to rest your eyes. ' +
       'When you are ready, select Next to finish the session.',
   },
 

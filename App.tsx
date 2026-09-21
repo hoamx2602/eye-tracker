@@ -56,6 +56,7 @@ import NeurologicalFlowSection from '@/components/neurological/NeurologicalFlowS
 import { useNeuroFlowHandlers } from '@/components/neurological/useNeuroFlowHandlers';
 import AppMainOverlays from '@/components/AppMainOverlays';
 import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
+import { DEFAULT_TEST_ORDER } from '@/lib/neurologicalConfig';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, QUICK_CALIBRATION_POINTS, roundedRect } from '@/lib/appHelpers';
 import { CalibrationMetaRecorder, type SessionMeta } from '@/lib/calibrationMeta';
 import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
@@ -430,7 +431,7 @@ function App() {
             } else {
               setNeuroPhase('tests');
               setCurrentNeuroTestId(parsed.testId);
-              const order = neuroTestOrder.length > 0 ? neuroTestOrder : ['head_orientation', 'visual_search', 'memory_cards', 'anti_saccade', 'saccadic', 'fixation_stability', 'peripheral_vision'];
+              const order = neuroTestOrder.length > 0 ? neuroTestOrder : [...DEFAULT_TEST_ORDER];
               setCurrentNeuroTestIndex(Math.max(0, order.indexOf(parsed.testId)));
             }
           }
@@ -500,7 +501,7 @@ function App() {
         statusRef.current = 'NEURO_FLOW';
         setNeuroPhase('tests');
         setCurrentNeuroTestId(parsed.testId);
-        const order = neuroTestOrder.length > 0 ? neuroTestOrder : ['head_orientation', 'visual_search', 'memory_cards', 'anti_saccade', 'saccadic', 'fixation_stability', 'peripheral_vision'];
+        const order = neuroTestOrder.length > 0 ? neuroTestOrder : [...DEFAULT_TEST_ORDER];
         const idx = order.indexOf(parsed.testId);
         setCurrentNeuroTestIndex(idx >= 0 ? idx : 0);
         break;
@@ -2484,7 +2485,7 @@ function App() {
   ]);
 
   const handlePostSubmitRedoTests = useCallback(() => {
-    const order = neuroTestOrder.length > 0 ? neuroTestOrder : ['head_orientation', 'visual_search', 'memory_cards', 'anti_saccade', 'saccadic', 'fixation_stability', 'peripheral_vision'];
+    const order = neuroTestOrder.length > 0 ? neuroTestOrder : [...DEFAULT_TEST_ORDER];
     const enabled = neuroConfigSnapshot?.testEnabled ?? {};
     let idx = -1;
     for (let i = 0; i < order.length; i++) {

@@ -2,7 +2,6 @@
 
 import React from 'react';
 import EyeSpinner from '@/components/ui/EyeSpinner';
-import FullscreenLoader from '@/components/ui/FullscreenLoader';
 import SymptomAssessment from '@/components/SymptomAssessment';
 import type { SymptomScores } from '@/lib/symptomAssessment';
 import {
@@ -64,6 +63,7 @@ import {
   DEFAULT_MAX_DELAY_MS,
 } from '@/components/neurological/tests/peripheralVision/constants';
 import NeurologicalRunResults from '@/components/neurological/results/NeurologicalRunResults';
+import { DEFAULT_TEST_ORDER } from '@/lib/neurologicalConfig';
 
 const TEST_LABELS: Record<string, string> = {
   head_orientation: 'Head Orientation',
@@ -85,6 +85,30 @@ const TEST_SUMMARIES: Record<string, string> = {
   fixation_stability: 'Hold your gaze on a single dot in the centre of the screen.',
   peripheral_vision: 'Keep looking at the centre and press space when you spot a flash at the edge.',
 };
+
+/**
+ * Where a test sits in the battery, and what follows it.
+ *
+ * `neuroTestOrder` is empty until the run is created and again after a reload,
+ * and an empty order used to make every test look like the last one — so the
+ * break announced "that was the last step" and spoke the closing clip in the
+ * middle of the session. Falls back to the canonical order, as every other
+ * caller already did.
+ */
+export function neuroStepPosition(
+  testId: string,
+  neuroTestOrder: string[],
+  testEnabled: Record<string, boolean>
+): { index: number; total: number; nextId: string | null } {
+  const source = neuroTestOrder.length > 0 ? neuroTestOrder : [...DEFAULT_TEST_ORDER];
+  const order = source.filter((t) => testEnabled[t] !== false);
+  const index = order.indexOf(testId);
+  return {
+    index,
+    total: order.length,
+    nextId: index >= 0 ? order[index + 1] ?? null : null,
+  };
+}
 
 const DEFAULT_SELF_ASSESSMENT: SelfAssessmentConfig = {
   enabled: true,
@@ -197,16 +221,14 @@ export default function NeurologicalFlowSection({
    */
   const flowPropsFor = (id: string) => {
     const enabled = neuroConfigSnapshot?.testEnabled ?? {};
-    const order = neuroTestOrder.filter((t) => enabled[t] !== false);
-    const idx = order.indexOf(id);
-    const nextId = idx >= 0 ? order[idx + 1] ?? null : null;
+    const { index: idx, total, nextId } = neuroStepPosition(id, neuroTestOrder, enabled);
     return {
       onTestComplete: (payload: TestResultPayload) => onTestComplete(id, payload),
       onTestResultReady: (payload: TestResultPayload) => onTestResultReady?.(id, payload),
       selfAssessmentConfig,
       testSummary: TEST_SUMMARIES[id] ?? null,
       stepIndex: idx >= 0 ? idx + 1 : undefined,
-      stepTotal: order.length > 0 ? order.length : undefined,
+      stepTotal: total > 0 ? total : undefined,
       nextTestLabel: nextId ? TEST_LABELS[nextId] ?? nextId : null,
       nextTestDescription: nextId ? TEST_SUMMARIES[nextId] ?? null : null,
       nextTestId: nextId,
@@ -217,16 +239,6 @@ export default function NeurologicalFlowSection({
 
   return (
     <>
-      {/*
-        The server round-trip between two steps used to look like a frozen
-        screen; this is the missing feedback.
-      */}
-      {status === 'NEURO_FLOW' && isSavingTest && (
-        <FullscreenLoader
-          message="Saving your results…"
-          detail="Setting up the next step. Please keep this window open."
-        />
-      )}
       {status === 'NEURO_FLOW' && neuroRunStatus === 'creating' && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950">
           <EyeSpinner size="lg" label="Starting neurological run…" />

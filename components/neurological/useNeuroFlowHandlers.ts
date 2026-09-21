@@ -11,6 +11,7 @@ import { SYMPTOM_QUESTIONS, type SymptomScores } from '@/lib/symptomAssessment';
 import { neurologicalRunsApi } from '@/services/api';
 import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
 import type { TestResultPayload } from '@/components/neurological';
+import { DEFAULT_TEST_ORDER } from '@/lib/neurologicalConfig';
 
 type NeuroConfigSnapshot = {
   testOrder: string[];
@@ -38,15 +39,7 @@ type UseNeuroFlowHandlersParams = {
   onStartRealTimeTracking: () => void;
 };
 
-const DEFAULT_TEST_ORDER = [
-  'head_orientation',
-  'visual_search',
-  'memory_cards',
-  'anti_saccade',
-  'saccadic',
-  'fixation_stability',
-  'peripheral_vision',
-];
+
 const NEURO_PRE_QUESTIONNAIRE_LS_KEY = 'neuro_pre_questionnaire_v1';
 const NEURO_POST_QUESTIONNAIRE_LS_KEY = 'neuro_post_questionnaire_v1';
 
@@ -125,7 +118,7 @@ export function useNeuroFlowHandlers({
         });
         neuroDebugLog('test complete', testId, '→ merged keys', Object.keys(nextResults));
         
-        const order = neuroTestOrder.length > 0 ? neuroTestOrder : DEFAULT_TEST_ORDER;
+        const order = neuroTestOrder.length > 0 ? neuroTestOrder : [...DEFAULT_TEST_ORDER];
         const enabled = neuroConfigSnapshot?.testEnabled ?? {};
         let nextIdx = -1;
         for (let i = currentNeuroTestIndex + 1; i < order.length; i++) {
@@ -135,20 +128,28 @@ export function useNeuroFlowHandlers({
           }
         }
 
+        const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
+        const isFinishing = nextIdx < 0 && skipQ;
+
         if (neuroRunId) {
-          try {
-            const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
-            const isFinishing = nextIdx < 0 && skipQ;
-            if (isFinishing) {
-              setLoadingMsg('Saving final results...');
-              setStatus('LOADING_MODEL');
-            }
-            await neurologicalRunsApi.patch(neuroRunId, {
+          // The result itself was already written when the test ended, and the
+          // break screen said so. This second write only adds the check-in
+          // ratings, so it must not put a "Saving…" screen in front of someone
+          // who has just been told their data is saved — it runs in the
+          // background while we move on.
+          const write = neurologicalRunsApi
+            .patch(neuroRunId, {
               testResults: { [testId]: payload },
-              ...(isFinishing ? { status: 'completed' } : {})
-            });
-          } catch (e) {
-            neuroPersistWarn(`PATCH test result failed (${testId})`, e);
+              ...(isFinishing ? { status: 'completed' } : {}),
+            })
+            .catch((e) => neuroPersistWarn(`PATCH test result failed (${testId})`, e));
+
+          // Finishing the run is the exception: the results page reads the run
+          // back, so that one write has to land before we navigate.
+          if (isFinishing) {
+            setLoadingMsg('Saving final results...');
+            setStatus('LOADING_MODEL');
+            await write;
           }
         }
 
@@ -191,7 +192,6 @@ export function useNeuroFlowHandlers({
           pathSyncSourceRef.current = 'internal';
           routerPush(PATHS.NEURO_TEST(order[nextIdx]));
         } else {
-          const skipQ = process.env.NEXT_PUBLIC_SKIP_NEURO_QUESTIONNAIRE === 'true';
           if (skipQ) {
             routerPush(`/results/${neuroRunId}`);
           } else {
@@ -240,7 +240,7 @@ export function useNeuroFlowHandlers({
             console.error('Patch pre scores failed', e);
           }
         }
-        const order = neuroTestOrder.length > 0 ? neuroTestOrder : DEFAULT_TEST_ORDER;
+        const order = neuroTestOrder.length > 0 ? neuroTestOrder : [...DEFAULT_TEST_ORDER];
         const enabled = neuroConfigSnapshot?.testEnabled ?? {};
         let idx = -1;
         for (let i = 0; i < order.length; i++) {
