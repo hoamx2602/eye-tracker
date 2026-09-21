@@ -62,49 +62,6 @@ function formatElapsed(seconds: number): string {
   return m > 0 ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
 }
 
-function SaveStatus({
-  state,
-  error,
-  slow,
-}: {
-  state: StepBreakSaveState;
-  error?: string | null;
-  slow?: boolean;
-}) {
-  if (state === 'idle') return null;
-
-  if (state === 'saving') {
-    return (
-      <div className="flex items-center gap-2 text-sm text-blue-300">
-        <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" aria-hidden />
-        <span>
-          {slow
-            ? 'Still saving — the connection is slow. You can carry on; it will be saved again at the end.'
-            : 'Saving your data…'}
-        </span>
-      </div>
-    );
-  }
-
-  if (state === 'saved') {
-    return (
-      <div className="flex items-center gap-2 text-sm text-emerald-400">
-        <span aria-hidden>✓</span>
-        <span>Your data from this step is saved.</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-2 text-sm text-amber-400">
-      <span aria-hidden>!</span>
-      <span>
-        {error ?? 'Could not save this step yet — it will be saved again at the end.'}
-      </span>
-    </div>
-  );
-}
-
 export default function StepBreak({
   stepLabel,
   stepIndex,
@@ -137,6 +94,15 @@ export default function StepBreak({
   const [saveWaitedTooLong, setSaveWaitedTooLong] = useState(false);
   const savePending = saveState === 'saving' && !saveWaitedTooLong;
   const allowContinue = canContinue && !savePending;
+
+  const saveNotice =
+    saveState === 'error'
+      ? saveError ?? 'Could not save this step yet — it will be saved again at the end.'
+      : saveWaitedTooLong && saveState === 'saving'
+        ? 'Still saving — the connection is slow. You can carry on; it will be saved again at the end.'
+        : !allowContinue && blockedReason
+          ? blockedReason
+          : null;
   const voice = useVoice();
   const speakSequence = voice?.speakSequence;
   const breakKey: VoiceKey = isLast ? 'break.last' : 'break.rest';
@@ -236,8 +202,6 @@ export default function StepBreak({
               </p>
             </div>
           )}
-
-          <SaveStatus state={saveState} error={saveError} slow={saveWaitedTooLong} />
         </div>
       </div>
 
@@ -276,9 +240,17 @@ export default function StepBreak({
               </span>
             </button>
           </div>
-          {!allowContinue && (savePending || blockedReason) && (
-            <p className="text-xs text-gray-500 text-center">
-              {savePending ? 'Saving your data from this step…' : blockedReason}
+          {/*
+            Only the exceptions get words. A save in progress is already shown
+            on the button itself, and a save that worked needs no announcement.
+          */}
+          {saveNotice && (
+            <p
+              className={`text-xs text-center ${
+                saveState === 'error' ? 'text-amber-400' : 'text-gray-500'
+              }`}
+            >
+              {saveNotice}
             </p>
           )}
         </div>
