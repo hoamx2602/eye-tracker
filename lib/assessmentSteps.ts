@@ -139,7 +139,7 @@ export const NEURO_STEPS: AssessmentStep[] = [
     section: 'neuro',
     tagline: 'Find numbered targets scattered across the screen, in order.',
     description:
-      'Numbers will be scattered at random across the screen. Find and look at each one in order, starting at 1 — hold your gaze on a number for a moment to confirm it; no clicking is needed. When you have found them all, press the spacebar to finish. This measures how efficiently your eyes scan and search a visual scene.',
+      'Numbers will be scattered at random across the screen. Find them in order, starting at 1, and hold each one until it turns green. They only respond in the right order, so if one does nothing, it is not the next one yet. The test ends by itself once the last number is green. This measures how efficiently your eyes scan and search a visual scene.',
   },
   {
     id: 'memory_cards',

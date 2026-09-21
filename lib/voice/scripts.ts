@@ -193,9 +193,10 @@ export const VOICE_SCRIPTS = {
     text:
       'Visual search. Numbers will appear scattered across the screen. ' +
       'Your task is to find them and look at them in order — one, then two, then three, and so on. ' +
-      'Hold your gaze on each number for a moment until it is confirmed. ' +
+      'Hold each number for a moment until it turns green, then move on. ' +
+      'They only respond in the right order, so if one does nothing, it is not the next one yet. ' +
       'Move your eyes only, keeping your head still. ' +
-      'When you have looked at every number in order, press the space bar to finish.',
+      'The test ends by itself once the last number is green.',
     cue: 'Keep looking for the next number in order, and hold your gaze on it.',
   },
   'neuro.memory_cards': {

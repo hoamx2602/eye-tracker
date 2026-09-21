@@ -100,6 +100,11 @@ export default function VisualSearchTest() {
   // holdingNumber: which target is currently being held (shows progress ring)
   // confirmedNumbers: targets held for DWELL_CONFIRM_MS (turn green)
   const [confirmedNumbers, setConfirmedNumbers] = useState<ReadonlySet<number>>(new Set());
+  /** Targets pressed out of order. Refused on screen, but kept as a measure. */
+  const orderErrorsRef = useRef<Array<{ pressed: number; expected: number; timestamp: number }>>([]);
+  /** The target briefly flashed red after a refused press. */
+  const [wrongNumber, setWrongNumber] = useState<number | null>(null);
+  const wrongTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Legacy: record fixation on pointer release (only when confirmMode is 'hold')
   const recordPointerConfirmation = useCallback(
@@ -152,6 +157,7 @@ export default function VisualSearchTest() {
       numberPositions: positions,
       fixations: [...fixationsRef.current],
       sequence: gazeSequence,
+      orderErrors: [...orderErrorsRef.current],
       completionTimeMs,
       gazePath: scanningPath,
       gazeFixationPerNumber: fixationPerNumber,
@@ -183,18 +189,28 @@ export default function VisualSearchTest() {
     completeTest(payload);
   }, [completeTest, positions, confirmMode, clickHoldDurationMs]);
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat) return;
-      e.preventDefault();
-      finishTest();
-    },
-    [finishTest]
-  );
-
   // ── Pointer handlers ──────────────────────────────────────────────────────
   // The gesture and the visuals live in TargetButton, shared with the practice
   // round; recording stays here, where the gaze refs are.
+  /** The next number due, or null once every target is confirmed. */
+  const nextExpected = useMemo(() => {
+    for (let n = 1; n <= positions.length; n++) {
+      if (!confirmedNumbers.has(n)) return n;
+    }
+    return null;
+  }, [confirmedNumbers, positions.length]);
+
+  const handleWrongOrder = useCallback((pressed: number, expected: number) => {
+    orderErrorsRef.current.push({ pressed, expected, timestamp: performance.now() });
+    setWrongNumber(pressed);
+    if (wrongTimerRef.current) clearTimeout(wrongTimerRef.current);
+    wrongTimerRef.current = setTimeout(() => setWrongNumber(null), 400);
+  }, []);
+
+  useEffect(() => () => {
+    if (wrongTimerRef.current) clearTimeout(wrongTimerRef.current);
+  }, []);
+
   const handleConfirm = useCallback(
     (number: number, detail: ConfirmDetail) => {
       const g = neuroLiveGazeRef.current;
@@ -219,24 +235,23 @@ export default function VisualSearchTest() {
       setConfirmedNumbers((prev) => {
         const next = new Set(prev);
         next.add(number);
-        // Click and hold end by themselves once every target is green. Gaze
-        // still waits for SPACE, because there the pointer is a fallback and
-        // the participant may want another look before finishing.
-        if (
-          (confirmMode === 'click' || confirmMode === 'hold') &&
-          next.size >= positions.length
-        ) {
+        // The last target ends the test. Order is enforced, so reaching the
+        // last one means the whole sequence is done — there is nothing left
+        // for a participant to decide, and nothing for a key press to add.
+        if (next.size >= positions.length) {
           setTimeout(() => finishTest(), 100);
         }
         return next;
       });
     },
-    [confirmMode, finishTest, positions.length]
+    [finishTest, positions.length]
   );
 
   const { holdingNumber, onPointerDown, onPointerUp, onPointerCancel } = useHoldConfirm({
     confirmMode,
+    nextExpected,
     onConfirm: handleConfirm,
+    onWrongOrder: handleWrongOrder,
     onPointerDownExtra: (number, e) => {
       // Legacy fixation tracking on release (hold mode only)
       if (confirmMode === 'hold') {
@@ -287,15 +302,12 @@ export default function VisualSearchTest() {
     <div
       className="fixed inset-0 z-50 flex flex-col bg-gray-950"
       role="region"
-      aria-label="Visual search test: look at numbers in order, then press SPACE"
+      aria-label="Visual search test: find and confirm the numbers in order"
     >
       <HoldRingKeyframes />
 
       <p className="text-center text-gray-400 text-sm mt-4 mb-2">
         {confirmModeInstruction(confirmMode, numberCount)}
-        {confirmMode === 'gaze' && (
-          <> Press <kbd className="px-1.5 py-0.5 rounded bg-gray-700 font-mono">SPACE</kbd> when done.</>
-        )}
       </p>
 
       {!gazeModelReady && (
@@ -317,6 +329,7 @@ export default function VisualSearchTest() {
               y={pos.y}
               confirmed={confirmed}
               holding={holding}
+              wrong={wrongNumber === pos.number}
               onPointerDown={onPointerDown}
               onPointerUp={onPointerUp}
               onPointerCancel={onPointerCancel}
@@ -325,11 +338,6 @@ export default function VisualSearchTest() {
         })}
       </div>
 
-      {confirmMode === 'gaze' && (
-        <p className="text-center text-amber-400/90 text-xs pb-6">
-          Press SPACE when you have confirmed all numbers.
-        </p>
-      )}
     </div>
   );
 }

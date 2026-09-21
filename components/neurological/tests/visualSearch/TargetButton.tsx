@@ -41,8 +41,15 @@ export type ConfirmDetail = {
 
 export type UseHoldConfirmOptions = {
   confirmMode: VisualSearchConfirmMode;
+  /**
+   * The only target that may be confirmed right now, or null for no
+   * restriction. Pressing any other one does nothing but report the attempt.
+   */
+  nextExpected?: number | null;
   /** Fired when a target is confirmed — immediately in click mode, after the dwell otherwise. */
   onConfirm: (number: number, detail: ConfirmDetail) => void;
+  /** Fired when a target is pressed out of order. */
+  onWrongOrder?: (number: number, expected: number) => void;
   /** Fired on pointer down, before any confirmation. Used for legacy hold recording. */
   onPointerDownExtra?: (number: number, e: React.PointerEvent<HTMLButtonElement>) => void;
   /** Fired on pointer up. Used for legacy hold recording. */
@@ -59,7 +66,9 @@ export type UseHoldConfirmOptions = {
  */
 export function useHoldConfirm({
   confirmMode,
+  nextExpected = null,
   onConfirm,
+  onWrongOrder,
   onPointerDownExtra,
   onPointerUpExtra,
 }: UseHoldConfirmOptions) {
@@ -81,6 +90,13 @@ export function useHoldConfirm({
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch (_) {}
 
+      // Out of order: refuse it. Finding the right number is the task, so
+      // confirming whatever is pressed would measure nothing.
+      if (nextExpected !== null && number !== nextExpected) {
+        onWrongOrder?.(number, nextExpected);
+        return;
+      }
+
       onPointerDownExtra?.(number, e);
 
       if (confirmMode === 'click') {
@@ -98,7 +114,7 @@ export function useHoldConfirm({
         onConfirm(number, { holdDurationMs: Math.round(performance.now() - t0) });
       }, DWELL_CONFIRM_MS);
     },
-    [confirmMode, cancelHold, onConfirm, onPointerDownExtra]
+    [confirmMode, nextExpected, cancelHold, onConfirm, onWrongOrder, onPointerDownExtra]
   );
 
   const onPointerUp = useCallback(
@@ -137,6 +153,8 @@ export type TargetButtonProps = {
   y: number;
   confirmed: boolean;
   holding: boolean;
+  /** Briefly true after an out-of-order press, to show it was refused. */
+  wrong?: boolean;
   onPointerDown: (number: number, e: React.PointerEvent<HTMLButtonElement>) => void;
   onPointerUp: (number: number, e: React.PointerEvent<HTMLButtonElement>) => void;
   onPointerCancel: (e: React.PointerEvent<HTMLButtonElement>) => void;
@@ -149,6 +167,7 @@ export function TargetButton({
   y,
   confirmed,
   holding,
+  wrong = false,
   onPointerDown,
   onPointerUp,
   onPointerCancel,
@@ -156,16 +175,20 @@ export function TargetButton({
   return (
     <button
       type="button"
-      aria-label={`Target ${number}${confirmed ? ' (confirmed)' : ' — hold to confirm'}`}
+      aria-label={`Target ${number}${
+        confirmed ? ' (confirmed)' : wrong ? ' (not next in order)' : ' — hold to confirm'
+      }`}
       className={[
         'absolute w-14 h-14 flex items-center justify-center rounded-full',
         'text-white text-2xl font-bold border-2 touch-none select-none [-webkit-touch-callout:none]',
         'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400',
         confirmed
           ? 'bg-emerald-500 border-emerald-300 shadow-lg shadow-emerald-500/50'
-          : holding
-            ? 'bg-blue-500 border-white shadow-lg shadow-blue-400/60'
-            : 'bg-blue-600/90 border-blue-400 shadow-lg',
+          : wrong
+            ? 'bg-rose-600 border-rose-300 shadow-lg shadow-rose-500/50'
+            : holding
+              ? 'bg-blue-500 border-white shadow-lg shadow-blue-400/60'
+              : 'bg-blue-600/90 border-blue-400 shadow-lg',
       ].join(' ')}
       style={{
         left: `${x}%`,
@@ -210,9 +233,10 @@ export function confirmModeInstruction(
   numberCount: number
 ): string {
   const order = `(1 → 2 → … → ${numberCount})`;
-  if (confirmMode === 'click') return `Click each number in order ${order}.`;
+  const tail = ' They only turn green in order, so find the right one each time.';
+  if (confirmMode === 'click') return `Click each number in order ${order}.${tail}`;
   if (confirmMode === 'hold') {
-    return `Click and hold each number in order ${order} until it turns green.`;
+    return `Click and hold each number in order ${order} until it turns green.${tail}`;
   }
-  return `Look at each number in order ${order}. Hold each number for 1.5 s until it turns green, then move on.`;
+  return `Find each number in order ${order} and hold it for 1.5 s until it turns green.${tail}`;
 }

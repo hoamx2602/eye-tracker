@@ -9,12 +9,12 @@ export const VISUAL_SEARCH_GUIDE_STEPS: GuideStep[] = [
   },
   {
     id: '2',
-    body: 'Move your eyes only — keep your head still. Look at each number in ascending order.',
+    body: 'Move your eyes only — keep your head still. Find each number in ascending order and hold it until it turns green.',
   },
   {
     id: '3',
-    title: 'When finished',
-    body: 'When you have looked at all numbers in order, press SPACE to end the test.',
+    title: 'Order matters',
+    body: 'Numbers only turn green in the right order, so if one does not respond, it is not the next one yet. The test ends by itself once the last number is green.',
   },
 ];
 
@@ -30,7 +30,7 @@ export const MIN_SPACING_FRACTION = 0.15;
 export const GAZE_PATH_INTERVAL_MS = 100;
 /**
  * Confirmation mode for Visual Search targets:
- * - 'gaze'  — gaze-only, hold 1.5 s to confirm, press SPACE when done
+ * - 'gaze'  — hold 1.5 s to confirm; the test ends on the last target
  * - 'hold'  — press and hold each number for 1.5 s to confirm
  * - 'click' — single click instantly confirms
  */

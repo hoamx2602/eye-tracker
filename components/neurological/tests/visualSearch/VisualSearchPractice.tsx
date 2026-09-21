@@ -9,7 +9,7 @@
  * picture of it. Nothing here is recorded.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { generateNumberPositions } from './utils';
 import {
   PRACTICE_COUNT,
@@ -36,8 +36,28 @@ export default function VisualSearchPractice({
     : DEFAULT_CONFIRM_MODE) as VisualSearchConfirmMode;
 
   const [confirmedNumbers, setConfirmedNumbers] = useState<ReadonlySet<number>>(new Set());
+  const [wrongNumber, setWrongNumber] = useState<number | null>(null);
+  const wrongTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gate = usePracticeGate();
   const markPracticeDone = gate?.markPracticeDone;
+
+  // Same rule as the real test: only the next number in the sequence responds.
+  const nextExpected = useMemo(() => {
+    for (let n = 1; n <= positions.length; n++) {
+      if (!confirmedNumbers.has(n)) return n;
+    }
+    return null;
+  }, [confirmedNumbers, positions.length]);
+
+  const handleWrongOrder = useCallback((pressed: number) => {
+    setWrongNumber(pressed);
+    if (wrongTimerRef.current) clearTimeout(wrongTimerRef.current);
+    wrongTimerRef.current = setTimeout(() => setWrongNumber(null), 400);
+  }, []);
+
+  useEffect(() => () => {
+    if (wrongTimerRef.current) clearTimeout(wrongTimerRef.current);
+  }, []);
 
   const handleConfirm = useCallback(
     (number: number) => {
@@ -55,7 +75,9 @@ export default function VisualSearchPractice({
 
   const { holdingNumber, onPointerDown, onPointerUp, onPointerCancel } = useHoldConfirm({
     confirmMode,
+    nextExpected,
     onConfirm: handleConfirm,
+    onWrongOrder: handleWrongOrder,
   });
 
   const allDone = confirmedNumbers.size >= positions.length;
@@ -69,7 +91,9 @@ export default function VisualSearchPractice({
       <p className="text-gray-500 text-xs mb-4 text-center">
         {allDone
           ? 'That is the whole task. Start the real test when you are ready.'
-          : 'Try it on these four — it works the same way in the real test.'}
+          : wrongNumber !== null
+            ? `Not that one — ${nextExpected} is next.`
+            : 'Try it on these four — it works the same way in the real test.'}
       </p>
       <div className="relative w-full max-w-2xl h-64">
         {positions.map((pos) => (
@@ -80,6 +104,7 @@ export default function VisualSearchPractice({
             y={pos.y}
             confirmed={confirmedNumbers.has(pos.number)}
             holding={holdingNumber === pos.number}
+            wrong={wrongNumber === pos.number}
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerCancel}
