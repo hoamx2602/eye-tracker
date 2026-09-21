@@ -168,12 +168,7 @@ export const VOICE_SCRIPTS = {
       'Again, zero means none at all and four means severe.',
   },
 
-  // ------------------------------------------------------- practice vs real
-  // Framing only — the task instructions follow it as a second clip, so this
-  // stays short. On its own it told a participant nothing about what to do.
-  'practice.intro': {
-    text: 'This is a practice round, and nothing here is recorded. Here is the task.',
-  },
+  // ---------------------------------------------------------- real test
   // Spoken over a five-second countdown, so it has to fit inside it. The
   // "head still" reminder is left to each test's own instructions.
   'realtest.intro': {

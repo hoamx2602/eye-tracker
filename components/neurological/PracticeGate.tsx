@@ -45,18 +45,16 @@ export default function PracticeGate({
 }: PracticeGateProps) {
   const [showStartButton, setShowStartButton] = useState(false);
 
-  // A short "this is practice" framing, then the task's own instructions —
-  // this is the screen where the participant is meant to learn the task.
+  // Straight into the task. The banner and the header already say this is a
+  // practice; repeating it aloud before all six of them spends the seconds
+  // where the participant is actually listening on something they can see.
   const voice = useVoice();
-  const speakSequence = voice?.speakSequence;
-  const sequence = useMemo<VoiceKey[]>(
-    () => (instructionsVoiceKey ? ['practice.intro', instructionsVoiceKey] : ['practice.intro']),
-    [instructionsVoiceKey]
-  );
-  useVoiceOwnedClip(sequence);
+  const speak = voice?.speak;
+  useVoiceOwnedClip(instructionsVoiceKey);
   useEffect(() => {
-    speakSequence?.(sequence);
-  }, [speakSequence, sequence]);
+    if (!instructionsVoiceKey || !speak) return;
+    speak(instructionsVoiceKey);
+  }, [instructionsVoiceKey, speak]);
 
   useEffect(() => {
     const t = setTimeout(() => setShowStartButton(true), minDelayMs);
@@ -89,7 +87,7 @@ export default function PracticeGate({
         <div className="flex-shrink-0 border-b border-gray-800/60 bg-gradient-to-b from-amber-500/10 to-transparent">
           <div className="p-6 max-w-3xl mx-auto relative">
             <div className="absolute right-0 top-4">
-              <VoiceButton voiceKey="practice.intro" sequence={sequence} iconOnly />
+              {instructionsVoiceKey && <VoiceButton voiceKey={instructionsVoiceKey} iconOnly />}
             </div>
             <h2 id="practice-gate-title" className="text-2xl font-bold text-white text-center tracking-tight">
               {title}

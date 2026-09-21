@@ -276,7 +276,10 @@ export default function GuidePracticeTestFlow({
           stepTotal={stepTotal}
           nextLabel={nextTestLabel ?? null}
           nextDescription={nextTestDescription ?? null}
-          nextVoiceKey={nextTestId ? neuroTestVoiceKey(nextTestId) : null}
+          // No instructions clip: the practice round that follows reads them,
+          // and the break is for resting, not for a briefing the participant
+          // is about to get twice more.
+          nextVoiceKey={null}
           saveState={saving ? 'saving' : saveState}
           onNext={handleContinue}
           onRedo={handleRedo}
