@@ -152,7 +152,6 @@ type NeurologicalFlowSectionProps = {
   onNeuroResultsRetry: () => void;
   onPreSubmit: (scores: SymptomScores) => Promise<void>;
   onPostSubmit: (scores: SymptomScores) => Promise<void>;
-  onExitRun: () => Promise<void>;
   onTestComplete: (testId: string, payload: TestResultPayload) => void;
   /** Banks a finished test while the participant is on the break screen. */
   onTestResultReady?: (testId: string, payload: TestResultPayload) => void;
@@ -188,7 +187,6 @@ export default function NeurologicalFlowSection({
   onNeuroResultsRetry,
   onPreSubmit,
   onPostSubmit,
-  onExitRun,
   onTestComplete,
   onTestResultReady,
   testSaveState = 'idle',
@@ -392,15 +390,6 @@ export default function NeurologicalFlowSection({
             {...flowPropsFor('peripheral_vision')}
           />
         </NeuroGazeProvider>
-      )}
-      {status === 'NEURO_FLOW' && (neuroPhase === 'pre' || neuroPhase === 'tests') && (
-        <button
-          type="button"
-          onClick={onExitRun}
-          className="fixed top-4 right-4 z-[60] px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-sm transition"
-        >
-          Exit run
-        </button>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === null && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950">

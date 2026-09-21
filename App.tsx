@@ -55,7 +55,6 @@ import type { TestResultPayload } from '@/components/neurological';
 import NeurologicalFlowSection from '@/components/neurological/NeurologicalFlowSection';
 import { useNeuroFlowHandlers } from '@/components/neurological/useNeuroFlowHandlers';
 import AppMainOverlays from '@/components/AppMainOverlays';
-import ExitConfirmModal from '@/components/neurological/ExitConfirmModal';
 import { DEFAULT_TEST_ORDER } from '@/lib/neurologicalConfig';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, QUICK_CALIBRATION_POINTS, roundedRect } from '@/lib/appHelpers';
 import { CalibrationMetaRecorder, type SessionMeta } from '@/lib/calibrationMeta';
@@ -123,7 +122,6 @@ function App() {
   const [isFullscreen, setIsFullscreen] = useState(true);
   /** Which neurological test is running; null when between tests or in post/done. */
   const [currentNeuroTestId, setCurrentNeuroTestId] = useState<string | null>(null);
-  const [showNeuroExitConfirm, setShowNeuroExitConfirm] = useState(false);
   const currentNeuroTestIdRef = useRef<string | null>(null);
   useEffect(() => {
     currentNeuroTestIdRef.current = currentNeuroTestId;
@@ -2092,7 +2090,6 @@ function App() {
     handleNeuroTestComplete,
     handleNeuroPreSubmit,
     handleNeuroPostSubmit,
-    handleNeuroExitRun,
   } = useNeuroFlowHandlers({
     neuroRunId,
     neuroTestOrder,
@@ -2110,7 +2107,6 @@ function App() {
     routerPush,
     setStatus,
     setLoadingMsg,
-    onStartRealTimeTracking: startRealTimeTracking,
   });
 
   /** Sau màn /neuro/done?verify=1 — tiếp tục bài tiếp hoặc post-test (meta trong sessionStorage). */
@@ -3078,7 +3074,6 @@ function App() {
         gazePos={gazePos}
         gazeModelReady={gazeModelReady}
         neuroTestResults={neuroTestResults}
-        onExitRun={async () => setShowNeuroExitConfirm(true)}
         neuroResultsLoading={neuroResultsLoading}
         neuroResultsLoadError={neuroResultsLoadError}
         onNeuroResultsRetry={() => setNeuroResultsFetchKey((k) => k + 1)}
@@ -3144,15 +3139,6 @@ function App() {
           </div>
         </div>
       )}
-
-      <ExitConfirmModal
-        open={showNeuroExitConfirm}
-        onConfirm={() => {
-          setShowNeuroExitConfirm(false);
-          handleNeuroExitRun();
-        }}
-        onCancel={() => setShowNeuroExitConfirm(false)}
-      />
 
     </div>
   );

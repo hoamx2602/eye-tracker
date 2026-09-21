@@ -36,7 +36,6 @@ type UseNeuroFlowHandlersParams = {
   routerPush: (href: string) => void;
   setStatus: (s: any) => void;
   setLoadingMsg: (msg: string) => void;
-  onStartRealTimeTracking: () => void;
 };
 
 
@@ -74,7 +73,6 @@ export function useNeuroFlowHandlers({
   routerPush,
   setStatus,
   setLoadingMsg,
-  onStartRealTimeTracking,
 }: UseNeuroFlowHandlersParams) {
   const [isSaving, setIsSaving] = useState(false);
   const [testSaveState, setTestSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -318,16 +316,6 @@ export function useNeuroFlowHandlers({
     ]
   );
 
-  const handleNeuroExitRun = useCallback(async () => {
-    if (isSaving) return;
-    if (neuroRunId) {
-      try {
-        await neurologicalRunsApi.patch(neuroRunId, { status: 'abandoned' });
-      } catch (_) {}
-    }
-    onStartRealTimeTracking();
-  }, [isSaving, neuroRunId, onStartRealTimeTracking]);
-
   return {
     isSaving,
     testSaveState,
@@ -335,6 +323,5 @@ export function useNeuroFlowHandlers({
     handleNeuroTestComplete,
     handleNeuroPreSubmit,
     handleNeuroPostSubmit,
-    handleNeuroExitRun,
   };
 }
