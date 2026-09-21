@@ -1,25 +1,26 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { DEFAULT_TARGET_DURATION_MS, type SaccadicTargetSide } from './constants';
-import { getTargetPosition } from './utils';
-
-function getViewport(): { w: number; h: number } {
-  if (typeof window === 'undefined') return { w: 400, h: 300 };
-  return { w: window.innerWidth, h: window.innerHeight };
-}
+import { DEFAULT_TARGET_DURATION_MS, LEFT_TARGET_X_FRACTION, RIGHT_TARGET_X_FRACTION, type SaccadicTargetSide } from './constants';
 
 /**
  * Practice: a few saccadic cycles (left/right), no recording.
+ *
+ * Laid out inside the practice gate rather than over it. As a full-screen
+ * layer it covered the amber banner, frame and watermark, so this was the one
+ * practice round that looked exactly like the recorded test — the opposite of
+ * what the practice framing is for.
  */
 export default function SaccadicPractice() {
-  const viewport = getViewport();
   const [cycleIndex, setCycleIndex] = useState(0);
   const cycleStartRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const targetSide: SaccadicTargetSide = cycleIndex % 2 === 0 ? 'left' : 'right';
-  const targetPos = getTargetPosition(targetSide, viewport.w, viewport.h);
+  // Percentage of the practice area, mirroring the fractions the real test
+  // uses across the full viewport.
+  const targetLeftPct =
+    (targetSide === 'left' ? LEFT_TARGET_X_FRACTION : RIGHT_TARGET_X_FRACTION) * 100;
 
   useEffect(() => {
     cycleStartRef.current = performance.now();
@@ -38,21 +39,25 @@ export default function SaccadicPractice() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-gray-950"
+      className="flex flex-col items-center justify-center min-h-[280px] w-full"
       role="region"
       aria-label="Saccadic practice: look at the target when it appears"
     >
-      <p className="text-center text-gray-400 text-sm pt-4 pb-2">
-        Look at the target when it appears.
+      <p className="text-center text-gray-400 text-sm mb-4">
+        A target appears on one side, then the other. Look at it as soon as it appears.
       </p>
-      <div
-        className="absolute w-16 h-16 rounded-full bg-amber-400 border-4 border-amber-300 shadow-lg"
-        style={{
-          left: targetPos.x - 32,
-          top: targetPos.y - 32,
-        }}
-        aria-hidden
-      />
+      <div className="relative w-full max-w-2xl h-64">
+        <div
+          className="absolute w-16 h-16 rounded-full bg-amber-400 border-4 border-amber-300 shadow-lg"
+          style={{
+            left: `${targetLeftPct}%`,
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            transition: 'left 0.06s linear',
+          }}
+          aria-hidden
+        />
+      </div>
     </div>
   );
 }

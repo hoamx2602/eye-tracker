@@ -16,6 +16,18 @@ export type GuidePracticeTestFlowPhase = 'guide' | 'practice' | 'realIntro' | 't
 /** How often the short cue repeats while a test is running. */
 const IN_TEST_CUE_INTERVAL_MS = 30000;
 
+/**
+ * Per-test overrides for that interval.
+ *
+ * Anti-saccade is the counter-intuitive one — the reflex is to look at the
+ * bright shape, and a participant who drifts for a few trials produces errors
+ * that look like an impairment rather than a lapse in attention. It is
+ * reminded far more often than the rest.
+ */
+const CUE_INTERVAL_OVERRIDES_MS: Record<string, number> = {
+  anti_saccade: 5000,
+};
+
 /** Self-assessment config passed down from admin config snapshot. */
 export interface SelfAssessmentConfig {
   enabled: boolean;
@@ -194,7 +206,7 @@ export default function GuidePracticeTestFlow({
   // one interval, which is the point: the short ones are never interrupted.
   useVoiceRepeat(
     neuroTestVoiceKey(testId),
-    IN_TEST_CUE_INTERVAL_MS,
+    CUE_INTERVAL_OVERRIDES_MS[testId] ?? IN_TEST_CUE_INTERVAL_MS,
     repeatCue && phase === 'test' && pendingPayload === null
   );
 
