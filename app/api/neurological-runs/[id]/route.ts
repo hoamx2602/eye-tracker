@@ -73,6 +73,7 @@ export async function PATCH(
       if (body.preSymptomScores !== undefined) updateData.preSymptomScores = body.preSymptomScores;
       if (body.postSymptomScores !== undefined) updateData.postSymptomScores = body.postSymptomScores;
       if (body.testOrderSnapshot !== undefined) updateData.testOrderSnapshot = body.testOrderSnapshot;
+      if (body.videoUrl !== undefined) updateData.videoUrl = body.videoUrl;
 
       // Update standard fields
       await tx.neurologicalRun.update({

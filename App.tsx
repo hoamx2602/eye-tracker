@@ -68,7 +68,7 @@ import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints
 import { CalibrationMetaRecorder, type SessionMeta } from '@/lib/calibrationMeta';
 import { CONSENT_VERSION } from '@/lib/consentText';
 import { ChunkedVideoUploader } from '@/lib/chunkedUpload';
-import { RECORDER_TIMESLICE_MS, VIDEO_BITS_PER_SECOND } from '@/lib/recordingConfig';
+import { NEURO_RECORD_VIDEO_ENABLED, RECORDER_TIMESLICE_MS, VIDEO_BITS_PER_SECOND } from '@/lib/recordingConfig';
 import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
 import { offlineBackendUrl, offlineHandlingEnabled, processOfflineGaze, type OfflineGazeProcessResponse } from '@/lib/offlineGazeBackend';
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
@@ -377,6 +377,20 @@ function App() {
   // Records per-dot [t_start,t_end] windows on the video clock for offline reprocessing.
   const metaRecorderRef = useRef(new CalibrationMetaRecorder());
   const [isRecording, setIsRecording] = useState(false);
+
+  // --- NEUROLOGICAL TEST RECORDING STATE ---
+  // A second, independent recorder/uploader pair, reusing the same camera
+  // stream and the same streaming-upload mechanism as calibration's video —
+  // but scoped to the NeurologicalRun rather than the Session, and driven by
+  // neuroPhase instead of an explicit start/stop call site. See the effect
+  // near the other NEURO_FLOW camera-lifecycle effects below.
+  const neuroMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const neuroRecordedChunksRef = useRef<Blob[]>([]);
+  const neuroVideoUploaderRef = useRef<ChunkedVideoUploader | null>(null);
+  // Which run the in-progress recording belongs to — captured at start time
+  // so finishNeuroVideoRecording still knows where to PATCH even if
+  // neuroRunId has already moved on by the time it resolves.
+  const neuroRecordingRunIdRef = useRef<string | null>(null);
   const [lightLevel, setLightLevel] = useState<{ value: number; status: 'too_dark' | 'low' | 'ok' | 'good' } | null>(null);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
   const calibrationImagesRef = useRef<Blob[]>([]);
@@ -930,6 +944,122 @@ function App() {
       setIsRecording(false);
     });
   };
+
+  // --- NEUROLOGICAL TEST VIDEO RECORDING ---
+  // One continuous recording spanning the 7 tests, started/stopped by the
+  // effect below rather than an explicit call site — see that effect's
+  // comment for why (redo, dev verify-mode, and a HEAD_POSITIONING
+  // interruption mid-test all have to be able to enter/leave neuroPhase
+  // 'tests' without producing a fresh video or cutting the one in progress).
+  const startNeuroVideoRecording = (runId: string) => {
+    if (!videoRef.current || !videoRef.current.srcObject) return;
+    if (neuroMediaRecorderRef.current) return; // already recording
+
+    const stream = videoRef.current.srcObject as MediaStream;
+    const codecPriority = [
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm',
+    ];
+    const mimeType = codecPriority.find(t => MediaRecorder.isTypeSupported(t)) ?? 'video/webm';
+
+    try {
+      const recorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+      });
+      neuroRecordedChunksRef.current = [];
+      neuroRecordingRunIdRef.current = runId;
+
+      const uploader = new ChunkedVideoUploader(
+        `neuro-${runId}-${Date.now()}.webm`,
+        'video/webm',
+        { type: 'run', id: runId }
+      );
+      uploader.start();
+      neuroVideoUploaderRef.current = uploader;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          neuroRecordedChunksRef.current.push(event.data);
+          neuroVideoUploaderRef.current?.add(event.data);
+        }
+      };
+
+      recorder.start(RECORDER_TIMESLICE_MS);
+      neuroMediaRecorderRef.current = recorder;
+    } catch (e) {
+      console.error('[NeuroVideo] failed to start', e);
+    }
+  };
+
+  /**
+   * Stop whatever neuro recording is in progress and save it against the run
+   * it was started for — not necessarily the run currently in state, if a
+   * redo has already moved on. Soft-fails like every other upload in this
+   * flow: a lost video never blocks or interrupts the participant, it just
+   * means that run has no raw-video fallback.
+   */
+  const finishNeuroVideoRecording = useCallback(async (): Promise<void> => {
+    const recorder = neuroMediaRecorderRef.current;
+    const runId = neuroRecordingRunIdRef.current;
+    const uploader = neuroVideoUploaderRef.current;
+    neuroMediaRecorderRef.current = null;
+    neuroRecordingRunIdRef.current = null;
+    neuroVideoUploaderRef.current = null;
+    if (!recorder || recorder.state === 'inactive') return;
+
+    try {
+      const mimeType = recorder.mimeType || 'video/webm';
+      const blob = await new Promise<Blob>((resolve) => {
+        recorder.onstop = () => {
+          resolve(new Blob(neuroRecordedChunksRef.current, { type: mimeType }));
+        };
+        recorder.stop();
+      });
+      neuroRecordedChunksRef.current = [];
+      if (!blob || blob.size === 0 || !runId) return;
+
+      let videoUrl: string | null = uploader ? await uploader.finish() : null;
+      if (!videoUrl) {
+        videoUrl = await uploadApi.uploadBlob(
+          blob,
+          `neuro-${runId}-${Date.now()}.webm`,
+          'video/webm',
+          { type: 'run', id: runId }
+        );
+      }
+      if (videoUrl) {
+        await neurologicalRunsApi.patch(runId, { videoUrl });
+      }
+    } catch (e) {
+      console.warn('[NeuroVideo] finalize failed — no video saved for this run', e);
+    }
+  }, []);
+
+  /**
+   * Drives neuro video recording from state rather than any single handler —
+   * the same reasoning as the camera start/stop effects above. neuroPhase
+   * 'tests' is entered and left from several places (the pre-questionnaire
+   * submit, the skip-questionnaire fast path in handleChooseNeurological, a
+   * "redo tests" restart, and the dev verify-after-each-test mode), and a
+   * status flip to HEAD_POSITIONING mid-test does NOT change neuroPhase — so
+   * gating on neuroPhase alone, rather than status, is what keeps a head
+   * repositioning from cutting the recording into pieces.
+   */
+  useEffect(() => {
+    if (!NEURO_RECORD_VIDEO_ENABLED) return;
+    const shouldRecord =
+      (status === 'NEURO_FLOW' || status === 'HEAD_POSITIONING') &&
+      neuroPhase === 'tests' &&
+      !!neuroRunId &&
+      hasCameraStream;
+    if (shouldRecord && !neuroMediaRecorderRef.current) {
+      startNeuroVideoRecording(neuroRunId!);
+    } else if (!shouldRecord && neuroMediaRecorderRef.current) {
+      void finishNeuroVideoRecording();
+    }
+  }, [status, neuroPhase, neuroRunId, hasCameraStream, finishNeuroVideoRecording]);
 
   const captureCurrentFrameAsBlob = (): Promise<Blob | null> => {
     return new Promise((resolve) => {

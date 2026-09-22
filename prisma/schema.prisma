@@ -68,6 +68,11 @@ model NeurologicalRun {
   testOrderSnapshot Json?
   testResults       Json?
   status            String   @default("in_progress")
+  /// One continuous recording spanning the 7 tests — unlike calibration's
+  /// video this has no other raw-frame fallback, so it is what a gaze
+  /// algorithm revisited later would re-derive from. Null when recording is
+  /// disabled (NEXT_PUBLIC_NEURO_RECORD_VIDEO=0) or failed to upload.
+  videoUrl          String?
   session           Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 

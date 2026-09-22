@@ -82,6 +82,8 @@ export interface NeurologicalRun {
   postSymptomScores?: unknown;
   testResults?: Record<string, unknown> | null;
   status: string;
+  /** One continuous recording spanning the 7 tests. See NEURO_RECORD_VIDEO_ENABLED in lib/recordingConfig.ts. */
+  videoUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -128,6 +130,7 @@ export const neurologicalRunsApi = {
       postSymptomScores: unknown;
       testResults: Record<string, unknown>;
       status: string;
+      videoUrl: string | null;
     }>
   ): Promise<NeurologicalRun> {
     const res = await fetch(`${getBaseUrl()}/api/neurological-runs/${id}`, {

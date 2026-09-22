@@ -73,3 +73,23 @@ export const UPLOAD_PART_SIZE = 5 * 1024 * 1024;
  * the upload a chance to catch back up without flooding a weak connection.
  */
 export const UPLOAD_PART_CONCURRENCY = 2;
+
+/**
+ * Whether to record one continuous video spanning the 7 neurological tests,
+ * the same way calibration already records itself.
+ *
+ * The tests are the actual scientific measurement and, unlike calibration,
+ * have no raw-video fallback today — only the derived per-test metrics. This
+ * closes that gap using the exact same streaming uploader and ownership
+ * check calibration's video already goes through (see lib/chunkedUpload.ts
+ * and validateUploadOwner in lib/s3Server.ts), just against the
+ * NeurologicalRun instead of the Session.
+ *
+ * On by default; NEXT_PUBLIC_NEURO_RECORD_VIDEO=0 (or false/off/no) is the
+ * kill switch if it ever needs to come off quickly without touching scoring
+ * or the results screen, neither of which read this column.
+ */
+export const NEURO_RECORD_VIDEO_ENABLED =
+  !['0', 'false', 'off', 'no'].includes(
+    (process.env.NEXT_PUBLIC_NEURO_RECORD_VIDEO ?? '').trim().toLowerCase()
+  );

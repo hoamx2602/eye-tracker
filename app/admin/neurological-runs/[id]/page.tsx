@@ -52,8 +52,23 @@ type NeuroRunDetail = {
   preSymptomScores: SymptomPayload | null;
   postSymptomScores: SymptomPayload | null;
   testResults: Record<string, unknown> | null;
+  videoUrl: string | null;
   session: SessionContext | null;
 };
+
+async function getSignedUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `/api/admin/signed-url?url=${encodeURIComponent(url)}`,
+      { credentials: 'include' }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.url ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -559,6 +574,7 @@ export default function AdminNeuroRunDetailPage() {
   const [run, setRun] = useState<NeuroRunDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [signedVideoUrl, setSignedVideoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -570,6 +586,10 @@ export default function AdminNeuroRunDetailPage() {
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled) setRun(data);
+        if (data.videoUrl) {
+          const signed = await getSignedUrl(data.videoUrl);
+          if (!cancelled) setSignedVideoUrl(signed);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -677,6 +697,34 @@ export default function AdminNeuroRunDetailPage() {
               ))}
             </div>
           </div>
+        )}
+      </SectionCard>
+
+      {/* Section A.5 — Test video */}
+      <SectionCard title="Test video">
+        {run.videoUrl ? (
+          <div className="space-y-2">
+            <video
+              controls
+              className="w-full max-w-2xl rounded-lg bg-black aspect-video"
+              src={signedVideoUrl ?? run.videoUrl}
+              preload="metadata"
+            >
+              Your browser does not support the video tag.
+            </video>
+            <p className="text-slate-500 text-xs">
+              <a
+                href={signedVideoUrl ?? run.videoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:text-blue-300"
+              >
+                Open in new tab
+              </a>
+            </p>
+          </div>
+        ) : (
+          <p className="text-slate-500 text-sm">No video recorded for this run.</p>
         )}
       </SectionCard>
 
