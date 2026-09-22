@@ -1,11 +1,26 @@
 /**
- * GET  /api/sessions — list sessions (query: limit, cursor)
- * POST /api/sessions — create session
+ * GET  /api/sessions — list sessions (query: limit, cursor). Admin auth required —
+ * this is the one route that hands back every participant's email and data at
+ * once rather than a single record a caller already has the id for, so it is
+ * gated the same way the rest of the admin surface is.
+ * POST /api/sessions — create session (participant-facing, stays public)
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getAdminCookieName, verifyAdminToken } from '@/lib/admin-auth';
+
+async function requireAdmin(request: NextRequest) {
+  const cookieName = getAdminCookieName();
+  const token = request.cookies.get(cookieName)?.value;
+  if (!token) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+  const payload = await verifyAdminToken(token);
+  if (!payload) return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 });
+  return null;
+}
 
 export async function GET(request: NextRequest) {
+  const authError = await requireAdmin(request);
+  if (authError) return authError;
   try {
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);

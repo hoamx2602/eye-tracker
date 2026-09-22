@@ -35,6 +35,12 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
               Sessions
             </Link>
             <Link
+              href="/admin/participants"
+              className={`font-medium transition ${pathname?.startsWith('/admin/participants') ? 'text-white' : 'text-slate-300 hover:text-white'}`}
+            >
+              Participants
+            </Link>
+            <Link
               href="/admin/tests"
               className={`font-medium transition ${pathname?.startsWith('/admin/tests') ? 'text-white' : 'text-slate-300 hover:text-white'}`}
             >

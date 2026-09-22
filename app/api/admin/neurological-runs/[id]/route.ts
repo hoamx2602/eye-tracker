@@ -32,6 +32,7 @@ export async function GET(
             id: true,
             meanErrorPx: true,
             demographics: true,
+            participantEmail: true,
             // Carries faceDistance. Without it both admin screens fell back to
             // 60 cm and reported half the angle for a session run at 30.
             config: true,

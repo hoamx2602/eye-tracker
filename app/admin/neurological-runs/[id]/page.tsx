@@ -31,6 +31,7 @@ type SessionContext = {
   id: string;
   meanErrorPx: number | null;
   demographics: Demographics | null;
+  participantEmail?: string | null;
   /** App config snapshot for the session; carries faceDistance. */
   config: unknown;
 };
@@ -680,6 +681,20 @@ export default function AdminNeuroRunDetailPage() {
                 Age {demographics.age}
                 {demographics.gender ? ` · ${demographics.gender}` : ''}
                 {demographics.country ? ` · ${demographics.country}` : ''}
+              </dd>
+            </div>
+          )}
+          {run.session?.participantEmail && (
+            <div className="sm:col-span-2">
+              <dt className="text-xs text-slate-500 uppercase">Email</dt>
+              <dd className="text-sm text-slate-200 mt-0.5 break-all">
+                {run.session.participantEmail}
+                <Link
+                  href={`/admin/participants/${encodeURIComponent(run.session.participantEmail)}`}
+                  className="ml-2 text-xs text-blue-400 hover:text-blue-300 font-medium whitespace-nowrap"
+                >
+                  View history →
+                </Link>
               </dd>
             </div>
           )}

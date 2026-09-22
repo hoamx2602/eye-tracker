@@ -333,6 +333,14 @@ export default function AdminSessionDetailPage() {
                 <dt className="text-xs text-slate-500 uppercase">Email</dt>
                 <dd className="text-sm text-slate-200 mt-0.5 break-all">
                   {session.participantEmail ?? demographics.email}
+                  {session.participantEmail && (
+                    <Link
+                      href={`/admin/participants/${encodeURIComponent(session.participantEmail)}`}
+                      className="ml-2 text-xs text-blue-400 hover:text-blue-300 font-medium whitespace-nowrap"
+                    >
+                      View history →
+                    </Link>
+                  )}
                 </dd>
               </div>
             )}
