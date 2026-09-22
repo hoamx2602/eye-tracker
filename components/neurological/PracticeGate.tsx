@@ -50,6 +50,7 @@ export default function PracticeGate({
   // where the participant is actually listening on something they can see.
   const voice = useVoice();
   const speak = voice?.speak;
+  const speakingKey = voice?.speakingKey;
   useVoiceOwnedClip(instructionsVoiceKey);
   useEffect(() => {
     if (!instructionsVoiceKey || !speak) return;
@@ -60,6 +61,21 @@ export default function PracticeGate({
     const t = setTimeout(() => setShowStartButton(true), minDelayMs);
     return () => clearTimeout(t);
   }, [minDelayMs]);
+
+  // Tell the participant the button has appeared — the button itself pulses
+  // for the same reason, but not everyone is looking at it the moment it
+  // shows up. Announced once: waits for the task's own instructions to
+  // finish first (speak() would otherwise cut them off mid-sentence), but
+  // never re-fires just because those instructions get replayed later from
+  // the voice button once the participant is already at the ready state.
+  useVoiceOwnedClip('practice.ready');
+  const readyAnnouncedRef = React.useRef(false);
+  useEffect(() => {
+    if (!showStartButton || !speak || readyAnnouncedRef.current) return;
+    if (instructionsVoiceKey && speakingKey === instructionsVoiceKey) return;
+    readyAnnouncedRef.current = true;
+    speak('practice.ready');
+  }, [showStartButton, speakingKey, instructionsVoiceKey, speak]);
 
   const markPracticeDone = useCallback(() => setShowStartButton(true), []);
 
@@ -101,16 +117,32 @@ export default function PracticeGate({
         {showStartButton && (
           <BottomActionBar>
             <div className="flex flex-col items-center gap-2">
-              <button
-                type="button"
-                onClick={onStartRealTest}
-                className="group px-7 py-3.5 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold rounded-2xl transition shadow-[0_10px_30px_rgba(0,140,255,0.18)] active:translate-y-[1px]"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <span>I&apos;m ready — start the real test</span>
-                  <span className="opacity-90 group-hover:translate-x-0.5 transition">→</span>
-                </span>
-              </button>
+              {/*
+                A participant can be mid-practice, looking at the task rather
+                than the bottom bar, when this button first appears — the
+                bounce + pulsing ring are what catch the eye; practice.ready
+                (spoken above) is what catches anyone not looking at the
+                screen at all.
+              */}
+              <span className="text-2xl leading-none animate-bounce" aria-hidden>
+                👆
+              </span>
+              <div className="relative">
+                <span
+                  className="absolute inset-0 rounded-2xl bg-blue-400 animate-ping opacity-40 pointer-events-none"
+                  aria-hidden
+                />
+                <button
+                  type="button"
+                  onClick={onStartRealTest}
+                  className="group relative px-7 py-3.5 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold rounded-2xl transition shadow-[0_10px_30px_rgba(0,140,255,0.18)] active:translate-y-[1px]"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <span>I&apos;m ready — start the real test</span>
+                    <span className="opacity-90 group-hover:translate-x-0.5 transition">→</span>
+                  </span>
+                </button>
+              </div>
               <p className="text-xs text-gray-500">
                 Practice as long as you like. The real test begins only when you press this.
               </p>

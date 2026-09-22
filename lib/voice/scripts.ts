@@ -168,6 +168,16 @@ export const VOICE_SCRIPTS = {
       'Again, zero means none at all and four means severe.',
   },
 
+  // ------------------------------------------------------------- practice
+  // Played once the "start the real test" button appears (after the min
+  // practice delay, or as soon as a test marks its own practice done) — not
+  // on entering practice, and never over the task's own instructions still
+  // playing (see the speakingKey check in PracticeGate). Mirrors the
+  // on-screen copy under the button so the two never say different things.
+  'practice.ready': {
+    text: "Practice as long as you'd like. When you're ready, press the button below to begin the real test.",
+  },
+
   // ---------------------------------------------------------- real test
   // Spoken over a five-second countdown, so it has to fit inside it. The
   // "head still" reminder is left to each test's own instructions.
