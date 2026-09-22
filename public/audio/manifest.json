@@ -35,6 +35,8 @@
   "headori.up",
   "neuro.anti_saccade",
   "neuro.anti_saccade.cue",
+  "neuro.anti_saccade.no_dim",
+  "neuro.anti_saccade.no_dim.cue",
   "neuro.fixation_stability",
   "neuro.fixation_stability.cue",
   "neuro.head_orientation",
@@ -47,6 +49,7 @@
   "neuro.saccadic.cue",
   "neuro.visual_search",
   "neuro.visual_search.cue",
+  "neuro.visual_search.wrong_order",
   "overview.anti_saccade",
   "overview.calibration",
   "overview.diagonal",
@@ -66,5 +69,6 @@
   "setup.lighting",
   "setup.posture",
   "symptom.post",
-  "symptom.pre"
+  "symptom.pre",
+  "validation.next"
 ]

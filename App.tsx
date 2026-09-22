@@ -615,8 +615,15 @@ function App() {
     }
   }, [status, pathname]);
 
-  // Load cached neuro config snapshot for this browser session.
-  // If we are on a neuro route but have no snapshot, try to fetch it from the API.
+  // Load cached neuro config snapshot for this browser session, then always
+  // refresh it from the DB on mount — not just once already on a /neuro/*
+  // route. selfAssessmentConfig (the "Quick check-in" prompt) is read off
+  // this same snapshot for the CALIBRATION exercise breaks too (see
+  // AppMainOverlays), which happen long before a participant ever reaches a
+  // /neuro/* URL; gating the fetch on the route meant a normal participant —
+  // who starts at "/", not a deep link — never had a real snapshot during
+  // calibration at all, so exercise breaks silently ignored whatever the
+  // admin had actually configured and fell back to the hardcoded default.
   useEffect(() => {
     let raw: string | null = null;
     try {
@@ -629,24 +636,19 @@ function App() {
       }
     } catch (_) {}
 
-    // If we're on a neuro route, fetch the latest from DB to ensure developer-convenience
-    // (so admin changes reflect on refresh of the test page).
-    const parsed = parsePathname(typeof pathname === 'string' ? pathname : '/');
-    if (parsed.screen.startsWith('neuro')) {
-      (async () => {
-        try {
-          const latest = await getNeurologicalConfig();
-          setNeuroConfigSnapshot({
-            testOrder: latest.testOrder,
-            testParameters: (latest.testParameters as Record<string, Record<string, unknown>>) ?? {},
-            testEnabled: (latest.testEnabled as Record<string, boolean>) ?? {},
-          });
-          localStorage.setItem(NEURO_CONFIG_LS_KEY, JSON.stringify(latest));
-        } catch (e) {
-          console.error('[App] Failed to fetch fresh neuro config', e);
-        }
-      })();
-    }
+    (async () => {
+      try {
+        const latest = await getNeurologicalConfig();
+        setNeuroConfigSnapshot({
+          testOrder: latest.testOrder,
+          testParameters: (latest.testParameters as Record<string, Record<string, unknown>>) ?? {},
+          testEnabled: (latest.testEnabled as Record<string, boolean>) ?? {},
+        });
+        localStorage.setItem(NEURO_CONFIG_LS_KEY, JSON.stringify(latest));
+      } catch (e) {
+        console.error('[App] Failed to fetch fresh neuro config', e);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -3539,7 +3541,7 @@ function App() {
         loocvErrors={loocvErrors}
         loocvBaseline={loocvBaseline}
         onReEvaluate={reEvaluateWithCurrentFlags}
-        selfAssessmentConfig={(neuroConfigSnapshot?.testParameters?.['_selfAssessment'] || { enabled: true, questionCount: 2 }) as unknown as SelfAssessmentConfig}
+        selfAssessmentConfig={(neuroConfigSnapshot?.testParameters?.['_selfAssessment'] || { enabled: false, questionCount: 2 }) as unknown as SelfAssessmentConfig}
         assessmentPending={assessmentPending}
         exerciseRetryCount={exerciseRetryCount}
         stepSaveState={stepSaveState}

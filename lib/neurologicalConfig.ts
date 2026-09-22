@@ -164,12 +164,26 @@ export function isQuickModeEnv(): boolean {
   return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 
+/**
+ * Off by default — the fatigue/confidence check-in after every exercise and
+ * test adds real time to an already long session, and should be an opt-in
+ * an admin explicitly turns on for a study that wants it, not something a
+ * fresh install collects without anyone having decided to ask for it.
+ */
+export const DEFAULT_SELF_ASSESSMENT_PARAMETERS: Record<string, unknown> = {
+  enabled: false,
+  questionCount: 2,
+  question1: 'How focused were you during this test?',
+  question2: 'How accurately do you think you performed?',
+};
+
 /** Build config snapshot for a run (testOrder + testParameters + testEnabled). */
 export function getDefaultConfigSnapshot() {
   return {
     testOrder: [...DEFAULT_TEST_ORDER],
     testParameters: {
       _global: { ...DEFAULT_GLOBAL_PARAMETERS },
+      _selfAssessment: { ...DEFAULT_SELF_ASSESSMENT_PARAMETERS },
       ...DEFAULT_TEST_PARAMETERS,
     },
     testEnabled: { ...DEFAULT_TEST_ENABLED },

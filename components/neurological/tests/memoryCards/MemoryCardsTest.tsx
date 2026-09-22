@@ -102,10 +102,21 @@ export default function MemoryCardsTest() {
   /** Chrome around the grid: page padding plus the two caption lines. */
   const GRID_MARGIN_X = 48;
   const GRID_MARGIN_Y = 140;
-  const maxByWidth = (viewport.width - GRID_MARGIN_X - cardGapPx * (cols - 1)) / cols;
-  const maxByHeight = (viewport.height - GRID_MARGIN_Y - cardGapPx * (rows - 1)) / rows;
-  // Card = icon + 20px padding on each side, shrunk only when it will not fit.
-  const cardSizePx = Math.max(36, Math.floor(Math.min(symbolPx + 40, maxByWidth, maxByHeight)));
+  // Target the grid (cards + gaps together) at ~80% of the available area
+  // instead of only capping cards at "just big enough for the symbol" — a
+  // small card count (e.g. 8) was clustering into a small block in the
+  // middle of an otherwise empty screen, which is harder to fixate on with
+  // webcam-grade gaze error than a large one. The gap scales with the
+  // resulting card size too (bounded below by the configured/default gap),
+  // so bigger cards don't end up crowded by a gap sized for small ones.
+  const GRID_COVERAGE = 0.8;
+  const GAP_TO_CARD_RATIO = 0.3;
+  const availW = (viewport.width - GRID_MARGIN_X) * GRID_COVERAGE;
+  const availH = (viewport.height - GRID_MARGIN_Y) * GRID_COVERAGE;
+  const byWidth = availW / (cols + (cols - 1) * GAP_TO_CARD_RATIO);
+  const byHeight = availH / (rows + (rows - 1) * GAP_TO_CARD_RATIO);
+  const cardSizePx = Math.max(36, Math.floor(Math.min(byWidth, byHeight)));
+  const effectiveGapPx = Math.max(cardGapPx, Math.round(cardSizePx * GAP_TO_CARD_RATIO));
   const renderedSymbolPx = Math.min(symbolPx, Math.max(16, cardSizePx - 16));
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [matched, setMatched] = useState<Set<number>>(new Set());
@@ -336,7 +347,7 @@ export default function MemoryCardsTest() {
         ref={gridContainerRef}
         className="grid"
         style={{
-          gap: `${cardGapPx}px`,
+          gap: `${effectiveGapPx}px`,
           gridTemplateColumns: `repeat(${cols}, ${cardSizePx}px)`,
           gridTemplateRows: `repeat(${rows}, ${cardSizePx}px)`,
         }}

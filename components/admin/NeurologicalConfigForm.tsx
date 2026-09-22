@@ -45,7 +45,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
       confirmMode: 'gaze',
       clickHoldDurationMs: 300,
     },
-    memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg', cardGapPx: 8 },
+    memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg', cardGapPx: 28 },
     anti_saccade: {
       trialCount: 12,
       movementSpeedPxPerSec: 120,
@@ -90,7 +90,7 @@ export default function NeurologicalConfigForm() {
         params['_global'] = { edgePaddingPx: 80, ...((rawParams['_global'] as Record<string, unknown>) ?? {}) };
         // Load self-assessment config (stored under _selfAssessment key)
         params['_selfAssessment'] = {
-          enabled: true,
+          enabled: false,
           questionCount: 2,
           question1: 'How focused were you during this test?',
           question2: 'How accurately do you think you performed?',
