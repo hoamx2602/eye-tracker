@@ -78,13 +78,13 @@ export type GuidePracticeTestFlowProps = {
   repeatCue?: boolean;
   /**
    * Skip straight to this phase on mount instead of starting at 'guide' —
-   * used to resume a test after a head-position interruption without
-   * replaying the guide and practice. Only 'test' is meaningful here: it
-   * means "this participant already saw the guide and practice earlier in
-   * this same test, so don't show them again," not "start the flow at an
-   * arbitrary point."
+   * used to resume a test after a head-position interruption at exactly the
+   * phase it interrupted, captured (by App.tsx, via onPhaseChange below)
+   * from wherever this same test's flow actually was. Someone interrupted
+   * mid-practice comes back to practice, not to a test they had not reached
+   * yet, or a guide they had already read.
    */
-  initialPhase?: 'test';
+  initialPhase?: GuidePracticeTestFlowPhase;
   /**
    * Fires whenever the post-test break/review screen (pendingPayload !== null
    * — the test's trials are done, its result is already banked, and the
@@ -95,6 +95,8 @@ export type GuidePracticeTestFlowProps = {
    * participant through a redo of a test that already finished.
    */
   onBreakActiveChange?: (active: boolean) => void;
+  /** Fires whenever `phase` changes, so App.tsx always knows where to resume this test if it gets interrupted. */
+  onPhaseChange?: (phase: GuidePracticeTestFlowPhase) => void;
 };
 
 /** Single star-row used inside the inline post-test overlay. */
@@ -172,6 +174,7 @@ export default function GuidePracticeTestFlow({
   repeatCue = true,
   initialPhase,
   onBreakActiveChange,
+  onPhaseChange,
 }: GuidePracticeTestFlowProps) {
   const [phase, setPhase] = useState<GuidePracticeTestFlowPhase>(initialPhase ?? 'guide');
   const [pendingPayload, setPendingPayload] = useState<TestResultPayload | null>(null);
@@ -186,6 +189,12 @@ export default function GuidePracticeTestFlow({
     // not be left set for whatever mounts next.
     return () => onBreakActiveChangeRef.current?.(false);
   }, [pendingPayload]);
+
+  const onPhaseChangeRef = useRef(onPhaseChange);
+  onPhaseChangeRef.current = onPhaseChange;
+  useEffect(() => {
+    onPhaseChangeRef.current?.(phase);
+  }, [phase]);
 
   // Inline self-assessment state — reset when test restarts
   const [focusRating, setFocusRating] = useState<number | null>(null);

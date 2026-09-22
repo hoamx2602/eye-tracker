@@ -136,8 +136,13 @@ type NeurologicalFlowSectionProps = {
   neuroRunStatus: 'idle' | 'creating' | 'ready' | 'error';
   neuroPhase: 'pre' | 'tests' | 'post' | 'done';
   currentNeuroTestId: string | null;
-  /** Set by App.tsx after an invalid-head-position interruption — the one test that should skip its guide/practice and resume straight into 'test' phase. See App.tsx's neuroFlowResumeRef. */
+  /**
+   * Set by App.tsx after an invalid-head-position interruption — the test
+   * and exact phase (guide/practice/test) to resume into, captured from
+   * wherever the participant actually was. See App.tsx's neuroFlowResumeRef.
+   */
   neuroResumeTestId?: string | null;
+  neuroResumePhase?: 'guide' | 'practice' | 'realIntro' | 'test' | null;
   neuroRunId: string | null;
   neuroTestOrder: string[];
   neuroConfigSnapshot: {
@@ -160,6 +165,8 @@ type NeurologicalFlowSectionProps = {
   onTestResultReady?: (testId: string, payload: TestResultPayload) => void;
   /** True while the active test's post-test break/review screen is showing — see GuidePracticeTestFlow's onBreakActiveChange. */
   onBreakActiveChange?: (active: boolean) => void;
+  /** Live phase of whichever test is currently mounted — see GuidePracticeTestFlow's onPhaseChange. */
+  onPhaseChange?: (phase: 'guide' | 'practice' | 'realIntro' | 'test') => void;
   /** Progress of that early save. */
   testSaveState?: 'idle' | 'saving' | 'saved' | 'error';
   /** True while Continue is writing the final result and moving on. */
@@ -181,6 +188,7 @@ export default function NeurologicalFlowSection({
   neuroPhase,
   currentNeuroTestId,
   neuroResumeTestId = null,
+  neuroResumePhase = null,
   neuroRunId,
   neuroTestOrder,
   neuroConfigSnapshot,
@@ -196,6 +204,7 @@ export default function NeurologicalFlowSection({
   onTestComplete,
   onTestResultReady,
   onBreakActiveChange,
+  onPhaseChange,
   testSaveState = 'idle',
   isSavingTest = false,
   onDoneBack,
@@ -239,10 +248,13 @@ export default function NeurologicalFlowSection({
       nextTestId: nextId,
       saveState: testSaveState,
       saving: isSavingTest,
-      // Resuming this exact test after a head-position interruption: skip
-      // the guide and practice, go straight to a fresh 'test' run.
-      initialPhase: (neuroResumeTestId === id ? 'test' : undefined) as 'test' | undefined,
+      // Resuming this exact test after a head-position interruption: land
+      // back on the exact phase it was interrupted at (guide, practice, or
+      // test) — not always 'test', so someone who hadn't finished practice
+      // yet comes back to practice, not to a test they never reached.
+      initialPhase: neuroResumeTestId === id ? neuroResumePhase ?? undefined : undefined,
       onBreakActiveChange,
+      onPhaseChange,
     };
   };
 

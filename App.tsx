@@ -114,14 +114,23 @@ function App() {
    * The same "leave, hold a valid position for 2s, come back" loop
    * CALIBRATION already uses for invalid head position — same status change,
    * same HEAD_POSITIONING screen, same 500ms debounce. The test that was
-   * running unmounts and, on return, remounts from scratch: whatever trials
-   * it had collected are gone, same as CALIBRATION losing an in-progress
-   * dwell on a grid point. The one thing it skips is the guide and practice
-   * — neuroResumeTestId names the test to resume straight into 'test' phase
-   * for, read once by that test's GuidePracticeTestFlow at mount.
+   * running unmounts and, on return, remounts from scratch: whatever
+   * trials/progress it had are gone, same as CALIBRATION losing an
+   * in-progress dwell on a grid point. What it does not do is send the
+   * participant further back than where they actually were —
+   * neuroResumeTestId/neuroResumePhase name the test and the exact phase
+   * (guide, practice, or test) to resume into, captured from
+   * neuroCurrentPhaseRef at the moment the interruption fires. Someone
+   * interrupted mid-practice comes back to practice, not to a test they had
+   * not reached yet.
    */
   const neuroFlowResumeRef = useRef(false);
   const [neuroResumeTestId, setNeuroResumeTestId] = useState<string | null>(null);
+  const [neuroResumePhase, setNeuroResumePhase] = useState<
+    'guide' | 'practice' | 'realIntro' | 'test' | null
+  >(null);
+  /** Live phase of whichever test's GuidePracticeTestFlow is currently mounted — kept current via onPhaseChange. */
+  const neuroCurrentPhaseRef = useRef<'guide' | 'practice' | 'realIntro' | 'test'>('guide');
   const [neuroRunId, setNeuroRunId] = useState<string | null>(null);
   const [neuroRunStatus, setNeuroRunStatus] = useState<'idle' | 'creating' | 'ready' | 'error'>('idle');
   const [neuroTestOrder, setNeuroTestOrder] = useState<string[]>([]);
@@ -1174,6 +1183,7 @@ function App() {
                       headInvalidSinceRef.current = null;
                       neuroFlowResumeRef.current = true;
                       setNeuroResumeTestId(currentNeuroTestIdRef.current);
+                      setNeuroResumePhase(neuroCurrentPhaseRef.current);
                       setStatus('HEAD_POSITIONING');
                   }
               } else if (
@@ -3429,6 +3439,7 @@ function App() {
         neuroPhase={neuroPhase}
         currentNeuroTestId={currentNeuroTestId}
         neuroResumeTestId={neuroResumeTestId}
+        neuroResumePhase={neuroResumePhase}
         neuroRunId={neuroRunId}
         neuroTestOrder={neuroTestOrder}
         neuroConfigSnapshot={neuroConfigSnapshot}
@@ -3444,6 +3455,7 @@ function App() {
         onTestComplete={handleNeuroTestComplete}
         onTestResultReady={handleNeuroTestResultReady}
         onBreakActiveChange={(active) => { neuroTestBreakActiveRef.current = active; }}
+        onPhaseChange={(phase) => { neuroCurrentPhaseRef.current = phase; }}
         testSaveState={neuroTestSaveState}
         isSavingTest={isSavingNeuroTest}
         onDoneBack={startRealTimeTracking}
