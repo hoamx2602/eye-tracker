@@ -111,16 +111,17 @@ function App() {
   const neuroPhaseRef = useRef(neuroPhase);
   useEffect(() => { neuroPhaseRef.current = neuroPhase; }, [neuroPhase]);
   /**
-   * True while a full-screen block is up because head position went invalid
-   * during a neuro test (guide/practice/test — anything under neuroPhase
-   * 'tests'). Unlike CALIBRATION's equivalent, this never changes `status`:
-   * the active test stays mounted underneath, so no guide/practice/trial
-   * progress is lost while the participant corrects their position. Cleared
-   * the same way HEAD_POSITIONING clears — hold a valid position for 2s.
+   * The same "leave, hold a valid position for 2s, come back" loop
+   * CALIBRATION already uses for invalid head position — same status change,
+   * same HEAD_POSITIONING screen, same 500ms debounce. The test that was
+   * running unmounts and, on return, remounts from scratch: whatever trials
+   * it had collected are gone, same as CALIBRATION losing an in-progress
+   * dwell on a grid point. The one thing it skips is the guide and practice
+   * — neuroResumeTestId names the test to resume straight into 'test' phase
+   * for, read once by that test's GuidePracticeTestFlow at mount.
    */
-  const [neuroHeadCheckActive, setNeuroHeadCheckActive] = useState(false);
-  const neuroHeadCheckActiveRef = useRef(false);
-  useEffect(() => { neuroHeadCheckActiveRef.current = neuroHeadCheckActive; }, [neuroHeadCheckActive]);
+  const neuroFlowResumeRef = useRef(false);
+  const [neuroResumeTestId, setNeuroResumeTestId] = useState<string | null>(null);
   const [neuroRunId, setNeuroRunId] = useState<string | null>(null);
   const [neuroRunStatus, setNeuroRunStatus] = useState<'idle' | 'creating' | 'ready' | 'error'>('idle');
   const [neuroTestOrder, setNeuroTestOrder] = useState<string[]>([]);
@@ -1074,12 +1075,10 @@ function App() {
 
               // --- SPECIFIC LOGIC PER STATUS ---
               
-              // Same "hold a valid position for 2s" timer serves two cases:
-              // the dedicated HEAD_POSITIONING screen (clears by moving on —
-              // to CALIBRATION, or straight into it the first time), and the
-              // neuro-flow block below (clears by lowering its own flag,
-              // nothing else changes). Both want identical timing and feel.
-              if (statusRef.current === 'HEAD_POSITIONING' || neuroHeadCheckActiveRef.current) {
+              // "Hold a valid position for 2s" — the one timer that clears
+              // HEAD_POSITIONING however we got there: back to CALIBRATION,
+              // into it fresh the first time, or back to NEURO_FLOW.
+              if (statusRef.current === 'HEAD_POSITIONING') {
                   if (validation.valid) {
                       setStableFrameCount(c => c + 1);
                       if (!headPosStartTimeRef.current) {
@@ -1092,9 +1091,9 @@ function App() {
                       if (remaining === 0) {
                           headPosStartTimeRef.current = null;
                           setPositionHoldTime(null);
-                          if (neuroHeadCheckActiveRef.current) {
-                              neuroHeadCheckActiveRef.current = false;
-                              setNeuroHeadCheckActive(false);
+                          if (neuroFlowResumeRef.current) {
+                              neuroFlowResumeRef.current = false;
+                              setStatus('NEURO_FLOW');
                           } else if (calibrationResumeRef.current) {
                               calibrationResumeRef.current = false;
                               setStatus('CALIBRATION');
@@ -1128,19 +1127,25 @@ function App() {
               }
 
               // During an active neuro test (guide/practice/test — anything
-              // under neuroPhase 'tests'): same debounce, but block in place
-              // rather than navigate away, so the test underneath is never
-              // unmounted. Pre/post questionnaires don't need the camera at
-              // all, so they are deliberately excluded — interrupting someone
-              // answering a symptom survey to check their head position would
-              // be pure friction with nothing to protect.
+              // under neuroPhase 'tests'): the same loop CALIBRATION uses —
+              // same debounce, same HEAD_POSITIONING screen, same 2s hold to
+              // clear. The test that was running unmounts and, on return,
+              // starts over: trials collected before the interruption are
+              // gone, same as CALIBRATION losing an in-progress dwell on a
+              // grid point. neuroResumeTestId is what tells that test's
+              // GuidePracticeTestFlow to resume straight into 'test' phase
+              // rather than replay the guide and practice — see
+              // NeurologicalFlowSection's flowPropsFor.
               //
-              // head_orientation is also excluded, and has to be: its whole
-              // instruction is to turn the head away from the camera in each
-              // direction, which is exactly what validateHeadPosition's
-              // centring and tilt checks read as "invalid". Blocking on that
-              // would fire the instant the participant does what the test
-              // just asked them to do.
+              // Pre/post questionnaires don't need the camera at all, so
+              // they are deliberately excluded — interrupting someone
+              // answering a symptom survey would be pure friction with
+              // nothing to protect. head_orientation is also excluded, and
+              // has to be: its whole instruction is to turn the head away
+              // from the camera in each direction, which is exactly what
+              // validateHeadPosition's centring and tilt checks read as
+              // "invalid". Triggering on that would fire the instant the
+              // participant does what the test just asked them to do.
               if (
                 statusRef.current === 'NEURO_FLOW' &&
                 neuroPhaseRef.current === 'tests' &&
@@ -1150,8 +1155,9 @@ function App() {
                   if (headInvalidSinceRef.current === null) headInvalidSinceRef.current = now;
                   else if (now - headInvalidSinceRef.current > 500) {
                       headInvalidSinceRef.current = null;
-                      neuroHeadCheckActiveRef.current = true;
-                      setNeuroHeadCheckActive(true);
+                      neuroFlowResumeRef.current = true;
+                      setNeuroResumeTestId(currentNeuroTestIdRef.current);
+                      setStatus('HEAD_POSITIONING');
                   }
               } else if (
                 statusRef.current === 'NEURO_FLOW' &&
@@ -3271,8 +3277,6 @@ function App() {
         headPosCanvasRef={headPosCanvasRef}
         headValidation={headValidation}
         positionHoldTime={positionHoldTime}
-        neuroHeadCheckActive={neuroHeadCheckActive}
-        currentNeuroTestId={currentNeuroTestId}
         stableFrameCount={stableFrameCount}
         createdSessionId={createdSessionId}
         recordedVideoUrl={recordedVideoUrl}
@@ -3404,6 +3408,7 @@ function App() {
         neuroRunStatus={neuroRunStatus}
         neuroPhase={neuroPhase}
         currentNeuroTestId={currentNeuroTestId}
+        neuroResumeTestId={neuroResumeTestId}
         neuroRunId={neuroRunId}
         neuroTestOrder={neuroTestOrder}
         neuroConfigSnapshot={neuroConfigSnapshot}

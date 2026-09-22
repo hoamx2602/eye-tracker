@@ -22,8 +22,6 @@ import EyeMovementLayer from './EyeMovementLayer';
 import GazeCursor from './GazeCursor';
 import HeatmapLayer, { type HeatmapRef } from './HeatmapLayer';
 import HeadPositionGuide from './HeadPositionGuide';
-import NeuroHeadPositionWarning from './NeuroHeadPositionWarning';
-import NeuroHeadPositionBlock from './NeuroHeadPositionBlock';
 import DiagnosticsPanel, { DIAGNOSTICS_ENABLED } from './DiagnosticsPanel';
 import ConsentModal from './ConsentModal';
 import DemographicsForm, { type DemographicsData } from './DemographicsForm';
@@ -48,9 +46,6 @@ type AppMainOverlaysProps = {
   headPosCanvasRef: React.RefObject<HTMLCanvasElement>;
   headValidation: HeadValidationResult | null;
   positionHoldTime: number | null;
-  /** True while a neuro test is blocked in place for an invalid head position — see App.tsx. */
-  neuroHeadCheckActive?: boolean;
-  currentNeuroTestId?: string | null;
   stableFrameCount: number;
   createdSessionId: string | null;
   recordedVideoUrl: string | null;
@@ -123,8 +118,6 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
     headPosCanvasRef,
     headValidation,
     positionHoldTime,
-    neuroHeadCheckActive = false,
-    currentNeuroTestId = null,
     stableFrameCount,
     createdSessionId,
     recordedVideoUrl,
@@ -316,33 +309,12 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
       )}
 
       {/*
-        The same check calibration and tracking already show a full-screen
-        warning for — validateHeadPosition() runs every frame regardless of
-        status, it just had no way to surface itself here. A compact banner
-        while the invalid stretch is still short (App.tsx's 500ms debounce
-        hasn't fired yet); once it has, NeuroHeadPositionBlock below takes
-        over and this steps aside rather than showing both at once.
-        head_orientation is excluded — turning away from the camera in each
-        direction is the test, not a problem to flag.
+        Invalid head position during a neuro test uses the exact same
+        HEAD_POSITIONING screen as CALIBRATION — App.tsx changes `status`,
+        and the block just above already renders HeadPositioningScreen for
+        any reason `status` is HEAD_POSITIONING, calibration-resume or
+        neuro-resume alike. Nothing neuro-specific to render here.
       */}
-      {status === 'NEURO_FLOW' &&
-        currentNeuroTestId !== 'head_orientation' &&
-        !neuroHeadCheckActive &&
-        headValidation &&
-        !headValidation.valid && (
-          <NeuroHeadPositionWarning validation={headValidation} />
-        )}
-
-      {/*
-        App.tsx set this once the invalid stretch passed the debounce.
-        Blocks interaction in place — the test underneath stays mounted, so
-        no guide/practice/trial progress is lost while position is
-        corrected. Clears itself (App.tsx again) after 2s held valid, same
-        as HeadPositionGuide's own hold timer.
-      */}
-      {status === 'NEURO_FLOW' && neuroHeadCheckActive && (
-        <NeuroHeadPositionBlock validation={headValidation} holdRemainingMs={positionHoldTime} />
-      )}
 
       {(status === 'CALIBRATION' || status === 'TRACKING') && lightLevel?.status === 'too_dark' && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[181] px-4 py-2 rounded-lg bg-red-900/95 border border-red-500 text-red-100 text-sm font-medium shadow-lg flex items-center gap-2 max-w-md text-center">

@@ -136,6 +136,8 @@ type NeurologicalFlowSectionProps = {
   neuroRunStatus: 'idle' | 'creating' | 'ready' | 'error';
   neuroPhase: 'pre' | 'tests' | 'post' | 'done';
   currentNeuroTestId: string | null;
+  /** Set by App.tsx after an invalid-head-position interruption — the one test that should skip its guide/practice and resume straight into 'test' phase. See App.tsx's neuroFlowResumeRef. */
+  neuroResumeTestId?: string | null;
   neuroRunId: string | null;
   neuroTestOrder: string[];
   neuroConfigSnapshot: {
@@ -176,6 +178,7 @@ export default function NeurologicalFlowSection({
   neuroRunStatus,
   neuroPhase,
   currentNeuroTestId,
+  neuroResumeTestId = null,
   neuroRunId,
   neuroTestOrder,
   neuroConfigSnapshot,
@@ -233,6 +236,9 @@ export default function NeurologicalFlowSection({
       nextTestId: nextId,
       saveState: testSaveState,
       saving: isSavingTest,
+      // Resuming this exact test after a head-position interruption: skip
+      // the guide and practice, go straight to a fresh 'test' run.
+      initialPhase: (neuroResumeTestId === id ? 'test' : undefined) as 'test' | undefined,
     };
   };
 

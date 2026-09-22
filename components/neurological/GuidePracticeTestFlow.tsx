@@ -76,6 +76,15 @@ export type GuidePracticeTestFlowProps = {
    * and a generic reminder on top of that is just two voices competing.
    */
   repeatCue?: boolean;
+  /**
+   * Skip straight to this phase on mount instead of starting at 'guide' —
+   * used to resume a test after a head-position interruption without
+   * replaying the guide and practice. Only 'test' is meaningful here: it
+   * means "this participant already saw the guide and practice earlier in
+   * this same test, so don't show them again," not "start the flow at an
+   * arbitrary point."
+   */
+  initialPhase?: 'test';
 };
 
 /** Single star-row used inside the inline post-test overlay. */
@@ -151,8 +160,9 @@ export default function GuidePracticeTestFlow({
   saveState = 'idle',
   saving = false,
   repeatCue = true,
+  initialPhase,
 }: GuidePracticeTestFlowProps) {
-  const [phase, setPhase] = useState<GuidePracticeTestFlowPhase>('guide');
+  const [phase, setPhase] = useState<GuidePracticeTestFlowPhase>(initialPhase ?? 'guide');
   const [pendingPayload, setPendingPayload] = useState<TestResultPayload | null>(null);
   const [testRunKey, setTestRunKey] = useState(0);
 
