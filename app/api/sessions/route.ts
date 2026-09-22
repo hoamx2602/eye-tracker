@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
       videoUrl,
       calibrationImageUrls,
       calibrationGazeSamples,
+      calibrationMeta,
       participantEmail,
     } = body;
 
@@ -74,13 +75,18 @@ export async function POST(request: NextRequest) {
             : null,
         validationErrors: Array.isArray(validationErrors) ? validationErrors : [],
         meanErrorPx: typeof meanErrorPx === 'number' ? meanErrorPx : null,
-        status: typeof status === 'string' ? status : 'completed',
+        // Created early (right after demographics, before calibration starts)
+        // this is 'in_progress' by default; the caller sets 'completed'
+        // explicitly once calibration actually finishes.
+        status: typeof status === 'string' ? status : 'in_progress',
         videoUrl: typeof videoUrl === 'string' ? videoUrl : null,
         calibrationImageUrls: Array.isArray(calibrationImageUrls) ? calibrationImageUrls : undefined,
         calibrationGazeSamples:
           Array.isArray(calibrationGazeSamples) || calibrationGazeSamples === null
             ? calibrationGazeSamples
             : undefined,
+        calibrationMeta:
+          calibrationMeta != null && typeof calibrationMeta === 'object' ? calibrationMeta : undefined,
       },
     });
 

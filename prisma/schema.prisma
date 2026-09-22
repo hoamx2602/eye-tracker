@@ -15,10 +15,20 @@ model Session {
   config                 Json?
   validationErrors       Float[]          @default([])
   meanErrorPx            Float?
-  status                 String?          @default("completed")
+  /// 'in_progress' from the moment demographics are submitted, patched at every
+  /// break, then 'completed' once calibration finishes. A row stuck on
+  /// 'in_progress' is a participant who did not finish — visible and
+  /// inspectable now, instead of leaving no record at all.
+  status                 String?          @default("in_progress")
   videoUrl               String?
   calibrationImageUrls   Json?
   calibrationGazeSamples Json?
+  /// Per-dot [t_start, t_end] windows on the recorded video's own clock, plus
+  /// screen geometry — what `backend/app/reprocess.py` needs to re-fit gaze
+  /// from the raw video later. Built for every session, not just debug runs;
+  /// without it the video alone cannot be re-aligned to what the participant
+  /// was looking at.
+  calibrationMeta        Json?
   demographics           Json?
   /// Participant-supplied email. Indexed so the same person can be found across runs.
   participantEmail       String?
@@ -26,6 +36,7 @@ model Session {
   testRun                TestRun?
 
   @@index([participantEmail])
+  @@index([status])
 }
 
 model TestRun {

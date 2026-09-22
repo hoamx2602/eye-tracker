@@ -32,7 +32,14 @@ import {
 } from './types';
 import { eyeTrackingService, HeadValidationResult } from './services/eyeTrackingService';
 import { HybridRegressor, GazeSmoother, DataCleaner } from './services/mathUtils';
-import { sessionsApi, uploadApi, neurologicalRunsApi, getNeurologicalConfig } from './services/api';
+import {
+  sessionsApi,
+  uploadApi,
+  neurologicalRunsApi,
+  getNeurologicalConfig,
+  type CreateSessionPayload,
+  type RawEyeFeaturesPayload,
+} from './services/api';
 import CalibrationLayer from './components/CalibrationLayer';
 import EyeMovementLayer from './components/EyeMovementLayer';
 import GazeCursor from './components/GazeCursor';
@@ -170,6 +177,17 @@ function App() {
   const uploadedImageUrlsRef = useRef<Map<number, string>>(new Map());
   /** trainingSamples length when the current exercise began — lets Redo drop just that exercise. */
   const exerciseSampleStartRef = useRef(0);
+
+  // --- Session row: created early, patched at every break ---
+  // The DB row exists from the moment demographics are submitted — well
+  // before calibration produces anything — so a participant who never
+  // finishes still leaves a real, inspectable record instead of nothing.
+  /** The session id once created. Null before the first successful create. */
+  const sessionIdRef = useRef<string | null>(null);
+  /** Dedupes concurrent create attempts; cleared after each attempt settles so a later one can retry. */
+  const sessionCreatePromiseRef = useRef<Promise<string | null> | null>(null);
+  /** Serializes PATCH calls so two in-flight requests can never race and have the older one win. */
+  const sessionPatchChainRef = useRef<Promise<void>>(Promise.resolve());
 
   const statusRef = useRef<AppState>('IDLE');
   const configRef = useRef<AppConfig>(DEFAULT_CONFIG);
@@ -1533,6 +1551,111 @@ function App() {
   };
 
   /**
+   * The current calibrationGazeSamples/calibrationImageUrls the server would
+   * see if we saved right now — built fresh from whatever has been collected
+   * so far. Used both for a break's partial patch and for the final save, so
+   * the two can never disagree about the shape of a sample.
+   *
+   * Sends `rawEyeFeatures` alongside the flattened `features` vector — see
+   * the comment on RawEyeFeaturesPayload for why both are worth keeping.
+   */
+  const buildCalibrationSamplesPayload = useCallback(
+    (imageUrlByIndex: Map<number, string>) => {
+      const samples = trainingSamplesRef.current;
+      const calibrationGazeSamples = samples.map((s, i) => ({
+        screenX: s.screenX,
+        screenY: s.screenY,
+        features: s.features,
+        rawEyeFeatures: s.rawEyeFeatures as unknown as RawEyeFeaturesPayload | undefined,
+        timestamp: s.timestamp,
+        head: s.head,
+        imageUrl: imageUrlByIndex.get(i) ?? undefined,
+        ...(s.patternName != null && { patternName: s.patternName }),
+      }));
+      const calibrationImageUrls = calibrationGazeSamples
+        .map((s) => s.imageUrl)
+        .filter((u): u is string => Boolean(u));
+      return { calibrationGazeSamples, calibrationImageUrls };
+    },
+    []
+  );
+
+  /**
+   * Create the session row if it does not exist yet. Safe to call many
+   * times — concurrent callers share one in-flight attempt, and a failed
+   * attempt is retried by whichever caller asks next (the promise is
+   * cleared once it settles either way).
+   *
+   * Deliberately minimal at this point: just enough that the row exists and
+   * is attributable to this participant. Breaks fill it in from here.
+   */
+  const ensureSessionCreated = useCallback(async (): Promise<string | null> => {
+    if (sessionIdRef.current) return sessionIdRef.current;
+    if (!sessionCreatePromiseRef.current) {
+      sessionCreatePromiseRef.current = (async () => {
+        try {
+          const created = await sessionsApi.create({
+            config: configRef.current as unknown as Record<string, unknown>,
+            demographics: demographicsRef.current
+              ? {
+                  ...demographicsRef.current,
+                  age: demographicsRef.current.age === '' ? undefined : demographicsRef.current.age,
+                }
+              : undefined,
+            participantEmail: demographicsRef.current?.email || undefined,
+            status: 'in_progress',
+          });
+          sessionIdRef.current = created.id;
+          return created.id;
+        } catch (e) {
+          console.warn('[Session] early create failed — will retry at the next break', e);
+          return null;
+        } finally {
+          sessionCreatePromiseRef.current = null;
+        }
+      })();
+    }
+    return sessionCreatePromiseRef.current;
+  }, []);
+
+  /**
+   * Patch the session with everything collected so far. Called at every
+   * break. Serialized through sessionPatchChainRef so two of these can never
+   * be in flight together — each one sends the complete current state, so an
+   * older request finishing after a newer one would otherwise overwrite it
+   * with stale data.
+   *
+   * Soft-fails like the image uploads it runs alongside: a break that could
+   * not reach the server leaves the session exactly as it was after the last
+   * one that could, and the final save is still the authoritative write.
+   */
+  const patchSessionProgress = useCallback(
+    async (extra?: Partial<CreateSessionPayload>): Promise<void> => {
+      const run = async () => {
+        const id = await ensureSessionCreated();
+        if (!id) return; // nothing to patch onto yet; final save will create it
+        try {
+          const { calibrationGazeSamples, calibrationImageUrls } = buildCalibrationSamplesPayload(
+            uploadedImageUrlsRef.current
+          );
+          await sessionsApi.update(id, {
+            calibrationGazeSamples,
+            calibrationImageUrls,
+            calibrationMeta: buildOfflineSessionMeta() as unknown as Record<string, unknown>,
+            status: 'in_progress',
+            ...extra,
+          });
+        } catch (e) {
+          console.warn('[Session] break patch failed — will retry at the next break', e);
+        }
+      };
+      sessionPatchChainRef.current = sessionPatchChainRef.current.then(run, run);
+      return sessionPatchChainRef.current;
+    },
+    [ensureSessionCreated, buildCalibrationSamplesPayload]
+  );
+
+  /**
    * Upload the face captures collected so far that have not been uploaded yet.
    *
    * Called on every break, where the participant is resting anyway. Failures
@@ -1556,6 +1679,10 @@ function App() {
     if (pending.length === 0) {
       setStepSaveState('saved');
       setStepSaveError(null);
+      // Nothing new to upload, but the session row may still be missing
+      // samples banked since the last checkpoint (e.g. the grid's very
+      // first break, before any patch has run yet).
+      void patchSessionProgress();
       return;
     }
 
@@ -1596,7 +1723,13 @@ function App() {
     } else {
       setStepSaveState('saved');
     }
-  }, []);
+
+    // Checkpoint the session row with whatever did upload — including a
+    // partial batch. This is what makes the break an actual save, not just
+    // an image upload: an abandoned session now has a DB row reflecting
+    // everything banked up to this point.
+    void patchSessionProgress();
+  }, [patchSessionProgress]);
 
   const processExerciseData = () => {
     const data = exerciseDataRef.current;
@@ -1959,32 +2092,14 @@ function App() {
           if (url) imageUrlByIndex.set(sampleIndex, url);
         });
 
-        const calibrationGazeSamples: Array<{
-          screenX: number;
-          screenY: number;
-          features?: number[];
-          timestamp?: number;
-          head?: HeadSnapshot;
-          imageUrl?: string | null;
-          patternName?: string;
-        }> = samples.map((s, i) => ({
-          screenX: s.screenX,
-          screenY: s.screenY,
-          features: s.features,
-          timestamp: s.timestamp,
-          head: s.head,
-          imageUrl: imageUrlByIndex.get(i) ?? undefined,
-          ...(s.patternName != null && { patternName: s.patternName }),
-        }));
-        const calibrationImageUrls = calibrationGazeSamples
-          .map((s) => s.imageUrl)
-          .filter((u): u is string => Boolean(u));
+        const { calibrationGazeSamples, calibrationImageUrls } = buildCalibrationSamplesPayload(imageUrlByIndex);
         const sampleCount = calibrationGazeSamples.length;
         const imageCount = calibrationImageUrls.length;
         if (process.env.NODE_ENV === 'development') {
           console.log('[Session save] Sending:', { sampleCount, imageCount, hasVideo: Boolean(videoUrl) });
         }
-        const created = await sessionsApi.create({
+
+        const finalPayload: CreateSessionPayload = {
           config: {
             ...(configRef.current as unknown as Record<string, unknown>),
             ...(demographicsRef.current ? { demographics: demographicsRef.current } : {}),
@@ -2013,9 +2128,58 @@ function App() {
           videoUrl,
           calibrationImageUrls: calibrationImageUrls.length > 0 ? calibrationImageUrls : undefined,
           calibrationGazeSamples,
-        });
+          // Always built now, not only under ?exportMeta=1 — this is what lets
+          // the recorded video be re-aligned to what the participant was
+          // looking at if the gaze algorithm is revisited later.
+          calibrationMeta: buildOfflineSessionMeta() as unknown as Record<string, unknown>,
+        };
+
+        // The media is already uploaded by this point — what is left is one
+        // small JSON write. That makes it cheap and safe to retry on its own,
+        // unlike re-running the uploads above, so a transient network blip
+        // right here does not have to cost the whole session.
+        const persistFinalSession = async (): Promise<{ id: string }> => {
+          const id = sessionIdRef.current ?? (await ensureSessionCreated());
+          return id ? sessionsApi.update(id, finalPayload) : sessionsApi.create(finalPayload);
+        };
+
+        const RETRY_DELAYS_MS = [1500, 4000];
+        let created: { id: string } | null = null;
+        let lastErr: unknown = null;
+        for (let attempt = 0; !created && attempt <= RETRY_DELAYS_MS.length; attempt++) {
+          try {
+            created = await persistFinalSession();
+          } catch (e) {
+            lastErr = e;
+            if (attempt < RETRY_DELAYS_MS.length) {
+              setLoadingMsg(`Connection trouble — retrying save (${attempt + 1}/${RETRY_DELAYS_MS.length})…`);
+              await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+            }
+          }
+        }
+        // Automatic retries exhausted. Everything up to the last break is
+        // already on the server (that is the whole point of patching at every
+        // break) — so this is never "start over", only "try this last write
+        // again" — worth putting to the participant/researcher rather than
+        // giving up on data that mostly already made it.
+        while (!created) {
+          const reason = lastErr instanceof Error ? lastErr.message : String(lastErr);
+          const savedSoFar = sessionIdRef.current
+            ? 'Everything up to the last break is already saved — only this final step failed.'
+            : 'Nothing has been saved yet for this session.';
+          const tryAgain =
+            typeof window !== 'undefined' &&
+            window.confirm(`Could not save: ${reason}\n\n${savedSoFar}\n\nCheck the connection and retry?`);
+          if (!tryAgain) throw lastErr ?? new Error('Save cancelled');
+          try {
+            created = await persistFinalSession();
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+
         if (process.env.NODE_ENV === 'development') {
-          console.log('[Session save] Created session:', created.id);
+          console.log('[Session save] Saved session:', created.id);
         }
         setLastSavedCounts({ samples: sampleCount, images: imageCount });
         setSessionSaveStatus('saved');
@@ -2034,7 +2198,10 @@ function App() {
         setSessionSaveStatus('error');
         setSessionSaveError(msg);
         console.warn('[Session save]', e);
-        alert(`Could not save session: ${msg}\n\n• Run "npm run dev" (Next.js) — API runs on same origin, no env needed.\n• On Vercel: do not set NEXT_PUBLIC_API_URL (same domain). Configure S3 bucket CORS: add app domain to AllowedOrigins, AllowedMethods: PUT, GET.\n• Ensure DB and S3 env vars are set correctly on Vercel.`);
+        const savedSoFar = sessionIdRef.current
+          ? '\n\nThe good news: everything up to the last break was already saved before this happened — only the video/image upload or final write failed.'
+          : '\n\nNothing was saved for this session.';
+        alert(`Could not save session: ${msg}${savedSoFar}\n\n• Run "npm run dev" (Next.js) — API runs on same origin, no env needed.\n• On Vercel: do not set NEXT_PUBLIC_API_URL (same domain). Configure S3 bucket CORS: add app domain to AllowedOrigins, AllowedMethods: PUT, GET.\n• Ensure DB and S3 env vars are set correctly on Vercel.`);
       }
     })();
   };
@@ -2059,6 +2226,11 @@ function App() {
     uploadedImageUrlsRef.current.clear();
     setStepSaveState('idle');
     setStepSaveError(null);
+    // A fresh run gets a fresh session row — the next handleDemographicsSubmit
+    // creates it again from scratch.
+    sessionIdRef.current = null;
+    sessionCreatePromiseRef.current = null;
+    sessionPatchChainRef.current = Promise.resolve();
     trackingHistoryRef.current = [];
     hybridRegressorRef.current = new HybridRegressor();
     setGazeModelReady(false);
@@ -2656,6 +2828,13 @@ function App() {
 
   const handleDemographicsSubmit = (data: DemographicsData) => {
     demographicsRef.current = data;
+
+    // Create the session row now, before calibration has produced anything.
+    // Everything that follows — every break, the final save — patches this
+    // same row rather than writing one for the first time at the very end.
+    // Fire-and-forget: calibration must not wait on this, and a failure here
+    // is retried automatically at the first break.
+    void ensureSessionCreated();
 
     // Activate glasses optimization if participant wears glasses and the feature is enabled
     const cfg = configRef.current;

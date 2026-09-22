@@ -12,6 +12,26 @@ export const getBaseUrl = (): string => {
   return '';
 };
 
+/**
+ * The named, human-readable eye/head measurement a sample was captured with —
+ * kept alongside `features` (the flattened regression vector) rather than
+ * instead of it. `features` is what this session's model actually trained on
+ * and is worth keeping exactly as it was; `rawEyeFeatures` is what makes the
+ * sample useful to a *different* feature-vector design later without needing
+ * to re-run MediaPipe on the video. Both are a few hundred bytes — the video
+ * is what upload time is spent on, not this.
+ */
+export interface RawEyeFeaturesPayload {
+  leftRelative: { x: number; y: number };
+  rightRelative: { x: number; y: number };
+  headPose: { pitch: number; yaw: number; roll: number };
+  zDistance: number;
+  leftEAR: number;
+  rightEAR: number;
+  blendshapes?: Record<string, number>;
+  matrixHeadPose?: { pitch: number; yaw: number; roll: number };
+}
+
 export interface CreateSessionPayload {
   config?: Record<string, unknown>;
   /** Demographics at calibration time (age, gender, country, eyeConditions) */
@@ -21,16 +41,20 @@ export interface CreateSessionPayload {
   validationErrors?: number[];
   meanErrorPx?: number;
   status?: string;
-  videoUrl?: string;
+  videoUrl?: string | null;
   calibrationImageUrls?: string[];
   calibrationGazeSamples?: Array<{
     screenX: number;
     screenY: number;
     features?: number[];
+    rawEyeFeatures?: RawEyeFeaturesPayload;
     timestamp?: number;
     head?: { valid: boolean; message: string; faceWidth?: number; minFaceWidth?: number; maxFaceWidth?: number; targetDistanceCm?: number };
     imageUrl?: string | null;
-  }>;
+    patternName?: string;
+  }> | null;
+  /** Per-dot video-clock windows for offline reprocessing. See lib/calibrationMeta.ts. */
+  calibrationMeta?: Record<string, unknown>;
 }
 
 export interface Session {
@@ -139,6 +163,29 @@ export const sessionsApi = {
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(`Session create failed: ${res.status}`);
+    return res.json();
+  },
+
+  /**
+   * Patch an in-progress session — called at every break, and for the final
+   * save once a session already exists. `calibrationGazeSamples` and
+   * `calibrationImageUrls` are always the complete current arrays, not a
+   * delta: the server plainly overwrites the column with whatever is sent.
+   *
+   * Throws (rather than swallowing) on a completed-session rejection (400) so
+   * callers can tell "nothing changed because it's already done" apart from a
+   * real failure.
+   */
+  async update(id: string, payload: Partial<CreateSessionPayload>): Promise<Session> {
+    const res = await fetch(`${getBaseUrl()}/api/sessions/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(typeof err.error === 'string' ? err.error : `Session update failed: ${res.status}`);
+    }
     return res.json();
   },
 };
