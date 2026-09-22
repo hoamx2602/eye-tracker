@@ -30,10 +30,13 @@ export function generateNumberPositions(
   // How close the outermost numbers can sit to the true edge of the screen.
   // Only needs to clear half the target's own size (56px → 28px radius) plus
   // a little breathing room, not the generous margin a purely random layout
-  // needed to keep points away from each other near a corner.
+  // needed to keep points away from each other near a corner. This is a
+  // floor, not where the outer points typically land — see edgeInset below
+  // for why they sit much closer to it than the interior spacing would
+  // suggest.
   const mxFromPx = edgePaddingPx > 0 && viewportWidth > 0 ? (edgePaddingPx / viewportWidth) * 100 : 0;
   const myFromPx = edgePaddingPx > 0 && viewportHeight > 0 ? (edgePaddingPx / viewportHeight) * 100 : 0;
-  const margin = Math.min(25, Math.max(4, mxFromPx, myFromPx));
+  const margin = Math.min(25, Math.max(3, mxFromPx, myFromPx));
   const span = 100 - 2 * margin;
 
   // Aim for a grid at least as fine as the number of targets, biased to the
@@ -60,9 +63,16 @@ export function generateNumberPositions(
 
   const cellW = span / cols;
   const cellH = span / rows;
-  // Placed inside this fraction of the cell — enough margin that jitter can
-  // never push a point flush against its neighbour's cell.
-  const inset = 0.13;
+  // Inset from each of a cell's four sides, as a fraction of that cell's own
+  // width/height. INNER keeps jitter from ever pushing a point flush against
+  // a neighbouring cell. EDGE is much smaller and only applies to the sides
+  // of a cell that face the true screen edge (col 0's left side, the last
+  // column's right side, and the same for top/bottom row) — that's what lets
+  // the outermost numbers actually reach near the edge margin computed
+  // above, rather than sitting a full interior gap short of it the way a
+  // uniform inset would.
+  const INNER_INSET = 0.16;
+  const EDGE_INSET = 0.04;
 
   const positions: Array<{ number: number; x: number; y: number }> = [];
   for (let n = 1; n <= count; n++) {
@@ -72,13 +82,18 @@ export function generateNumberPositions(
     const cellX0 = margin + col * cellW;
     const cellY0 = margin + row * cellH;
 
+    const insetLeft = col === 0 ? EDGE_INSET : INNER_INSET;
+    const insetRight = col === cols - 1 ? EDGE_INSET : INNER_INSET;
+    const insetTop = row === 0 ? EDGE_INSET : INNER_INSET;
+    const insetBottom = row === rows - 1 ? EDGE_INSET : INNER_INSET;
+
     let x = 0;
     let y = 0;
     let attempts = 0;
     const maxAttempts = 30;
     do {
-      x = cellX0 + (inset + Math.random() * (1 - 2 * inset)) * cellW;
-      y = cellY0 + (inset + Math.random() * (1 - 2 * inset)) * cellH;
+      x = cellX0 + (insetLeft + Math.random() * (1 - insetLeft - insetRight)) * cellW;
+      y = cellY0 + (insetTop + Math.random() * (1 - insetTop - insetBottom)) * cellH;
       attempts++;
     } while (
       attempts < maxAttempts &&
