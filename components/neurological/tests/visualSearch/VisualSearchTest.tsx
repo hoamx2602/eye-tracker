@@ -57,10 +57,10 @@ export interface VisualSearchResult {
   fixations: VisualSearchFixation[];
   sequence: number[];
   completionTimeMs: number;
-  gazePath: Array<{ t: number; x: number; y: number }>;
+  gazePath: Array<{ t: number; x: number; y: number; head?: { yaw: number; pitch: number; roll: number } }>;
   gazeFixationPerNumber: Record<number, number>;
   gazeSequence: number[];
-  scanningPath: Array<{ t: number; x: number; y: number }>;
+  scanningPath: Array<{ t: number; x: number; y: number; head?: { yaw: number; pitch: number; roll: number } }>;
   viewportWidth?: number;
   viewportHeight?: number;
   stimulusBounds?: { left: number; top: number; width: number; height: number };
@@ -101,7 +101,7 @@ export default function VisualSearchTest() {
     return hp ? { yaw: hp.yaw, pitch: hp.pitch, roll: hp.roll } : undefined;
   };
   const sequenceRef = useRef<number[]>([]);
-  const gazePathRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
+  const gazePathRef = useRef<Array<{ t: number; x: number; y: number; head?: { yaw: number; pitch: number; roll: number } }>>([]);
   const lastInNumberRef = useRef<number | null>(null);
   // Legacy pointer ref — used only when confirmMode is 'hold' for fixation recording on release
   const pointerHoldRef = useRef<{ number: number; t0: number; pointerId: number } | null>(null);
@@ -115,6 +115,38 @@ export default function VisualSearchTest() {
   /** The target briefly flashed red after a refused press. */
   const [wrongNumber, setWrongNumber] = useState<number | null>(null);
   const wrongTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Start the clock this test's own timings are measured from, and sample
+  // gaze continuously into gazePath/scanningPath.
+  //
+  // startTimeRef was previously never assigned — it stayed at its initial 0,
+  // so completionTimeMs (endTime - startTimeRef.current) was actually
+  // performance.now() at the moment this test ended: time since the page
+  // itself loaded, inflated by everything before this test in the flow
+  // (consent, demographics, calibration, any earlier tests), not the ~30s
+  // this test actually took. That number is the headline stat on this test's
+  // results card and scales its gaze-over-time chart, so it was wrong on
+  // both counts for every session run so far. gazePathRef had the same
+  // problem from the other direction: declared, sized by config
+  // (gazeSampleIntervalMs), read at completion — but nothing ever pushed a
+  // sample into it, so scanningPath always came out as the one point added
+  // at finishTest.
+  useEffect(() => {
+    startTimeRef.current = performance.now();
+    gazePathRef.current = [];
+    const interval = setInterval(() => {
+      const g = neuroLiveGazeRef.current;
+      const t = (performance.now() - startTimeRef.current) / 1000;
+      const hp = headPoseRef.current;
+      gazePathRef.current.push({
+        t,
+        x: g.x,
+        y: g.y,
+        ...(hp && { head: { yaw: hp.yaw, pitch: hp.pitch, roll: hp.roll } }),
+      });
+    }, gazeIntervalMs);
+    return () => clearInterval(interval);
+  }, [gazeIntervalMs]);
 
   // Legacy: record fixation on pointer release (only when confirmMode is 'hold')
   const recordPointerConfirmation = useCallback(
@@ -149,7 +181,7 @@ export default function VisualSearchTest() {
     const endTime = performance.now();
     const g = neuroLiveGazeRef.current;
     const tRel = (endTime - startTimeRef.current) / 1000;
-    const pathSnapshot = [...gazePathRef.current, { t: tRel, x: g.x, y: g.y }];
+    const pathSnapshot = [...gazePathRef.current, { t: tRel, x: g.x, y: g.y, head: currentHead() }];
     const rect = stimulusAreaRef.current?.getBoundingClientRect();
     const stimulusBounds = rect
       ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
