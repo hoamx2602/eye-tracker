@@ -22,6 +22,7 @@ import EyeMovementLayer from './EyeMovementLayer';
 import GazeCursor from './GazeCursor';
 import HeatmapLayer, { type HeatmapRef } from './HeatmapLayer';
 import HeadPositionGuide from './HeadPositionGuide';
+import NeuroHeadPositionWarning from './NeuroHeadPositionWarning';
 import DiagnosticsPanel, { DIAGNOSTICS_ENABLED } from './DiagnosticsPanel';
 import ConsentModal from './ConsentModal';
 import DemographicsForm, { type DemographicsData } from './DemographicsForm';
@@ -306,6 +307,17 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
 
       {((status === 'CALIBRATION' || status === 'TRACKING') && headValidation && !headValidation.valid) && (
         <HeadPositionGuide validation={headValidation} countdown={null} />
+      )}
+
+      {/*
+        The same check calibration and tracking already show a full-screen
+        warning for — validateHeadPosition() runs every frame regardless of
+        status, it just had no way to surface itself here. A compact banner
+        instead of HeadPositionGuide's centred box: the seven tests all show
+        their own stimulus, which a large overlay would sit on top of.
+      */}
+      {status === 'NEURO_FLOW' && headValidation && !headValidation.valid && (
+        <NeuroHeadPositionWarning validation={headValidation} />
       )}
 
       {(status === 'CALIBRATION' || status === 'TRACKING') && lightLevel?.status === 'too_dark' && (

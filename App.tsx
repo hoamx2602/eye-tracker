@@ -1131,6 +1131,13 @@ function App() {
              currentFaceLandmarksRef.current = null;
              isHeadValidRef.current = false;
              setHeadValidation({ valid: false, message: "No Face Detected" });
+             // No landmarks at all this frame — the gaze-processing block
+             // below never runs, so the {0,0} reset there doesn't fire.
+             // Same reasoning applies: don't leave a stale coordinate on
+             // the ref while nothing is confirming it is still correct.
+             if (statusRef.current === 'TRACKING' || statusRef.current === 'NEURO_FLOW') {
+               neuroLiveGazeRef.current = { x: 0, y: 0 };
+             }
           }
       }
 
@@ -1200,6 +1207,18 @@ function App() {
                   }
                 }
             }
+        } else if (statusRef.current === 'TRACKING' || statusRef.current === 'NEURO_FLOW') {
+          // Head position invalid (too close/far, off to one side, or no
+          // face): predictGaze() above never runs, so neuroLiveGazeRef would
+          // otherwise just sit frozen at wherever gaze last was — every one
+          // of the seven tests samples that ref on its own interval, so a
+          // frozen coordinate gets recorded as though it were live data for
+          // as long as the position stays invalid. {0,0} is the sentinel
+          // several tests already treat as "not real" (MemoryCardsTest's
+          // dwell check, for one) — reusing it here means a bad stretch
+          // shows up as an obviously-placeholder value instead of a
+          // plausible-looking but wrong one.
+          neuroLiveGazeRef.current = { x: 0, y: 0 };
         }
       }
     }
