@@ -190,31 +190,27 @@ export const sessionsApi = {
   },
 };
 
-/** Upload a file (base64) to blob storage; returns URL. Skips upload if data is empty; returns null. */
-export const uploadApi = {
-  async upload(base64Data: string, filename: string, contentType?: string): Promise<string | null> {
-    if (!base64Data || typeof base64Data !== 'string' || base64Data.length < 10) {
-      return null;
-    }
-    const res = await fetch(`${getBaseUrl()}/api/upload`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: base64Data, filename, contentType }),
-    });
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      const msg = (errBody && typeof errBody.error === 'string') ? errBody.error : `Upload failed: ${res.status}`;
-      throw new Error(msg);
-    }
-    const { url } = await res.json();
-    return url ?? null;
-  },
+/**
+ * Who an upload belongs to — required on every upload call. The server
+ * checks this against the database (a real, still-open Session or
+ * NeurologicalRun) before it will hand out a presigned URL or open a
+ * multipart upload, so a call with no participant behind it — someone who
+ * found these endpoints and is calling them directly, not through the
+ * assessment itself — has nothing valid to claim ownership of.
+ */
+export type UploadOwner = { type: 'session' | 'run'; id: string };
 
+export const uploadApi = {
   /**
    * Upload via presigned URL (client PUTs directly to S3). Use for large files to avoid
    * Vercel 4.5 MB request body limit. Returns public URL or null if blob is empty.
    */
-  async uploadBlob(blob: Blob, filename: string, contentType?: string): Promise<string | null> {
+  async uploadBlob(
+    blob: Blob,
+    filename: string,
+    contentType: string | undefined,
+    owner: UploadOwner
+  ): Promise<string | null> {
     if (!blob || blob.size === 0) return null;
     const baseUrl = getBaseUrl();
     let presignRes: Response;
@@ -222,7 +218,12 @@ export const uploadApi = {
       presignRes = await fetch(`${baseUrl}/api/upload/presign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename, contentType: contentType || blob.type }),
+        body: JSON.stringify({
+          filename,
+          contentType: contentType || blob.type,
+          ownerType: owner.type,
+          ownerId: owner.id,
+        }),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

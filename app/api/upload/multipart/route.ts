@@ -8,10 +8,21 @@
  * nothing left to send.
  *
  * Four actions, all on POST, distinguished by `action`:
- *   create   { filename, contentType? }            → { key, uploadId, publicUrl }
- *   part     { key, uploadId, partNumber }         → { url }
- *   complete { key, uploadId, parts[] }            → { publicUrl }
- *   abort    { key, uploadId }                     → { ok }
+ *   create   { filename, contentType?, ownerType, ownerId } → { key, uploadId, publicUrl }
+ *   part     { key, uploadId, partNumber }                  → { url }
+ *   complete { key, uploadId, parts[] }                     → { publicUrl }
+ *   abort    { key, uploadId }                               → { ok }
+ *
+ * ownerType/ownerId (only required to `create`) are checked against the
+ * database the same way the single-shot presign route checks them: a
+ * Session or NeurologicalRun that actually exists and has not already been
+ * finalized — see lib/s3Server.ts's validateUploadOwner. Without it, anyone
+ * who found this endpoint could open an upload with no participant, no
+ * consent, and no test ever having happened. part/complete/abort don't
+ * re-check ownership on every call — only isManagedKey, same as before —
+ * because by then the upload was already validated at create; re-querying
+ * the database per part would add a round trip to exactly the path that was
+ * built to stream quickly.
  *
  * The browser PUTs each part to the signed `url` and reads the part's ETag from
  * the response headers, so the bucket CORS config must expose it:
@@ -39,6 +50,8 @@ import {
   getPublicUrl,
   getS3Client,
   isManagedKey,
+  isUploadOwnerType,
+  validateUploadOwner,
 } from '@/lib/s3Server';
 
 type Part = { PartNumber: number; ETag: string };
@@ -70,7 +83,18 @@ export async function POST(request: NextRequest) {
     if (action === 'create') {
       const filename = body.filename;
       if (typeof filename !== 'string' || !filename) return badRequest('Missing filename');
-      const key = buildKey(filename);
+      const { ownerType, ownerId } = body as { ownerType?: unknown; ownerId?: unknown };
+      if (!isUploadOwnerType(ownerType) || typeof ownerId !== 'string' || !ownerId) {
+        return badRequest('Missing or invalid ownerType/ownerId');
+      }
+      const owns = await validateUploadOwner(ownerType, ownerId);
+      if (!owns) {
+        return NextResponse.json(
+          { error: `No open ${ownerType} matches ownerId — nothing to upload against` },
+          { status: 403 }
+        );
+      }
+      const key = buildKey(filename, { type: ownerType, id: ownerId });
       const created = await s3.send(
         new CreateMultipartUploadCommand({
           Bucket: bucket,

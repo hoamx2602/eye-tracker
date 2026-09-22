@@ -8,9 +8,66 @@
  * unreadable at the URL handed out by the other.
  */
 import { S3Client } from '@aws-sdk/client-s3';
+import { prisma } from '@/lib/prisma';
 
 /** Everything under this prefix is session media. Nothing else is writable. */
 export const UPLOAD_PREFIX = 'calibration/';
+
+/**
+ * Who an upload belongs to, and what kind of record proves it is real.
+ *
+ * 'session' covers calibration's video and face captures — Session only
+ * exists once demographics have been submitted through the real flow, so an
+ * upload against a session id that doesn't resolve to a real, still-open row
+ * never came from someone actually taking the assessment.
+ *
+ * 'run' is the same idea for whatever gets recorded during the neurological
+ * tests — a NeurologicalRun only exists once calibration has actually
+ * finished and handed off into that phase.
+ */
+export type UploadOwnerType = 'session' | 'run';
+
+export function isUploadOwnerType(v: unknown): v is UploadOwnerType {
+  return v === 'session' || v === 'run';
+}
+
+/**
+ * A collision-proof id segment for a claimed owner — not a database lookup,
+ * just shape validation, so a garbage string can't get embedded in a key.
+ * cuid()s (what Session/NeurologicalRun ids actually are) are always
+ * alphanumeric.
+ */
+function isPlausibleId(v: unknown): v is string {
+  return typeof v === 'string' && /^[a-zA-Z0-9]{1,64}$/.test(v);
+}
+
+/**
+ * The actual check: does this id resolve to a real row created through the
+ * real flow, that hasn't already been finalized?
+ *
+ * A completed Session or a completed/abandoned NeurologicalRun refuses new
+ * uploads for the same reason the PATCH routes for those records refuse
+ * further writes once finalized — there is nothing left that a new file
+ * could legitimately belong to.
+ */
+export async function validateUploadOwner(
+  ownerType: UploadOwnerType,
+  ownerId: string
+): Promise<boolean> {
+  if (!isPlausibleId(ownerId)) return false;
+  if (ownerType === 'session') {
+    const session = await prisma.session.findUnique({
+      where: { id: ownerId },
+      select: { status: true },
+    });
+    return session != null && session.status !== 'completed';
+  }
+  const run = await prisma.neurologicalRun.findUnique({
+    where: { id: ownerId },
+    select: { status: true },
+  });
+  return run != null && run.status !== 'completed' && run.status !== 'abandoned';
+}
 
 export function getS3Client(): S3Client {
   const region = process.env.AWS_REGION || 'us-east-1';
@@ -36,10 +93,15 @@ export function getPublicUrl(key: string): string | null {
   return `${domain}/${key}`;
 }
 
-/** A collision-proof key for an uploaded file, under the one writable prefix. */
-export function buildKey(filename: string): string {
+/**
+ * A collision-proof key for an uploaded file, under the one writable prefix
+ * and namespaced by the session/run it was validated against — so a bucket
+ * listing traces straight back to whose data an object is, and an owner
+ * that never finished a real session is easy to spot and clean up.
+ */
+export function buildKey(filename: string, owner: { type: UploadOwnerType; id: string }): string {
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-  return `${UPLOAD_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${safeName}`;
+  return `${UPLOAD_PREFIX}${owner.type}-${owner.id}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${safeName}`;
 }
 
 export function contentTypeFor(filename: string, given?: string): string {

@@ -39,6 +39,7 @@ import {
   getNeurologicalConfig,
   type CreateSessionPayload,
   type RawEyeFeaturesPayload,
+  type UploadOwner,
 } from './services/api';
 import CalibrationLayer from './components/CalibrationLayer';
 import EyeMovementLayer from './components/EyeMovementLayer';
@@ -853,20 +854,36 @@ function App() {
         // Start streaming this recording to S3 now. Anything that goes wrong in
         // here is handled inside the uploader: it marks itself failed and the
         // save path falls back to uploading the finished blob.
+        //
+        // The uploader needs a real session id to prove ownership at `create`
+        // time (see lib/s3Server.ts's validateUploadOwner) — normally already
+        // set by ensureSessionCreated() fired right after demographics, well
+        // before the participant reaches calibration. In the rare case it
+        // hasn't resolved yet, skip the streaming optimization for this
+        // recording rather than block camera start on a network round trip;
+        // the full blob still gets uploaded at the end once the session
+        // exists (see finishVideoUpload in completeCalibrationAndStartTracking).
         void videoUploaderRef.current?.abort();
-        const uploader = new ChunkedVideoUploader(
-          `calibration-${Date.now()}.webm`,
-          'video/webm'
-        );
-        uploader.start();
-        videoUploaderRef.current = uploader;
+        videoUploaderRef.current = null;
+        const recordingSessionId = sessionIdRef.current;
+        if (recordingSessionId) {
+          const uploader = new ChunkedVideoUploader(
+            `calibration-${Date.now()}.webm`,
+            'video/webm',
+            { type: 'session', id: recordingSessionId }
+          );
+          uploader.start();
+          videoUploaderRef.current = uploader;
+        } else {
+          console.warn('[ChunkedUpload] no session id yet at recording start — streaming upload skipped for this recording');
+        }
 
         recorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
                 // Kept in full as well: the offline gaze backend and the
                 // ?exportMeta=1 download both need the complete blob locally.
                 recordedChunksRef.current.push(event.data);
-                uploader.add(event.data);
+                videoUploaderRef.current?.add(event.data);
             }
         };
 
@@ -1859,6 +1876,14 @@ function App() {
     setStepSaveState('saving');
     setStepSaveError(null);
 
+    // Every upload needs proof of ownership — see the same reasoning in
+    // completeCalibrationAndStartTracking. Normally already resolved by now
+    // (calibration is well underway), so this just returns the cached id.
+    const ownerSessionId = sessionIdRef.current ?? (await ensureSessionCreated());
+    const sessionOwner: UploadOwner | null = ownerSessionId
+      ? { type: 'session', id: ownerSessionId }
+      : null;
+
     const stamp = Date.now();
     const CONCURRENCY = 4;
     let cursor = 0;
@@ -1867,11 +1892,16 @@ function App() {
     const worker = async (): Promise<void> => {
       while (cursor < pending.length) {
         const { sampleIndex, blob } = pending[cursor++]!;
+        if (!sessionOwner) {
+          failures++;
+          continue;
+        }
         try {
           const url = await uploadApi.uploadBlob(
             blob,
             `calibration-sample-${stamp}-${sampleIndex}.jpg`,
-            'image/jpeg'
+            'image/jpeg',
+            sessionOwner
           );
           if (url) uploaded.set(sampleIndex, url);
         } catch (e) {
@@ -1899,7 +1929,7 @@ function App() {
     // an image upload: an abandoned session now has a DB row reflecting
     // everything banked up to this point.
     void patchSessionProgress();
-  }, [patchSessionProgress]);
+  }, [patchSessionProgress, ensureSessionCreated]);
 
   const processExerciseData = () => {
     const data = exerciseDataRef.current;
@@ -2225,6 +2255,17 @@ function App() {
         // Upload video and all images in parallel (images with concurrency limit 6)
         const IMAGE_CONCURRENCY = 6;
 
+        // Same session id the streaming uploader was validated against (or,
+        // in the rare case that hadn't resolved yet at recording start, the
+        // first chance to get one) — every upload below needs it as proof of
+        // ownership. If it's genuinely unavailable, there is no valid owner
+        // to upload against, so these are skipped rather than sent with a
+        // null id the server would just reject.
+        const ownerSessionId = sessionIdRef.current ?? (await ensureSessionCreated());
+        const sessionOwner: UploadOwner | null = ownerSessionId
+          ? { type: 'session', id: ownerSessionId }
+          : null;
+
         /**
          * Close off the streaming upload that has been running since recording
          * began. Only the tail is still outstanding, so this is normally quick.
@@ -2242,7 +2283,8 @@ function App() {
             if (streamedUrl) return streamedUrl;
             setLoadingMsg('Uploading calibration video…');
           }
-          return uploadApi.uploadBlob(videoBlob, `calibration-${timestamp}.webm`, 'video/webm');
+          if (!sessionOwner) return null;
+          return uploadApi.uploadBlob(videoBlob, `calibration-${timestamp}.webm`, 'video/webm', sessionOwner);
         };
 
         const [videoUrlResult, imageUrlsByOrder] = await Promise.all([
@@ -2251,10 +2293,12 @@ function App() {
             imageUploads,
             IMAGE_CONCURRENCY,
             async ({ blob, sampleIndex }) => {
+              if (!sessionOwner) return { sampleIndex, url: null as string | null };
               const url = await uploadApi.uploadBlob(
                 blob,
                 `calibration-sample-${timestamp}-${sampleIndex}.jpg`,
-                'image/jpeg'
+                'image/jpeg',
+                sessionOwner
               );
               return { sampleIndex, url };
             }

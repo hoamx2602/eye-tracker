@@ -21,6 +21,8 @@ type Part = { PartNumber: number; ETag: string };
 
 type CreateResult = { key: string; uploadId: string; publicUrl: string };
 
+export type UploadOwner = { type: 'session' | 'run'; id: string };
+
 async function callMultipart<T>(payload: Record<string, unknown>): Promise<T> {
   const res = await fetch(`${getBaseUrl()}/api/upload/multipart`, {
     method: 'POST',
@@ -50,7 +52,8 @@ export class ChunkedVideoUploader {
 
   constructor(
     private readonly filename: string,
-    private readonly contentType: string
+    private readonly contentType: string,
+    private readonly owner: UploadOwner
   ) {}
 
   /** True once something has gone wrong and the caller must upload normally. */
@@ -87,6 +90,8 @@ export class ChunkedVideoUploader {
       action: 'create',
       filename: this.filename,
       contentType: this.contentType,
+      ownerType: this.owner.type,
+      ownerId: this.owner.id,
     }).catch((e) => {
       this.die(e instanceof Error ? e.message : String(e));
       throw e;
