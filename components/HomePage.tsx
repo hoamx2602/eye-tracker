@@ -344,7 +344,7 @@ export default function HomePage() {
       {/* Header */}
       <header className="sticky top-0 z-20 border-b border-gray-700 bg-gray-900/95 backdrop-blur-sm">
         <div className="max-w-5xl mx-auto px-8 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+          <Link href="/" className="flex items-center gap-2.5 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400">
             <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
               <svg viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.5" className="w-3.5 h-3.5">
                 <circle cx="10" cy="10" r="7" />
@@ -353,7 +353,7 @@ export default function HomePage() {
               </svg>
             </div>
             <span className="text-sm font-semibold tracking-tight">Eye Assessment</span>
-          </div>
+          </Link>
         </div>
       </header>
 

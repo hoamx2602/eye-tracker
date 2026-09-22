@@ -8,6 +8,7 @@ import StepBreak from '@/components/StepBreak';
 import { TestRunnerProvider } from './TestRunnerContext';
 import { useVoiceRepeat } from '@/lib/voice/VoiceProvider';
 import { neuroTestVoiceKey, type VoiceKey } from '@/lib/voice/scripts';
+import { isDimRectInstructable } from './tests/antiSaccade/constants';
 import type { GuideStep } from './types';
 import type { TestResultPayload } from './types';
 
@@ -202,10 +203,19 @@ export default function GuidePracticeTestFlow({
   /** Stable — RealTestIntro drives its countdown from this in an effect. */
   const handleStartRealTest = useCallback(() => setPhase('test'), []);
 
+  // anti_saccade is the one test whose main instructions change with config:
+  // once the dim rectangle is too faint to meaningfully follow, the clip
+  // that says "look at the dim shape" would be describing something the
+  // participant cannot actually see. See antiSaccade/constants.ts.
+  const voiceKey: VoiceKey | null =
+    testId === 'anti_saccade' && !isDimRectInstructable(config)
+      ? 'neuro.anti_saccade.no_dim'
+      : neuroTestVoiceKey(testId);
+
   // A short reminder during the task itself. Only the longer tests run past
   // one interval, which is the point: the short ones are never interrupted.
   useVoiceRepeat(
-    neuroTestVoiceKey(testId),
+    voiceKey,
     CUE_INTERVAL_OVERRIDES_MS[testId] ?? IN_TEST_CUE_INTERVAL_MS,
     repeatCue && phase === 'test' && pendingPayload === null
   );
@@ -216,8 +226,6 @@ export default function GuidePracticeTestFlow({
     setAccuracyRating(null);
     setTestRunKey((k) => k + 1);
   }
-
-  const voiceKey: VoiceKey | null = neuroTestVoiceKey(testId);
 
   if (phase === 'guide') {
     return (
@@ -271,15 +279,6 @@ export default function GuidePracticeTestFlow({
         {testContent}
       </TestRunnerProvider>
 
-      {/* Recording badge — the running counterpart to the practice banner. */}
-      {pendingPayload === null && (
-        <div className="fixed top-4 left-4 z-[55] pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-950/80 border border-red-600/50 backdrop-blur">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" aria-hidden />
-          <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-red-200">
-            Real test — recording
-          </span>
-        </div>
-      )}
 
       {pendingPayload !== null && (
         <StepBreak

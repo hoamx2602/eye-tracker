@@ -91,9 +91,6 @@ export default function PracticeGate({
             <h2 id="practice-gate-title" className="text-2xl font-bold text-white text-center tracking-tight">
               {title}
             </h2>
-            <p className="mt-2 text-sm text-gray-300/90 text-center">
-              Have a go — this is only to get you used to the task. Your answers here are not saved.
-            </p>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-6 w-full">

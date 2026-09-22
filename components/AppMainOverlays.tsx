@@ -280,7 +280,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
                 Session saved.
                 {lastSavedCounts && (
                   <span className="block text-gray-400 text-xs mt-0.5">
-                    {lastSavedCounts.samples} samples, {lastSavedCounts.images} images. Go to Admin → Sessions (refresh to see).
+                    {lastSavedCounts.samples} samples, {lastSavedCounts.images} images.
                     {lastSavedCounts.samples === 0 && ' — No calibration data.'}
                   </span>
                 )}
