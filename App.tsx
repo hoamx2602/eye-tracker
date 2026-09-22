@@ -1313,15 +1313,16 @@ function App() {
                   headInvalidSinceRef.current = null;
               }
 
-              // During an active neuro test (guide/practice/test — anything
-              // under neuroPhase 'tests'): the same loop CALIBRATION uses —
-              // same debounce, same HEAD_POSITIONING screen, same 2s hold to
-              // clear. The test that was running unmounts and, on return,
-              // starts over: trials collected before the interruption are
-              // gone, same as CALIBRATION losing an in-progress dwell on a
-              // grid point. neuroResumeTestId is what tells that test's
-              // GuidePracticeTestFlow to resume straight into 'test' phase
-              // rather than replay the guide and practice — see
+              // During the recorded portion of a neuro test specifically
+              // (neuroCurrentPhaseRef === 'test', not the guide/practice/
+              // realIntro that come before it): the same loop CALIBRATION
+              // uses — same debounce, same HEAD_POSITIONING screen, same 2s
+              // hold to clear. The test that was running unmounts and, on
+              // return, starts over: trials collected before the
+              // interruption are gone, same as CALIBRATION losing an
+              // in-progress dwell on a grid point. Resuming always lands
+              // back on 'test' (never replays guide/practice) precisely
+              // because this can only ever fire once already there — see
               // NeurologicalFlowSection's flowPropsFor.
               //
               // Pre/post questionnaires don't need the camera at all, so
@@ -1340,9 +1341,18 @@ function App() {
               // recorded, so interrupting there would only unmount that
               // break screen and force a full redo of a test that had
               // already finished, which is worse than not checking at all.
+              //
+              // And excluded: guide, practice, and the realIntro countdown
+              // (neuroCurrentPhaseRef !== 'test') — nothing is recorded in
+              // any of them either (practice says so on screen), so there is
+              // no data at risk, only a participant trying to read and
+              // understand the task who gets yanked into HEAD_POSITIONING
+              // for it. The check exists to protect the recorded trials,
+              // which only start once phase is actually 'test'.
               if (
                 statusRef.current === 'NEURO_FLOW' &&
                 neuroPhaseRef.current === 'tests' &&
+                neuroCurrentPhaseRef.current === 'test' &&
                 currentNeuroTestIdRef.current !== 'head_orientation' &&
                 !neuroTestBreakActiveRef.current &&
                 !validation.valid
@@ -1359,7 +1369,8 @@ function App() {
                 statusRef.current === 'NEURO_FLOW' &&
                 (validation.valid ||
                   currentNeuroTestIdRef.current === 'head_orientation' ||
-                  neuroTestBreakActiveRef.current)
+                  neuroTestBreakActiveRef.current ||
+                  neuroCurrentPhaseRef.current !== 'test')
               ) {
                   // Also reset while head_orientation is running, or the
                   // break screen is up (not just when valid) — otherwise a
