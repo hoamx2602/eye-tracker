@@ -42,6 +42,32 @@ type UseNeuroFlowHandlersParams = {
 const NEURO_PRE_QUESTIONNAIRE_LS_KEY = 'neuro_pre_questionnaire_v1';
 const NEURO_POST_QUESTIONNAIRE_LS_KEY = 'neuro_post_questionnaire_v1';
 
+/**
+ * Retry a run patch a couple of times before giving up.
+ *
+ * Every write here is a small JSON payload — a test's result, a
+ * questionnaire — not a media upload, so a short automatic retry is cheap
+ * and turns a transient network blip into nothing instead of a silently
+ * lost test. Still soft-fails after retrying: a participant mid-assessment
+ * should never be blocked or interrupted by a save that will not go through.
+ */
+const RUN_PATCH_RETRY_DELAYS_MS = [800, 2000];
+
+async function patchRunWithRetry(
+  id: string,
+  data: Parameters<typeof neurologicalRunsApi.patch>[1]
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await neurologicalRunsApi.patch(id, data);
+      return;
+    } catch (e) {
+      if (attempt >= RUN_PATCH_RETRY_DELAYS_MS.length) throw e;
+      await new Promise((r) => setTimeout(r, RUN_PATCH_RETRY_DELAYS_MS[attempt]));
+    }
+  }
+}
+
 function buildQuestionnairePayload(variant: 'pre' | 'post', scores: SymptomScores) {
   return {
     variant,
@@ -93,7 +119,7 @@ export function useNeuroFlowHandlers({
       }
       setTestSaveState('saving');
       try {
-        await neurologicalRunsApi.patch(neuroRunId, { testResults: { [testId]: payload } });
+        await patchRunWithRetry(neuroRunId, { testResults: { [testId]: payload } });
         setTestSaveState('saved');
       } catch (e) {
         neuroPersistWarn(`PATCH interim result failed (${testId})`, e);
@@ -135,12 +161,10 @@ export function useNeuroFlowHandlers({
           // ratings, so it must not put a "Saving…" screen in front of someone
           // who has just been told their data is saved — it runs in the
           // background while we move on.
-          const write = neurologicalRunsApi
-            .patch(neuroRunId, {
-              testResults: { [testId]: payload },
-              ...(isFinishing ? { status: 'completed' } : {}),
-            })
-            .catch((e) => neuroPersistWarn(`PATCH test result failed (${testId})`, e));
+          const write = patchRunWithRetry(neuroRunId, {
+            testResults: { [testId]: payload },
+            ...(isFinishing ? { status: 'completed' } : {}),
+          }).catch((e) => neuroPersistWarn(`PATCH test result failed (${testId})`, e));
 
           // Finishing the run is the exception: the results page reads the run
           // back, so that one write has to land before we navigate.
@@ -233,9 +257,9 @@ export function useNeuroFlowHandlers({
         } catch (_) {}
         if (neuroRunId) {
           try {
-            await neurologicalRunsApi.patch(neuroRunId, { preSymptomScores: questionnaire as unknown as Record<string, number> });
+            await patchRunWithRetry(neuroRunId, { preSymptomScores: questionnaire as unknown as Record<string, number> });
           } catch (e) {
-            console.error('Patch pre scores failed', e);
+            neuroPersistWarn('PATCH pre scores failed', e);
           }
         }
         const order = neuroTestOrder.length > 0 ? neuroTestOrder : [...DEFAULT_TEST_ORDER];
@@ -292,12 +316,12 @@ export function useNeuroFlowHandlers({
           try {
             setLoadingMsg('Saving final results...');
             setStatus('LOADING_MODEL');
-            await neurologicalRunsApi.patch(neuroRunId, {
+            await patchRunWithRetry(neuroRunId, {
               postSymptomScores: questionnaire as unknown as Record<string, number>,
               status: 'completed',
             });
           } catch (e) {
-            console.error('Patch post scores failed', e);
+            neuroPersistWarn('PATCH post scores failed', e);
           }
         }
         routerPush(`/results/${neuroRunId}`);
