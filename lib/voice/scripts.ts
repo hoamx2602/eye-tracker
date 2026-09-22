@@ -194,6 +194,12 @@ export const VOICE_SCRIPTS = {
       'The test ends by itself once the last number is green.',
     cue: 'Keep looking for the next number in order, and hold your gaze on it.',
   },
+  // Played immediately when a number is pressed out of order — alongside the
+  // existing red flash on the target itself, which says something went wrong
+  // but not what the rule actually is.
+  'neuro.visual_search.wrong_order': {
+    text: 'Numbers must be found in ascending order — find the next one first.',
+  },
   'neuro.memory_cards': {
     text:
       'Memory cards. You will see a grid of face-down cards, each hiding a symbol, ' +
@@ -212,6 +218,21 @@ export const VOICE_SCRIPTS = {
       'on the opposite side. This feels unnatural — that is exactly what we are measuring. ' +
       'Keep your head still and move only your eyes.',
     cue: 'Look at the dim shape, not the bright one.',
+  },
+  // Played instead of neuro.anti_saccade when the dim shape is configured too
+  // faint to meaningfully follow (dimRectOpacity below DIM_RECT_TEXT_THRESHOLD
+  // — see antiSaccade/constants.ts). Describes the task purely by direction,
+  // the same simplification GuidePracticeTestFlow already applies to the
+  // on-screen text. Assumes the default primaryRectColor ('red'); an admin
+  // who changes that colour will need this clip regenerated to match, same as
+  // the on-screen text already does dynamically but a spoken clip cannot.
+  'neuro.anti_saccade.no_dim': {
+    text:
+      'Anti-saccade. A red square will appear in the centre of the screen and then move to one side. ' +
+      'Your task is to look in the opposite direction — away from the square, not towards it. ' +
+      'This feels unnatural — that is exactly what we are measuring. ' +
+      'Keep your head still and move only your eyes.',
+    cue: 'Look away from the red square, to the opposite side.',
   },
   'neuro.saccadic': {
     text:

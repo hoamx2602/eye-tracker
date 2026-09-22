@@ -1,6 +1,22 @@
 /**
- * Generate random positions for numbers 1..count so they don't overlap.
- * Returns positions in percentage (0–100) of viewport width/height.
+ * Generate positions for numbers 1..count so they don't overlap and, just as
+ * importantly, don't cluster.
+ *
+ * Pure rejection sampling (throw a random point, retry if too close to an
+ * existing one) was the original approach here, and it does stop numbers
+ * landing on top of each other — but nothing about it stops five numbers
+ * landing in one corner while the rest of the screen sits empty, which is
+ * exactly what a participant would see on an unlucky draw. A visual search
+ * task that "searches" a quarter of the screen measures something different
+ * from one that searches all of it.
+ *
+ * This uses stratified (jittered-grid) sampling instead: the area is divided
+ * into at least `count` roughly equal cells, `count` of them are chosen at
+ * random, and each number is placed at a random point inside its own cell.
+ * That guarantees spread across the whole area — including the corners —
+ * while the jitter inside each cell keeps individual placements looking
+ * organic rather than snapped to a visible grid. It's the standard technique
+ * for exactly this problem in visual-search paradigms generally.
  */
 export function generateNumberPositions(
   count: number,
@@ -9,36 +25,66 @@ export function generateNumberPositions(
   viewportWidth = 0,
   viewportHeight = 0
 ): Array<{ number: number; x: number; y: number }> {
-  const positions: Array<{ number: number; x: number; y: number }> = [];
-  // Convert edgePaddingPx to a percentage margin, taking the max of the default 10% and px-derived values
-  const mxFromPx = (edgePaddingPx > 0 && viewportWidth > 0) ? (edgePaddingPx / viewportWidth) * 100 : 0;
-  const myFromPx = (edgePaddingPx > 0 && viewportHeight > 0) ? (edgePaddingPx / viewportHeight) * 100 : 0;
-  const margin = Math.min(40, Math.max(10, mxFromPx, myFromPx)); // keep away from edges (%)
+  if (count <= 0) return [];
 
+  // How close the outermost numbers can sit to the true edge of the screen.
+  // Only needs to clear half the target's own size (56px → 28px radius) plus
+  // a little breathing room, not the generous margin a purely random layout
+  // needed to keep points away from each other near a corner.
+  const mxFromPx = edgePaddingPx > 0 && viewportWidth > 0 ? (edgePaddingPx / viewportWidth) * 100 : 0;
+  const myFromPx = edgePaddingPx > 0 && viewportHeight > 0 ? (edgePaddingPx / viewportHeight) * 100 : 0;
+  const margin = Math.min(25, Math.max(4, mxFromPx, myFromPx));
+  const span = 100 - 2 * margin;
+
+  // Aim for a grid at least as fine as the number of targets, biased to the
+  // screen's own aspect ratio so cells are roughly square in real pixels
+  // rather than in percent (a 16:9 viewport turned into a square percent
+  // grid would make "cells" visually wide and short).
+  const aspect = viewportWidth > 0 && viewportHeight > 0 ? viewportWidth / viewportHeight : 16 / 9;
+  let cols = Math.max(1, Math.round(Math.sqrt(count * aspect)));
+  let rows = Math.max(1, Math.ceil(count / cols));
+  while (cols * rows < count) {
+    // Widen before heightening — matches the bias above.
+    if (cols <= rows * aspect) cols++;
+    else rows++;
+  }
+
+  const cellIndices = Array.from({ length: cols * rows }, (_, i) => i);
+  // Fisher–Yates: which `count` of the cols*rows cells get a number, and in
+  // what order — both need to be random, not just the jitter inside each one.
+  for (let i = cellIndices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cellIndices[i], cellIndices[j]] = [cellIndices[j], cellIndices[i]];
+  }
+  const chosenCells = cellIndices.slice(0, count);
+
+  const cellW = span / cols;
+  const cellH = span / rows;
+  // Placed inside this fraction of the cell — enough margin that jitter can
+  // never push a point flush against its neighbour's cell.
+  const inset = 0.13;
+
+  const positions: Array<{ number: number; x: number; y: number }> = [];
   for (let n = 1; n <= count; n++) {
+    const cell = chosenCells[n - 1];
+    const col = cell % cols;
+    const row = Math.floor(cell / cols);
+    const cellX0 = margin + col * cellW;
+    const cellY0 = margin + row * cellH;
+
+    let x = 0;
+    let y = 0;
     let attempts = 0;
-    const maxAttempts = 200;
-    while (attempts < maxAttempts) {
-      const x = margin + Math.random() * (100 - 2 * margin);
-      const y = margin + Math.random() * (100 - 2 * margin);
-      const tooClose = positions.some(
-        (p) =>
-          Math.hypot(p.x - x, p.y - y) < minSpacingPct
-      );
-      if (!tooClose) {
-        positions.push({ number: n, x, y });
-        break;
-      }
+    const maxAttempts = 30;
+    do {
+      x = cellX0 + (inset + Math.random() * (1 - 2 * inset)) * cellW;
+      y = cellY0 + (inset + Math.random() * (1 - 2 * inset)) * cellH;
       attempts++;
-    }
-    if (positions.length !== n) {
-      // fallback: place on a grid
-      const cols = Math.ceil(Math.sqrt(count));
-      const i = n - 1;
-      const x = margin + ((i % cols) / Math.max(cols - 1, 1)) * (100 - 2 * margin);
-      const y = margin + (Math.floor(i / cols) / Math.max(Math.ceil(count / cols) - 1, 1)) * (100 - 2 * margin);
-      positions.push({ number: n, x, y });
-    }
+    } while (
+      attempts < maxAttempts &&
+      positions.some((p) => Math.hypot(p.x - x, p.y - y) < minSpacingPct)
+    );
+    positions.push({ number: n, x, y });
   }
   return positions;
 }

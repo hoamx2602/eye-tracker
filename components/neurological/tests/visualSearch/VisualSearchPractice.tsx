@@ -23,6 +23,7 @@ import {
   useHoldConfirm,
 } from './TargetButton';
 import { usePracticeGate } from '../../PracticeGate';
+import { useVoice } from '@/lib/voice/VoiceProvider';
 
 export default function VisualSearchPractice({
   config,
@@ -49,11 +50,15 @@ export default function VisualSearchPractice({
     return null;
   }, [confirmedNumbers, positions.length]);
 
+  const voice = useVoice();
+  const speak = voice?.speak;
+
   const handleWrongOrder = useCallback((pressed: number) => {
     setWrongNumber(pressed);
     if (wrongTimerRef.current) clearTimeout(wrongTimerRef.current);
     wrongTimerRef.current = setTimeout(() => setWrongNumber(null), 400);
-  }, []);
+    speak?.('neuro.visual_search.wrong_order');
+  }, [speak]);
 
   useEffect(() => () => {
     if (wrongTimerRef.current) clearTimeout(wrongTimerRef.current);

@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroGaze } from '../../NeuroGazeContext';
 import { useNeuroHeadPose } from '../../NeuroHeadPoseContext';
+import { useVoice } from '@/lib/voice/VoiceProvider';
 import {
   DEFAULT_AOI_RADIUS_PX,
   DEFAULT_NUMBER_COUNT,
@@ -243,12 +244,17 @@ export default function VisualSearchTest() {
     return null;
   }, [confirmedNumbers, positions.length]);
 
+  const voice = useVoice();
+  const speak = voice?.speak;
+
   const handleWrongOrder = useCallback((pressed: number, expected: number) => {
     orderErrorsRef.current.push({ pressed, expected, timestamp: performance.now() });
     setWrongNumber(pressed);
     if (wrongTimerRef.current) clearTimeout(wrongTimerRef.current);
     wrongTimerRef.current = setTimeout(() => setWrongNumber(null), 400);
-  }, []);
+    // The red flash says something was wrong; this says what the rule is.
+    speak?.('neuro.visual_search.wrong_order');
+  }, [speak]);
 
   useEffect(() => () => {
     if (wrongTimerRef.current) clearTimeout(wrongTimerRef.current);
