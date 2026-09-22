@@ -53,7 +53,6 @@ export default function SaccadicPractice() {
             left: `${targetLeftPct}%`,
             top: '50%',
             transform: 'translate(-50%, -50%)',
-            transition: 'left 0.06s linear',
           }}
           aria-hidden
         />
