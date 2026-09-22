@@ -3229,6 +3229,7 @@ function App() {
         onSetupComplete={handleSetupComplete}
         onSetupBack={handleSetupBack}
         onSetCapturedImageModalIndex={setCapturedImageModalIndex}
+        runMode={runMode}
         onSetRunMode={setRunMode}
         onStartCalibrationClick={handleStartCalibrationClick}
         onGoHome={() => {

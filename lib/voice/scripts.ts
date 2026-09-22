@@ -254,6 +254,16 @@ export const VOICE_SCRIPTS = {
       'Take a moment to rest your eyes. ' +
       'When you are ready, select Next to finish the session.',
   },
+  // Played instead of break.last after the final eye-movement exercise
+  // (h_pattern) — that break sits right before Validation, and Validation is
+  // followed by the neurological tests, so nothing about the session is
+  // finished yet. See AppMainOverlays.tsx: validationIsNext.
+  'validation.next': {
+    text:
+      'Next is validation. You will look at a short series of points again, ' +
+      'much like the very first step — but this time none of it trains the tracker. ' +
+      'It only checks how accurate the calibration turned out to be.',
+  },
 
   // ------------------------------------------- head orientation directions
   // Announced as each direction comes up, so the participant can keep their

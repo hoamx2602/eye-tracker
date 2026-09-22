@@ -82,6 +82,8 @@ type AppMainOverlaysProps = {
   onSetupComplete: () => void;
   onSetupBack: () => void;
   onSetCapturedImageModalIndex: (index: number | null) => void;
+  /** 'test' finishes right after the exercises (no validation); 'calibration' — the real participant flow — goes on to Validation, then the neurological tests. */
+  runMode: 'calibration' | 'test';
   onSetRunMode: (mode: 'calibration' | 'test') => void;
   onStartCalibrationClick: () => void;
   onGoHome: () => void;
@@ -152,6 +154,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
     onSetupComplete,
     onSetupBack,
     onSetCapturedImageModalIndex,
+    runMode,
     onSetRunMode,
     onStartCalibrationClick,
     onGoHome,
@@ -212,6 +215,16 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
         : null;
   const nextExerciseNumber =
     nextExerciseKind != null ? EXERCISE_KINDS.indexOf(nextExerciseKind) + 1 : 0;
+
+  // The break after the last exercise (h_pattern) is not the end of the
+  // session — in the real participant flow it is followed by Validation,
+  // then the neurological tests. nextExerciseKind is null there (there is no
+  // *next exercise*), which used to fall straight through to StepBreak's
+  // "that was the last step" copy — wrong for everyone except a 'test'-mode
+  // run, which genuinely does stop there (see advanceExercise in App.tsx).
+  const isLastExerciseComplete =
+    assessmentPending?.type === 'exercise' && nextExerciseKind == null;
+  const validationIsNext = isLastExerciseComplete && runMode !== 'test';
 
   return (
     <div className="absolute inset-0 pointer-events-none font-sans">
@@ -430,7 +443,9 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
           nextLabel={
             nextExerciseKind
               ? `${EXERCISE_KIND_LABELS[nextExerciseKind]} — exercise ${nextExerciseNumber} of ${EXERCISE_KINDS.length}`
-              : null
+              : validationIsNext
+                ? 'Validation'
+                : null
           }
           nextDescription={
             nextExerciseKind
@@ -439,9 +454,17 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
                     ? ` It is the first of ${EXERCISE_KINDS.length} short exercises, with a break after each one.`
                     : ''
                 }`
-              : null
+              : validationIsNext
+                ? 'A short series of points, like the very first step, checks how accurate the calibration turned out. Nothing here trains the tracker further — it only measures it.'
+                : null
           }
-          nextVoiceKey={nextExerciseKind ? exerciseVoiceKey(nextExerciseKind) : null}
+          nextVoiceKey={
+            nextExerciseKind
+              ? exerciseVoiceKey(nextExerciseKind)
+              : validationIsNext
+                ? 'validation.next'
+                : null
+          }
           saveState={stepSaveState}
           saveError={stepSaveError}
           onNext={() => onAssessmentContinue?.()}
