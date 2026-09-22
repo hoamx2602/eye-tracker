@@ -11,6 +11,7 @@ import {
   TRAVEL_DISTANCE_PX,
   STIMULUS_SHAPE_OPTIONS,
   RECT_COLOR_PALETTE,
+  isDimRectInstructable,
   type AntiSaccadeDirection,
   type AntiSaccadeRectColor,
   type AntiSaccadeStimulusShape,
@@ -109,7 +110,11 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   const restartDelaySec = getRestartDelaySec(config);
   const movementDurationMs = getMovementDurationMs(config, TRAVEL_DISTANCE_PX);
   const dimOpacity = getPracticeDimRectOpacity(config);
-  const showDimRect = true; // always show dim rect in practice so users understand the mechanic
+  const showDimRect = true; // always rendered in practice, even if barely visible, matching the real test's own opacity
+  // But only described in words when it is actually something a participant
+  // could follow — the real test's config decides this, so practice and the
+  // real test never teach two different tasks. See constants.ts.
+  const dimRectInstructable = isDimRectInstructable(config);
   const stimulusShape = getStimulusShape(config);
   const primaryRectColor = getRectColor(config, 'primaryRectColor', 'red');
   const dimRectColor = getRectColor(config, 'dimRectColor', 'blue');
@@ -180,8 +185,12 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
         </p>
       ) : (
         <p className="text-gray-400 text-sm mb-4">
-          Look in the opposite direction from the <strong className="text-slate-300">primary</strong> square
-          {showDimRect ? (
+          Look in the opposite direction from the{' '}
+          <strong className="text-slate-300">
+            {RECT_COLOR_PALETTE[primaryRectColor as keyof typeof RECT_COLOR_PALETTE]?.label.toLowerCase() ?? 'primary'}
+          </strong>{' '}
+          square
+          {dimRectInstructable ? (
             <>
               . Follow the <strong className="text-slate-300">dim</strong> square instead.
             </>

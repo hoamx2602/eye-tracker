@@ -1,5 +1,32 @@
 import type { GuideStep } from '../../types';
 
+/** Default dim-rect opacity when a config supplies none. Kept in one place so every reader agrees. */
+export const DIM_RECT_OPACITY_DEFAULT = 0.1;
+
+/**
+ * Below this opacity, the dim rectangle is technically drawn but not really
+ * something a participant can be asked to "follow" — at the 0.1 default it
+ * is close to indistinguishable from the background. Instructions (guide,
+ * practice, the in-test caption, and the spoken clip) switch to describing
+ * the task purely by direction from the primary rectangle once opacity is
+ * below this line, rather than pointing at a target that isn't visibly
+ * there. The rectangle itself still renders at whatever opacity is
+ * configured — this only changes what the words claim about it.
+ */
+export const DIM_RECT_TEXT_THRESHOLD = 0.2;
+
+/** Resolves config.dimRectOpacity the same way every caller needs to, clamped to its valid range. */
+export function resolveDimRectOpacity(config: Record<string, unknown> | undefined): number {
+  const v = Number(config?.dimRectOpacity);
+  if (!Number.isFinite(v)) return DIM_RECT_OPACITY_DEFAULT;
+  return Math.max(0, Math.min(0.9, v));
+}
+
+/** Whether instructions should describe the dim rectangle as something to follow. */
+export function isDimRectInstructable(config: Record<string, unknown> | undefined): boolean {
+  return resolveDimRectOpacity(config) >= DIM_RECT_TEXT_THRESHOLD;
+}
+
 /**
  * Returns guide steps for Anti-Saccade, adapted based on whether the dim rect is shown.
  * When showDimRect is false (dimRectOpacity = 0), instructions do not mention a dim rectangle.

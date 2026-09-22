@@ -34,10 +34,11 @@ import {
 import AntiSaccadeTest from '@/components/neurological/tests/antiSaccade/AntiSaccadeTest';
 import AntiSaccadePractice from '@/components/neurological/tests/antiSaccade/AntiSaccadePractice';
 import {
-  ANTI_SACCADE_GUIDE_STEPS,
   getAntiSaccadeGuideSteps,
+  isDimRectInstructable,
   DEFAULT_TRIAL_COUNT,
   DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
+  DIM_RECT_OPACITY_DEFAULT,
 } from '@/components/neurological/tests/antiSaccade/constants';
 import SaccadicTest from '@/components/neurological/tests/saccadic/SaccadicTest';
 import SaccadicPractice from '@/components/neurological/tests/saccadic/SaccadicPractice';
@@ -235,6 +236,24 @@ export default function NeurologicalFlowSection({
     };
   };
 
+  // Computed once so the guide steps and the test/practice config can never
+  // disagree about whether the dim rectangle is worth mentioning — the guide
+  // used to hardcode `true` regardless of the actual config, describing a
+  // target the live screens then wouldn't (or would) talk about.
+  const antiSaccadeConfig: Record<string, unknown> = {
+    ...globalParams,
+    ...((neuroConfigSnapshot?.testParameters?.anti_saccade as Record<string, unknown>) ?? {
+      trialCount: DEFAULT_TRIAL_COUNT,
+      movementSpeedPxPerSec: 120,
+      intervalBetweenTrialsMs: DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
+      practiceRestartDelaySec: 3,
+      dimRectOpacity: DIM_RECT_OPACITY_DEFAULT,
+      stimulusShape: 'rectangle',
+      primaryRectColor: 'red',
+      dimRectColor: 'blue',
+    }),
+  };
+
   return (
     <>
       {status === 'NEURO_FLOW' && neuroRunStatus === 'creating' && (
@@ -329,24 +348,12 @@ export default function NeurologicalFlowSection({
           <GuidePracticeTestFlow
             testId="anti_saccade"
             testLabel={TEST_LABELS.anti_saccade}
-            guideSteps={getAntiSaccadeGuideSteps(true)}
+            guideSteps={getAntiSaccadeGuideSteps(isDimRectInstructable(antiSaccadeConfig))}
             enablePractice={!quickMode}
             practiceContent={(config) => <AntiSaccadePractice config={config} />}
             practiceTitle="Anti-Saccade"
             testContent={<AntiSaccadeTest />}
-            config={{
-              ...globalParams,
-              ...((neuroConfigSnapshot?.testParameters?.anti_saccade as Record<string, unknown>) ?? {
-                trialCount: DEFAULT_TRIAL_COUNT,
-                movementSpeedPxPerSec: 120,
-                intervalBetweenTrialsMs: DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
-                practiceRestartDelaySec: 3,
-                showDimRect: true,
-                stimulusShape: 'rectangle',
-                primaryRectColor: 'red',
-                dimRectColor: 'blue',
-              }),
-            }}
+            config={antiSaccadeConfig}
             {...flowPropsFor('anti_saccade')}
           />
         </NeuroGazeProvider>

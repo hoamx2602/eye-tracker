@@ -15,6 +15,7 @@ import {
   TRAVEL_DISTANCE_PX,
   STIMULUS_SHAPE_OPTIONS,
   RECT_COLOR_PALETTE,
+  isDimRectInstructable,
   type AntiSaccadeDirection,
   type AntiSaccadeRectColor,
   type AntiSaccadeStimulusShape,
@@ -143,6 +144,10 @@ export default function AntiSaccadeTest() {
     return Number.isFinite(v) ? Math.max(0, Math.min(0.9, v)) : 0.1;
   })();
   const showDimRect = dimRectOpacity > 0;
+  // Below DIM_RECT_TEXT_THRESHOLD the rectangle still renders (showDimRect
+  // above) but is too faint to meaningfully ask someone to "follow" — the
+  // words describe the task by direction instead. See constants.ts.
+  const dimRectInstructable = isDimRectInstructable(config);
   const stimulusShape = getStimulusShape(config);
   const primaryRectColor = getRectColor(config, 'primaryRectColor', 'red');
   const dimRectColor = getRectColor(config, 'dimRectColor', 'blue');
@@ -343,8 +348,12 @@ export default function AntiSaccadeTest() {
       </div>
 
       <p className="text-center text-gray-400 text-sm pt-4 pb-2">
-        Look in the opposite direction from the <strong className="text-gray-300">primary</strong> square
-        {showDimRect ? (
+        Look in the opposite direction from the{' '}
+        <strong className="text-gray-300">
+          {RECT_COLOR_PALETTE[primaryRectColor as keyof typeof RECT_COLOR_PALETTE]?.label.toLowerCase() ?? 'primary'}
+        </strong>{' '}
+        square
+        {dimRectInstructable ? (
           <>
             . Follow the <strong className="text-gray-300">dim</strong> square instead.
           </>
