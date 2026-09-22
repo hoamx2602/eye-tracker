@@ -230,6 +230,22 @@ function App() {
     }
   }, []);
 
+  // Warn before an accidental tab close/refresh once there is a session on
+  // the server this participant is the only source of more data for.
+  // sessionIdRef is set right after demographics and cleared by reset(), so
+  // this naturally turns itself off before the flow starts and once the
+  // participant restarts — no separate condition needed for either.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (sessionIdRef.current) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
+
   useEffect(() => { statusRef.current = status; }, [status]);
   useEffect(() => {
     if (status !== 'CALIBRATION' && status !== 'TRACKING') setLightLevel(null);
