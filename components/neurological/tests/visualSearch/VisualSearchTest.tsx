@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroGaze } from '../../NeuroGazeContext';
+import { useNeuroHeadPose } from '../../NeuroHeadPoseContext';
 import {
   DEFAULT_AOI_RADIUS_PX,
   DEFAULT_NUMBER_COUNT,
@@ -45,6 +46,8 @@ export interface VisualSearchFixation {
   pointerY?: number;
   /** Duration ms between pointer down and up (pointer confirmations only). */
   holdDurationMs?: number;
+  /** Head pose at the moment of this fixation. */
+  head?: { yaw: number; pitch: number; roll: number };
 }
 
 export interface VisualSearchResult {
@@ -90,6 +93,13 @@ export default function VisualSearchTest() {
   const stimulusAreaRef = useRef<HTMLDivElement>(null);
   const startTimeRef = useRef<number>(0);
   const fixationsRef = useRef<VisualSearchFixation[]>([]);
+  const { headPose } = useNeuroHeadPose();
+  const headPoseRef = useRef(headPose);
+  headPoseRef.current = headPose;
+  const currentHead = () => {
+    const hp = headPoseRef.current;
+    return hp ? { yaw: hp.yaw, pitch: hp.pitch, roll: hp.roll } : undefined;
+  };
   const sequenceRef = useRef<number[]>([]);
   const gazePathRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
   const lastInNumberRef = useRef<number | null>(null);
@@ -125,6 +135,7 @@ export default function VisualSearchTest() {
         pointerX: e.clientX,
         pointerY: e.clientY,
         holdDurationMs: Math.round(holdMs),
+        head: currentHead(),
       });
       if (!sequenceRef.current.includes(number)) {
         sequenceRef.current.push(number);
@@ -223,6 +234,7 @@ export default function VisualSearchTest() {
         ...(detail.pointerX != null ? { pointerX: detail.pointerX } : {}),
         ...(detail.pointerY != null ? { pointerY: detail.pointerY } : {}),
         holdDurationMs: detail.holdDurationMs,
+        head: currentHead(),
       });
       if (!sequenceRef.current.includes(number)) {
         sequenceRef.current.push(number);
@@ -287,6 +299,7 @@ export default function VisualSearchTest() {
           gazeX: g.x,
           gazeY: g.y,
           source: 'aoi',
+          head: currentHead(),
         });
         if (!sequenceRef.current.includes(found)) {
           sequenceRef.current.push(found);

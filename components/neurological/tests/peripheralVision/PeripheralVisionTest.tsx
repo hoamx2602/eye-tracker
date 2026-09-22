@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroGaze } from '../../NeuroGazeContext';
+import { useNeuroHeadPose } from '../../NeuroHeadPoseContext';
 import {
   DEFAULT_MAX_DELAY_MS,
   DEFAULT_MIN_DELAY_MS,
@@ -13,6 +14,8 @@ import {
 } from './constants';
 import { randomPeripheralStimulusPosition } from './utils';
 import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
+
+export type PeripheralHeadPose = { yaw: number; pitch: number; roll: number };
 
 export interface PeripheralVisionTrialResult {
   /** performance.now() lúc bắt đầu trial (delay). `t` trong gazeSamples tính từ đây. */
@@ -26,14 +29,14 @@ export interface PeripheralVisionTrialResult {
   spacePressedTime?: number;
   rtMs?: number;
   hit: boolean;
-  gazeSamples: Array<{ t: number; x: number; y: number }>;
+  gazeSamples: Array<{ t: number; x: number; y: number; head?: PeripheralHeadPose }>;
   /** Khoảng cách trung bình tới tâm màn hình trong giai đoạn delay (trước flash) — px. */
   centeringMeanDistancePx?: number;
   /** Độ lệch chuẩn khoảng cách tới tâm trong delay — px (nhỏ hơn = ổn định hơn). */
   centeringStdDistancePx?: number;
 }
 
-export type PeripheralScanningPoint = { t: number; x: number; y: number };
+export type PeripheralScanningPoint = { t: number; x: number; y: number; head?: PeripheralHeadPose };
 
 export interface PeripheralVisionResult {
   startTime: number;
@@ -78,7 +81,7 @@ export function buildPeripheralScanningPath(
     const startMs = tr.trialStartTime ?? tr.stimulusOnsetTime;
     const offsetSec = (startMs - testStartMs) / 1000;
     for (const s of tr.gazeSamples ?? []) {
-      out.push({ t: offsetSec + s.t, x: s.x, y: s.y });
+      out.push({ t: offsetSec + s.t, x: s.x, y: s.y, head: s.head });
     }
   }
   return out;
@@ -120,8 +123,11 @@ export default function PeripheralVisionTest() {
   const delayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stimulusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const responseEndTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const trialGazeRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
+  const trialGazeRef = useRef<Array<{ t: number; x: number; y: number; head?: PeripheralHeadPose }>>([]);
   const trialsResultsRef = useRef<PeripheralVisionTrialResult[]>([]);
+  const { headPose } = useNeuroHeadPose();
+  const headPoseRef = useRef(headPose);
+  headPoseRef.current = headPose;
   const spacePressedThisTrialRef = useRef<number | null>(null);
   const itiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -263,7 +269,13 @@ export default function PeripheralVisionTest() {
       const now = performance.now();
       const t = (now - trialStartRef.current) / 1000;
       const g = neuroLiveGazeRef.current;
-      trialGazeRef.current.push({ t, x: g.x, y: g.y });
+      const hp = headPoseRef.current;
+      trialGazeRef.current.push({
+        t,
+        x: g.x,
+        y: g.y,
+        ...(hp && { head: { yaw: hp.yaw, pitch: hp.pitch, roll: hp.roll } }),
+      });
     }, gazeIntervalMs);
 
     return () => {

@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroGaze } from '../../NeuroGazeContext';
+import { useNeuroHeadPose } from '../../NeuroHeadPoseContext';
 import {
   DEFAULT_BLINK_INTERVAL_MS,
   DEFAULT_DURATION_SEC,
@@ -19,7 +20,7 @@ export interface FixationStabilityResult {
   startTime: number;
   endTime: number;
   durationMs: number;
-  gazeSamples: Array<{ t: number; x: number; y: number }>;
+  gazeSamples: Array<{ t: number; x: number; y: number; head?: { yaw: number; pitch: number; roll: number } }>;
   /** Viewport at run time — for replaying gaze / ellipse in screen space */
   viewportWidth?: number;
   viewportHeight?: number;
@@ -86,7 +87,10 @@ export default function FixationStabilityTest() {
 
   const center = getCenter();
   const startTimeRef = useRef(0);
-  const gazeSamplesRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
+  const gazeSamplesRef = useRef<Array<{ t: number; x: number; y: number; head?: { yaw: number; pitch: number; roll: number } }>>([]);
+  const { headPose } = useNeuroHeadPose();
+  const headPoseRef = useRef(headPose);
+  headPoseRef.current = headPose;
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const endTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [blinkVisible, setBlinkVisible] = useState(true);
@@ -111,7 +115,13 @@ export default function FixationStabilityTest() {
       const now = performance.now();
       const t = (now - startTimeRef.current) / 1000;
       const g = neuroLiveGazeRef.current;
-      gazeSamplesRef.current.push({ t, x: g.x, y: g.y });
+      const hp = headPoseRef.current;
+      gazeSamplesRef.current.push({
+        t,
+        x: g.x,
+        y: g.y,
+        ...(hp && { head: { yaw: hp.yaw, pitch: hp.pitch, roll: hp.roll } }),
+      });
     }, gazeIntervalMs);
 
     endTimeoutRef.current = setTimeout(() => {

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroGaze } from '../../NeuroGazeContext';
+import { useNeuroHeadPose } from '../../NeuroHeadPoseContext';
 import {
   DEFAULT_DWELL_MS,
   DEFAULT_CARD_COUNT,
@@ -47,7 +48,7 @@ export interface MemoryCardsResult {
   numberOfMoves: number;
   correctPairsCount: number;
   completionTimeMs: number;
-  gazePath: Array<{ t: number; x: number; y: number }>;
+  gazePath: Array<{ t: number; x: number; y: number; head?: { yaw: number; pitch: number; roll: number } }>;
   viewportWidth?: number;
   viewportHeight?: number;
   /** Lưới card lúc hoàn thành — căn gaze path chính xác trên kết quả. */
@@ -112,7 +113,10 @@ export default function MemoryCardsTest() {
   const [secondSelected, setSecondSelected] = useState<number | null>(null);
   const startTimeRef = useRef(0);
   const movesRef = useRef<MemoryCardsMove[]>([]);
-  const gazePathRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
+  const gazePathRef = useRef<Array<{ t: number; x: number; y: number; head?: { yaw: number; pitch: number; roll: number } }>>([]);
+  const { headPose } = useNeuroHeadPose();
+  const headPoseRef = useRef(headPose);
+  headPoseRef.current = headPose;
   const pathIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dwellCardRef = useRef<number | null>(null);
   const dwellStartRef = useRef<number>(0);
@@ -206,7 +210,13 @@ export default function MemoryCardsTest() {
     pathIntervalRef.current = setInterval(() => {
       const g = neuroLiveGazeRef.current;
       const t = (performance.now() - startTimeRef.current) / 1000;
-      gazePathRef.current.push({ t, x: g.x, y: g.y });
+      const hp = headPoseRef.current;
+      gazePathRef.current.push({
+        t,
+        x: g.x,
+        y: g.y,
+        ...(hp && { head: { yaw: hp.yaw, pitch: hp.pitch, roll: hp.roll } }),
+      });
     }, gazeIntervalMs);
     return () => {
       if (pathIntervalRef.current) clearInterval(pathIntervalRef.current);

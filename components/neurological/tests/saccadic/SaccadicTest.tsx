@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroGaze } from '../../NeuroGazeContext';
+import { useNeuroHeadPose } from '../../NeuroHeadPoseContext';
 import {
   AOI_RADIUS_PX,
   DEFAULT_TARGET_DURATION_MS,
@@ -15,15 +16,17 @@ import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 
 const SACCADIC_RESULT_LS_KEY = 'neuro_saccadic_result_v1';
 
+export type SaccadicHeadPose = { yaw: number; pitch: number; roll: number };
+
 export interface SaccadicCycleResult {
   targetSide: SaccadicTargetSide;
   onsetTime: number;
   firstFixationTime?: number;
   latencyMs?: number;
-  gazeSamples: Array<{ t: number; x: number; y: number }>;
+  gazeSamples: Array<{ t: number; x: number; y: number; head?: SaccadicHeadPose }>;
 }
 
-export type SaccadicScanningPoint = { t: number; x: number; y: number };
+export type SaccadicScanningPoint = { t: number; x: number; y: number; head?: SaccadicHeadPose };
 
 export interface SaccadicResult {
   startTime: number;
@@ -53,7 +56,7 @@ export function buildSaccadicScanningPath(
   for (const cy of cycles) {
     const offsetSec = (cy.onsetTime - testStartMs) / 1000;
     for (const s of cy.gazeSamples ?? []) {
-      out.push({ t: offsetSec + s.t, x: s.x, y: s.y });
+      out.push({ t: offsetSec + s.t, x: s.x, y: s.y, head: s.head });
     }
   }
   return out;
@@ -100,8 +103,11 @@ export default function SaccadicTest() {
   const [cycleIndex, setCycleIndex] = useState(0);
   const cycleStartRef = useRef(0);
   const firstFixationTimeRef = useRef<number | null>(null);
-  const cycleGazeSamplesRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
+  const cycleGazeSamplesRef = useRef<Array<{ t: number; x: number; y: number; head?: SaccadicHeadPose }>>([]);
   const cyclesResultsRef = useRef<SaccadicCycleResult[]>([]);
+  const { headPose } = useNeuroHeadPose();
+  const headPoseRef = useRef(headPose);
+  headPoseRef.current = headPose;
 
   const targetSide: SaccadicTargetSide = cycleIndex % 2 === 0 ? 'left' : 'right';
   const targetPos = useMemo(
@@ -143,7 +149,13 @@ export default function SaccadicTest() {
       );
       const g = neuroLiveGazeRef.current;
       const tRel = (now - cycleStartRef.current) / 1000;
-      cycleGazeSamplesRef.current.push({ t: tRel, x: g.x, y: g.y });
+      const hp = headPoseRef.current;
+      cycleGazeSamplesRef.current.push({
+        t: tRel,
+        x: g.x,
+        y: g.y,
+        ...(hp && { head: { yaw: hp.yaw, pitch: hp.pitch, roll: hp.roll } }),
+      });
 
       const inAOI = Math.hypot(g.x - pos.x, g.y - pos.y) <= AOI_RADIUS_PX;
       if (inAOI && firstFixationTimeRef.current === null) {

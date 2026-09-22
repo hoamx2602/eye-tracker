@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTestRunner } from '../../TestRunnerContext';
 import { useNeuroGaze } from '../../NeuroGazeContext';
+import { useNeuroHeadPose } from '../../NeuroHeadPoseContext';
 import {
   AOI_RADIUS_PX,
   DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
@@ -57,12 +58,14 @@ function getRectColor(config: Record<string, unknown> | undefined, key: string, 
   return defaultColor;
 }
 
+export type AntiSaccadeHeadPose = { yaw: number; pitch: number; roll: number };
+
 export interface AntiSaccadeTrialResult {
   direction: AntiSaccadeDirection;
   startTime: number;
   firstCorrectGazeTime?: number;
   latencyMs?: number;
-  gazeSamples: Array<{ t: number; x: number; y: number }>;
+  gazeSamples: Array<{ t: number; x: number; y: number; head?: AntiSaccadeHeadPose }>;
   /** Mean gaze position during movement phase */
   gazeMean?: { x: number; y: number };
   /** Direction from screen center to mean gaze (°), 0 = +x, 90 = up (negative y in screen coords — atan2 handles) */
@@ -74,7 +77,7 @@ export interface AntiSaccadeTrialResult {
 }
 
 /** Một điểm gaze; `t` = giây từ `startTime` của bài test (cùng quy ước visual_search.scanningPath). */
-export type AntiSaccadeScanningPoint = { t: number; x: number; y: number };
+export type AntiSaccadeScanningPoint = { t: number; x: number; y: number; head?: AntiSaccadeHeadPose };
 
 export interface AntiSaccadeResult {
   startTime: number;
@@ -100,7 +103,7 @@ export function buildAntiSaccadeScanningPath(
   for (const tr of trials) {
     const offsetSec = (tr.startTime - testStartMs) / 1000;
     for (const s of tr.gazeSamples ?? []) {
-      out.push({ t: offsetSec + s.t, x: s.x, y: s.y });
+      out.push({ t: offsetSec + s.t, x: s.x, y: s.y, head: s.head });
     }
   }
   return out;
@@ -158,7 +161,10 @@ export default function AntiSaccadeTest() {
   const [visualStarted, setVisualStarted] = useState(false);
   const movementStartRef = useRef(0);
   const firstCorrectGazeTimeRef = useRef<number | null>(null);
-  const trialGazeSamplesRef = useRef<Array<{ t: number; x: number; y: number }>>([]);
+  const trialGazeSamplesRef = useRef<Array<{ t: number; x: number; y: number; head?: AntiSaccadeHeadPose }>>([]);
+  const { headPose } = useNeuroHeadPose();
+  const headPoseRef = useRef(headPose);
+  headPoseRef.current = headPose;
   const trialsResultsRef = useRef<AntiSaccadeTrialResult[]>([]);
   const betweenStartRef = useRef(0);
 
@@ -231,7 +237,13 @@ export default function AntiSaccadeTest() {
         const dimPosNow = dimPosition(dir, center.x, center.y, p, travelPx);
         const g = neuroLiveGazeRef.current;
         const tRel = (now - movementStartRef.current) / 1000;
-        trialGazeSamplesRef.current.push({ t: tRel, x: g.x, y: g.y });
+        const hp = headPoseRef.current;
+        trialGazeSamplesRef.current.push({
+          t: tRel,
+          x: g.x,
+          y: g.y,
+          ...(hp && { head: { yaw: hp.yaw, pitch: hp.pitch, roll: hp.roll } }),
+        });
 
         const inDimAOI = Math.hypot(g.x - dimPosNow.x, g.y - dimPosNow.y) <= AOI_RADIUS_PX;
         if (inDimAOI && firstCorrectGazeTimeRef.current === null) {

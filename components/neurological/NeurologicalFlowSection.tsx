@@ -273,6 +273,7 @@ export default function NeurologicalFlowSection({
         </NeuroPanelLayoutContext.Provider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'visual_search' && (
+        <NeuroHeadPoseProvider headPose={neuroHeadPose}>
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="visual_search"
@@ -295,8 +296,10 @@ export default function NeurologicalFlowSection({
             {...flowPropsFor('visual_search')}
           />
         </NeuroGazeProvider>
+        </NeuroHeadPoseProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'memory_cards' && (
+        <NeuroHeadPoseProvider headPose={neuroHeadPose}>
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="memory_cards"
@@ -318,8 +321,10 @@ export default function NeurologicalFlowSection({
             {...flowPropsFor('memory_cards')}
           />
         </NeuroGazeProvider>
+        </NeuroHeadPoseProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'anti_saccade' && (
+        <NeuroHeadPoseProvider headPose={neuroHeadPose}>
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="anti_saccade"
@@ -345,8 +350,10 @@ export default function NeurologicalFlowSection({
             {...flowPropsFor('anti_saccade')}
           />
         </NeuroGazeProvider>
+        </NeuroHeadPoseProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'saccadic' && (
+        <NeuroHeadPoseProvider headPose={neuroHeadPose}>
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="saccadic"
@@ -360,8 +367,10 @@ export default function NeurologicalFlowSection({
             {...flowPropsFor('saccadic')}
           />
         </NeuroGazeProvider>
+        </NeuroHeadPoseProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'fixation_stability' && (
+        <NeuroHeadPoseProvider headPose={neuroHeadPose}>
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="fixation_stability"
@@ -375,8 +384,10 @@ export default function NeurologicalFlowSection({
             {...flowPropsFor('fixation_stability')}
           />
         </NeuroGazeProvider>
+        </NeuroHeadPoseProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'peripheral_vision' && (
+        <NeuroHeadPoseProvider headPose={neuroHeadPose}>
         <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
           <GuidePracticeTestFlow
             testId="peripheral_vision"
@@ -390,6 +401,7 @@ export default function NeurologicalFlowSection({
             {...flowPropsFor('peripheral_vision')}
           />
         </NeuroGazeProvider>
+        </NeuroHeadPoseProvider>
       )}
       {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === null && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-gray-950">
