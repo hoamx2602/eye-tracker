@@ -48,5 +48,15 @@ export const DEFAULT_DWELL_MS = 800;
 /** Delay (ms) before flipping non-matching pair back. */
 export const FLIP_BACK_DELAY_MS = 1200;
 
-/** Default card gap in px. */
-export const DEFAULT_CARD_GAP_PX = 8;
+/**
+ * Default card gap in px.
+ *
+ * Webcam gaze error is large relative to a card — tens of pixels, sometimes
+ * more — so at the old 8px gap two adjacent cards were well within each
+ * other's margin of error and gaze had no real way to tell them apart. 28px
+ * gives dwell selection a meaningfully wider gutter to land in, confirmed not
+ * to shrink the cards themselves at any card count on a modest laptop screen
+ * (MemoryCardsTest already shrinks cards to fit before it lets the grid
+ * overflow, so a larger gap only ever costs space that was unused).
+ */
+export const DEFAULT_CARD_GAP_PX = 28;
