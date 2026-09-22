@@ -9,6 +9,7 @@ import { TestRunnerProvider } from './TestRunnerContext';
 import { useVoiceRepeat } from '@/lib/voice/VoiceProvider';
 import { neuroTestVoiceKey, type VoiceKey } from '@/lib/voice/scripts';
 import { isDimRectInstructable } from './tests/antiSaccade/constants';
+import { resolveVisualSearchConfirmMode } from './tests/visualSearch/constants';
 import type { GuideStep } from './types';
 import type { TestResultPayload } from './types';
 
@@ -250,14 +251,23 @@ export default function GuidePracticeTestFlow({
   /** Stable — RealTestIntro drives its countdown from this in an effect. */
   const handleStartRealTest = useCallback(() => setPhase('test'), []);
 
-  // anti_saccade is the one test whose main instructions change with config:
-  // once the dim rectangle is too faint to meaningfully follow, the clip
-  // that says "look at the dim shape" would be describing something the
-  // participant cannot actually see. See antiSaccade/constants.ts.
+  // Two tests whose main instructions change with config, both because the
+  // gesture that confirms a target isn't fixed:
+  //  - anti_saccade: once the dim rectangle is too faint to meaningfully
+  //    follow, the clip that says "look at the dim shape" would be
+  //    describing something the participant cannot actually see.
+  //  - visual_search: a number is confirmed by gaze-dwell, a click, or a
+  //    click-and-hold depending on confirmMode, and only one of those
+  //    matches what the clip should tell someone to do. See
+  //    tests/visualSearch/constants.ts.
   const voiceKey: VoiceKey | null =
     testId === 'anti_saccade' && !isDimRectInstructable(config)
       ? 'neuro.anti_saccade.no_dim'
-      : neuroTestVoiceKey(testId);
+      : testId === 'visual_search' && resolveVisualSearchConfirmMode(config) === 'click'
+        ? 'neuro.visual_search.click'
+        : testId === 'visual_search' && resolveVisualSearchConfirmMode(config) === 'hold'
+          ? 'neuro.visual_search.hold'
+          : neuroTestVoiceKey(testId);
 
   // A short reminder during the task itself. Only the longer tests run past
   // one interval, which is the point: the short ones are never interrupted.

@@ -17,7 +17,8 @@ import { HEAD_ORIENTATION_GUIDE_STEPS } from '@/components/neurological/tests/he
 import VisualSearchTest from '@/components/neurological/tests/visualSearch/VisualSearchTest';
 import VisualSearchPractice from '@/components/neurological/tests/visualSearch/VisualSearchPractice';
 import {
-  VISUAL_SEARCH_GUIDE_STEPS,
+  getVisualSearchGuideSteps,
+  resolveVisualSearchConfirmMode,
   DEFAULT_NUMBER_COUNT,
   DEFAULT_AOI_RADIUS_PX,
   PRACTICE_COUNT,
@@ -276,6 +277,22 @@ export default function NeurologicalFlowSection({
     }),
   };
 
+  // Same reasoning as antiSaccadeConfig above, for confirmMode: guide steps,
+  // the spoken instructions, and the live test/practice screens all read
+  // this one resolved config, so none of them can describe a gesture
+  // ("hold it until it turns green") the configured mode doesn't actually
+  // use.
+  const visualSearchConfig: Record<string, unknown> = {
+    ...globalParams,
+    ...((neuroConfigSnapshot?.testParameters?.visual_search as Record<string, unknown>) ?? {
+      numberCount: DEFAULT_NUMBER_COUNT,
+      practiceCount: PRACTICE_COUNT,
+      aoiRadiusPx: DEFAULT_AOI_RADIUS_PX,
+      confirmMode: DEFAULT_CONFIRM_MODE,
+      clickHoldDurationMs: DEFAULT_CLICK_HOLD_DURATION_MS,
+    }),
+  };
+
   return (
     <>
       {status === 'NEURO_FLOW' && neuroRunStatus === 'creating' && (
@@ -319,21 +336,12 @@ export default function NeurologicalFlowSection({
           <GuidePracticeTestFlow
             testId="visual_search"
             testLabel={TEST_LABELS.visual_search}
-            guideSteps={VISUAL_SEARCH_GUIDE_STEPS}
+            guideSteps={getVisualSearchGuideSteps(resolveVisualSearchConfirmMode(visualSearchConfig))}
             enablePractice={!quickMode}
             practiceContent={(cfg) => <VisualSearchPractice config={cfg} />}
             practiceTitle="Visual Search"
             testContent={<VisualSearchTest />}
-            config={{
-              ...globalParams,
-              ...((neuroConfigSnapshot?.testParameters?.visual_search as Record<string, unknown>) ?? {
-                numberCount: DEFAULT_NUMBER_COUNT,
-                practiceCount: PRACTICE_COUNT,
-                aoiRadiusPx: DEFAULT_AOI_RADIUS_PX,
-                confirmMode: DEFAULT_CONFIRM_MODE,
-                clickHoldDurationMs: DEFAULT_CLICK_HOLD_DURATION_MS,
-              }),
-            }}
+            config={visualSearchConfig}
             {...flowPropsFor('visual_search')}
           />
         </NeuroGazeProvider>

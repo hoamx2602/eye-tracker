@@ -194,15 +194,41 @@ export const VOICE_SCRIPTS = {
       'and keep your eyes on the screen as you turn.',
     cue: 'Hold your head in that position until the instruction changes.',
   },
+  // Three variants below, one per confirmMode (see
+  // resolveVisualSearchConfirmMode in tests/visualSearch/constants.ts) — the
+  // gesture that actually confirms a number is different in each, and
+  // describing the wrong one sets an expectation the task then doesn't meet.
+  // GuidePracticeTestFlow picks the one matching the live config, the same
+  // way it already does for anti-saccade's dim-rectangle variant.
   'neuro.visual_search': {
     text:
       'Visual search. Numbers will appear scattered across the screen. ' +
-      'Your task is to find them and look at them in order — one, then two, then three, and so on. ' +
-      'Hold each number for a moment until it turns green, then move on. ' +
+      'Your task is to find them and keep your gaze on them in order — one, then two, then three, and so on. ' +
+      'Hold your gaze on each number for a moment until it turns green, then move on. ' +
       'They only respond in the right order, so if one does nothing, it is not the next one yet. ' +
       'Move your eyes only, keeping your head still. ' +
       'The test ends by itself once the last number is green.',
-    cue: 'Keep looking for the next number in order, and hold your gaze on it.',
+    cue: 'Keep your gaze on the next number in order, and hold it there.',
+  },
+  'neuro.visual_search.click': {
+    text:
+      'Visual search. Numbers will appear scattered across the screen. ' +
+      'Your task is to find them in order — one, then two, then three, and so on. ' +
+      'Keep your gaze on each number, then click it to confirm and move to the next. ' +
+      'They only respond in the right order, so if a click does nothing, it is not the next one yet. ' +
+      'Move your eyes only, keeping your head still. ' +
+      'The test ends by itself once the last number is green.',
+    cue: 'Keep your gaze on the next number in order, then click it.',
+  },
+  'neuro.visual_search.hold': {
+    text:
+      'Visual search. Numbers will appear scattered across the screen. ' +
+      'Your task is to find them in order — one, then two, then three, and so on. ' +
+      'Keep your gaze on each number, then click and hold it until it turns green to confirm and move to the next. ' +
+      'They only respond in the right order, so if one does nothing, it is not the next one yet. ' +
+      'Move your eyes only, keeping your head still. ' +
+      'The test ends by itself once the last number is green.',
+    cue: 'Keep your gaze on the next number in order, then click and hold it.',
   },
   // Played immediately when a number is pressed out of order — alongside the
   // existing red flash on the target itself, which says something went wrong
