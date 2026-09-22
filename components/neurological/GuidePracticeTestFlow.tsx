@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import GuideSteps from './GuideSteps';
 import PracticeGate from './PracticeGate';
 import RealTestIntro from './RealTestIntro';
@@ -85,6 +85,16 @@ export type GuidePracticeTestFlowProps = {
    * arbitrary point."
    */
   initialPhase?: 'test';
+  /**
+   * Fires whenever the post-test break/review screen (pendingPayload !== null
+   * — the test's trials are done, its result is already banked, and the
+   * participant is just resting or answering the check-in) opens or closes.
+   * Lets App.tsx tell a head-position interruption apart from "still
+   * collecting data" — nothing is being recorded once this test has reached
+   * its break, so there is nothing left to protect by sending the
+   * participant through a redo of a test that already finished.
+   */
+  onBreakActiveChange?: (active: boolean) => void;
 };
 
 /** Single star-row used inside the inline post-test overlay. */
@@ -161,10 +171,21 @@ export default function GuidePracticeTestFlow({
   saving = false,
   repeatCue = true,
   initialPhase,
+  onBreakActiveChange,
 }: GuidePracticeTestFlowProps) {
   const [phase, setPhase] = useState<GuidePracticeTestFlowPhase>(initialPhase ?? 'guide');
   const [pendingPayload, setPendingPayload] = useState<TestResultPayload | null>(null);
   const [testRunKey, setTestRunKey] = useState(0);
+
+  const onBreakActiveChangeRef = useRef(onBreakActiveChange);
+  onBreakActiveChangeRef.current = onBreakActiveChange;
+  useEffect(() => {
+    onBreakActiveChangeRef.current?.(pendingPayload !== null);
+    // Also clear on unmount — a head-position interruption unmounts this
+    // component mid-break just as easily as mid-trial, and the flag must
+    // not be left set for whatever mounts next.
+    return () => onBreakActiveChangeRef.current?.(false);
+  }, [pendingPayload]);
 
   // Inline self-assessment state — reset when test restarts
   const [focusRating, setFocusRating] = useState<number | null>(null);

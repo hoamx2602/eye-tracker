@@ -158,6 +158,8 @@ type NeurologicalFlowSectionProps = {
   onTestComplete: (testId: string, payload: TestResultPayload) => void;
   /** Banks a finished test while the participant is on the break screen. */
   onTestResultReady?: (testId: string, payload: TestResultPayload) => void;
+  /** True while the active test's post-test break/review screen is showing — see GuidePracticeTestFlow's onBreakActiveChange. */
+  onBreakActiveChange?: (active: boolean) => void;
   /** Progress of that early save. */
   testSaveState?: 'idle' | 'saving' | 'saved' | 'error';
   /** True while Continue is writing the final result and moving on. */
@@ -193,6 +195,7 @@ export default function NeurologicalFlowSection({
   onPostSubmit,
   onTestComplete,
   onTestResultReady,
+  onBreakActiveChange,
   testSaveState = 'idle',
   isSavingTest = false,
   onDoneBack,
@@ -239,6 +242,7 @@ export default function NeurologicalFlowSection({
       // Resuming this exact test after a head-position interruption: skip
       // the guide and practice, go straight to a fresh 'test' run.
       initialPhase: (neuroResumeTestId === id ? 'test' : undefined) as 'test' | undefined,
+      onBreakActiveChange,
     };
   };
 

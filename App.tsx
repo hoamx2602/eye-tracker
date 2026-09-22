@@ -171,6 +171,15 @@ function App() {
   const lastHeadDebugLogRef = useRef<number>(0);
   const calibrationResumeRef = useRef(false); // true when we returned to HEAD_POSITIONING from CALIBRATION (resume same step)
   const headInvalidSinceRef = useRef<number | null>(null); // debounce: head invalid start time
+  /**
+   * True while the active neuro test's post-test break/review screen is
+   * showing — its trials are done and its result is already banked, so
+   * there is nothing left being recorded. Set from GuidePracticeTestFlow's
+   * onBreakActiveChange. A head-position interruption here would unmount
+   * that break screen along with everything else and force a full redo of
+   * a test that had already finished — worse than not checking at all.
+   */
+  const neuroTestBreakActiveRef = useRef(false);
   
   const hybridRegressorRef = useRef<HybridRegressor>(new HybridRegressor());
   const [calibPhase, setCalibPhase] = useState<CalibrationPhase>(CalibrationPhase.INITIAL_MAPPING);
@@ -1146,10 +1155,18 @@ function App() {
               // validateHeadPosition's centring and tilt checks read as
               // "invalid". Triggering on that would fire the instant the
               // participant does what the test just asked them to do.
+              //
+              // Also excluded: the active test's own post-test break screen
+              // (neuroTestBreakActiveRef). Its trials are done and its
+              // result already banked — there is nothing left being
+              // recorded, so interrupting there would only unmount that
+              // break screen and force a full redo of a test that had
+              // already finished, which is worse than not checking at all.
               if (
                 statusRef.current === 'NEURO_FLOW' &&
                 neuroPhaseRef.current === 'tests' &&
                 currentNeuroTestIdRef.current !== 'head_orientation' &&
+                !neuroTestBreakActiveRef.current &&
                 !validation.valid
               ) {
                   if (headInvalidSinceRef.current === null) headInvalidSinceRef.current = now;
@@ -1161,13 +1178,16 @@ function App() {
                   }
               } else if (
                 statusRef.current === 'NEURO_FLOW' &&
-                (validation.valid || currentNeuroTestIdRef.current === 'head_orientation')
+                (validation.valid ||
+                  currentNeuroTestIdRef.current === 'head_orientation' ||
+                  neuroTestBreakActiveRef.current)
               ) {
-                  // Also reset while head_orientation itself is running (not
-                  // just when valid) — otherwise a debounce timer left
-                  // mid-count from the test just before it would carry a
-                  // stale, already-elapsed start time into whatever test
-                  // comes after, skipping that test's own 500ms debounce.
+                  // Also reset while head_orientation is running, or the
+                  // break screen is up (not just when valid) — otherwise a
+                  // debounce timer left mid-count from the test just before
+                  // would carry a stale, already-elapsed start time into
+                  // whatever test comes after, skipping that test's own
+                  // 500ms debounce.
                   headInvalidSinceRef.current = null;
               }
 
@@ -3423,6 +3443,7 @@ function App() {
         onPostSubmit={handlePostSubmitRequested}
         onTestComplete={handleNeuroTestComplete}
         onTestResultReady={handleNeuroTestResultReady}
+        onBreakActiveChange={(active) => { neuroTestBreakActiveRef.current = active; }}
         testSaveState={neuroTestSaveState}
         isSavingTest={isSavingNeuroTest}
         onDoneBack={startRealTimeTracking}
