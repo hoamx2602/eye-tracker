@@ -50,15 +50,27 @@ export async function PATCH(
   try {
     const body = await request.json().catch(() => ({}));
 
-    return await prisma.$transaction(async (tx) => {
+    // Prisma's interactive-transaction default is 5s. calibrationGazeSamples
+    // carries a rawEyeFeatures object per sample now (on top of the
+    // flattened vector) and only grows as a session progresses — at 100+
+    // samples, writing it over this pooler's real latency to eu-west-1
+    // routinely ran past that default, and Prisma kills the transaction
+    // outright (P2028) rather than letting a slow write finish. Every break
+    // was failing to save, silently, the whole time this default stood: the
+    // client treats a break-patch failure as soft (logs and moves on), so
+    // nothing on screen ever said so. 20s matches the client's own patience
+    // threshold for a save (StepBreak's SAVE_WAIT_LIMIT_MS).
+    const txOptions = { timeout: 20_000, maxWait: 10_000 };
+
+    const patchResult = await prisma.$transaction(async (tx) => {
       const existing = await tx.session.findUnique({ where: { id }, select: { status: true } });
-      if (!existing) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+      if (!existing) return { kind: 'not_found' as const };
 
       // Once completed, a session is the record of what actually happened
       // during that assessment. A late break-patch or a retried request
       // arriving after the final save must not reopen or overwrite it.
       if (existing.status === 'completed') {
-        return NextResponse.json({ error: 'Cannot update a completed session' }, { status: 400 });
+        return { kind: 'completed' as const };
       }
 
       const rawConfig = body.config != null && typeof body.config === 'object'
@@ -108,10 +120,23 @@ export async function PATCH(
         });
       }
 
-      const final = await tx.session.findUnique({ where: { id }, include: { testRun: true } });
-      const { testRun, ...rest } = final!;
-      return NextResponse.json({ ...rest, testTrajectories: testRun?.trajectories ?? undefined });
-    });
+      return { kind: 'ok' as const };
+    }, txOptions);
+
+    if (patchResult.kind === 'not_found') {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+    if (patchResult.kind === 'completed') {
+      return NextResponse.json({ error: 'Cannot update a completed session' }, { status: 400 });
+    }
+
+    // Reading the row back to answer the request is not part of what needs
+    // to be atomic — only the check-then-write above does — so it runs as
+    // its own query after the transaction has already committed, rather
+    // than adding a fourth round trip to the window that timeout applies to.
+    const final = await prisma.session.findUnique({ where: { id }, include: { testRun: true } });
+    const { testRun, ...rest } = final!;
+    return NextResponse.json({ ...rest, testTrajectories: testRun?.trajectories ?? undefined });
   } catch (e) {
     console.error('[api/sessions/[id] PATCH]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

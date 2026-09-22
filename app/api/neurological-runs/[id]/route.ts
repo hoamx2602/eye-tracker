@@ -44,21 +44,27 @@ export async function PATCH(
   try {
     const body = await request.json().catch(() => ({}));
 
-    // Start a transaction to ensure atomicity
-    return await prisma.$transaction(async (tx) => {
-      const run = await tx.neurologicalRun.findUnique({ 
+    // Prisma's interactive-transaction default is 5s — was silently blown
+    // past here the same way it was in the sessions PATCH route (see the
+    // comment there): testResults now carries a full gaze/head-pose trace
+    // per test across all seven, several round trips deep in real latency
+    // to eu-west-1. 20s matches the client's own save-patience threshold.
+    const txOptions = { timeout: 20_000, maxWait: 10_000 };
+
+    const patchResult = await prisma.$transaction(async (tx) => {
+      const run = await tx.neurologicalRun.findUnique({
         where: { id },
-        select: { status: true } 
+        select: { status: true }
       });
 
       if (!run) {
-        return NextResponse.json({ error: 'Run not found' }, { status: 404 });
+        return { kind: 'not_found' as const };
       }
 
       // Safeguard: Prevent updates to completed or abandoned runs
       // (Except for certain status transitions if needed, but here we enforce finality)
       if (run.status === 'completed' || run.status === 'abandoned') {
-        return NextResponse.json({ error: `Cannot update a ${run.status} run` }, { status: 400 });
+        return { kind: 'finalized' as const, status: run.status };
       }
 
       const updateData: any = {};
@@ -87,9 +93,21 @@ export async function PATCH(
         `;
       }
 
-      const finalRun = await tx.neurologicalRun.findUnique({ where: { id } });
-      return NextResponse.json(finalRun);
-    });
+      return { kind: 'ok' as const };
+    }, txOptions);
+
+    if (patchResult.kind === 'not_found') {
+      return NextResponse.json({ error: 'Run not found' }, { status: 404 });
+    }
+    if (patchResult.kind === 'finalized') {
+      return NextResponse.json({ error: `Cannot update a ${patchResult.status} run` }, { status: 400 });
+    }
+
+    // Same reasoning as the sessions route: this read is only for the
+    // response, not part of what needed to be atomic, so it runs after the
+    // transaction has already committed rather than inside its timeout.
+    const finalRun = await prisma.neurologicalRun.findUnique({ where: { id } });
+    return NextResponse.json(finalRun);
   } catch (e) {
     console.error('[api/neurological-runs PATCH]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
