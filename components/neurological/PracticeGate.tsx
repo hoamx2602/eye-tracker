@@ -125,7 +125,7 @@ export default function PracticeGate({
                 screen at all.
               */}
               <span className="text-2xl leading-none animate-bounce" aria-hidden>
-                👆
+                👇
               </span>
               <div className="relative">
                 <span
@@ -143,9 +143,6 @@ export default function PracticeGate({
                   </span>
                 </button>
               </div>
-              <p className="text-xs text-gray-500">
-                Practice as long as you like. The real test begins only when you press this.
-              </p>
             </div>
           </BottomActionBar>
         )}

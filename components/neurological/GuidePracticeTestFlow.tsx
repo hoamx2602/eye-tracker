@@ -24,9 +24,16 @@ const IN_TEST_CUE_INTERVAL_MS = 30000;
  * bright shape, and a participant who drifts for a few trials produces errors
  * that look like an impairment rather than a lapse in attention. It is
  * reminded far more often than the rest.
+ *
+ * Visual search has its own reason: the rule ("in ascending order") is easy
+ * to forget once a participant is absorbed in scanning for the next number,
+ * and at the default 30s interval the real test ran essentially silent —
+ * the on-error clip (neuro.visual_search.wrong_order) only fires after they
+ * have already gotten one wrong.
  */
 const CUE_INTERVAL_OVERRIDES_MS: Record<string, number> = {
   anti_saccade: 5000,
+  visual_search: 5000,
 };
 
 /** Self-assessment config passed down from admin config snapshot. */
