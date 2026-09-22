@@ -38,14 +38,21 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
       <div className="border-b border-gray-800/60">
         <div className="mx-auto max-w-4xl flex items-center gap-3 px-4 py-3">
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
-            <svg viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.5" className="w-4 h-4">
-              <circle cx="10" cy="10" r="8" />
-              <circle cx="10" cy="10" r="3.5" />
-              <circle cx="10" cy="10" r="1" fill="white" stroke="none" />
-            </svg>
-          </div>
-          <span className="text-sm font-semibold text-white">Eye Assessment</span>
+          {/*
+            This page only ever renders for a run the server has already
+            confirmed is 'completed' (see page.tsx) — there is nothing left
+            to lose by leaving, so this is a plain link, not a guarded one.
+          */}
+          <Link href="/" className="flex items-center gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400">
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+              <svg viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.5" className="w-4 h-4">
+                <circle cx="10" cy="10" r="8" />
+                <circle cx="10" cy="10" r="3.5" />
+                <circle cx="10" cy="10" r="1" fill="white" stroke="none" />
+              </svg>
+            </div>
+            <span className="text-sm font-semibold text-white">Eye Assessment</span>
+          </Link>
           {REALTIME_TRACKING_LINK_ENABLED && (
             <Link
               href={`/tracking?sessionId=${runData.session.id}`}

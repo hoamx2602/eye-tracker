@@ -109,6 +109,12 @@ type AppMainOverlaysProps = {
   stepSaveError?: string | null;
   onAssessmentContinue?: () => void;
   onAssessmentRedo?: () => void;
+  /**
+   * Manual retry for the calibration save badge — shown during the neuro
+   * flow while the final calibration write (started in the background so
+   * the participant isn't stuck waiting for it) is still pending or failed.
+   */
+  onRetryCalibrationSave?: () => void;
 };
 
 export default function AppMainOverlays(props: AppMainOverlaysProps) {
@@ -180,6 +186,7 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
     stepSaveError,
     onAssessmentContinue,
     onAssessmentRedo,
+    onRetryCalibrationSave,
   } = props;
 
   const [focusRating, setFocusRating] = useState<number | null>(null);
@@ -506,6 +513,45 @@ export default function AppMainOverlays(props: AppMainOverlaysProps) {
             </div>
           )}
         </StepBreak>
+      )}
+
+      {/*
+        Calibration's final save now happens in the background once the neuro
+        flow has already started (see completeCalibrationAndStartTracking) —
+        this is the only surface that says so. 'saving' is expected and
+        usually brief; 'error' means the automatic retries were exhausted and
+        needs a person to notice, hence the Retry button rather than silent
+        best-effort like the break-time image uploads.
+      */}
+      {status === 'NEURO_FLOW' && (sessionSaveStatus === 'saving' || sessionSaveStatus === 'error') && (
+        <div
+          className={`fixed bottom-4 left-4 z-[190] flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs font-medium shadow-lg backdrop-blur-sm ${
+            sessionSaveStatus === 'error'
+              ? 'bg-red-950/90 border-red-700/60 text-red-200'
+              : 'bg-gray-900/90 border-gray-700/60 text-gray-300'
+          }`}
+          role="status"
+        >
+          {sessionSaveStatus === 'saving' ? (
+            <>
+              <span className="w-3.5 h-3.5 rounded-full border-2 border-gray-500 border-t-blue-400 animate-spin shrink-0" aria-hidden />
+              <span>Saving calibration data…</span>
+            </>
+          ) : (
+            <>
+              <span className="max-w-xs">Calibration save failed{sessionSaveError ? `: ${sessionSaveError}` : ''}</span>
+              {onRetryCalibrationSave && (
+                <button
+                  type="button"
+                  onClick={onRetryCalibrationSave}
+                  className="shrink-0 px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold transition"
+                >
+                  Retry
+                </button>
+              )}
+            </>
+          )}
+        </div>
       )}
       </div>
     </div>

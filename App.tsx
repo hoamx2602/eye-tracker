@@ -92,6 +92,26 @@ const NEURO_QUICK_MODE =
     (process.env.NEXT_PUBLIC_NEURO_QUICK_MODE ?? '').trim().toLowerCase(),
   );
 
+/** Run up to `concurrency` promises at a time. */
+async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+  const worker = async (): Promise<void> => {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
+  );
+  return results;
+}
+
 function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const debugCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -2308,73 +2328,121 @@ function App() {
     }
   };
 
-  const completeCalibrationAndStartTracking = (errors: number[], testTrajectories?: { patternName: string; points: { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }[] }[]) => {
-    const avgError = errors.length > 0 ? errors.reduce((a, b) => a + b, 0) / errors.length : 0;
-    setAccuracyScore(avgError);
-    const isAccuracyGood = avgError < 300;
-    setLoadingMsg('Saving samples');
-    setStatus('LOADING_MODEL');
+  // --- BACKGROUND CALIBRATION SAVE ---
+  // Uploading the video/images and writing the final session record used to
+  // block the transition into the neuro flow. On a real participant's
+  // connection that PATCH alone measured several seconds (see the earlier
+  // payload-size/latency investigation) — time spent staring at "Saving
+  // samples" for no reason: the session row already exists
+  // (ensureSessionCreated ran right after demographics) and the gaze model
+  // is already trained in memory, so nothing the neuro flow itself needs
+  // depends on this finishing. completeCalibrationAndStartTracking now moves
+  // on as soon as it has a session id, and everything below runs in the
+  // background, reporting through sessionSaveStatus/sessionSaveError — shown
+  // as a small non-blocking badge during the neuro flow (CalibrationSaveBadge
+  // in AppMainOverlays) instead of a screen that blocks the participant.
 
-    // Captured now, before stopVideoRecordingAndGetBlob() runs below — the
-    // camera is still attached to videoRef at this exact point, which is the
-    // only reliable moment left to read its real resolution.
-    const deviceInfo = buildDeviceInfo();
+  type CalibrationUploadParams = {
+    videoBlob: Blob | null;
+    offlineGazeReport: OfflineGazeProcessResponse | null;
+    errors: number[];
+    avgError: number;
+    testTrajectories?: { patternName: string; points: { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }[] }[];
+    deviceInfo: Record<string, unknown>;
+    sessionOwner: UploadOwner | null;
+    timestamp: number;
+  };
 
-    (async () => {
+  /** What's left once media is uploaded — small enough to retry on its own without re-sending video/images. */
+  const pendingFinalSaveRef = useRef<{
+    payload: CreateSessionPayload;
+    counts: { samples: number; images: number };
+  } | null>(null);
+  /** Original params, kept so a retry can redo the upload too, if that (not just the write) is what actually failed. */
+  const backgroundSaveParamsRef = useRef<CalibrationUploadParams | null>(null);
+
+  /**
+   * Write pendingFinalSaveRef's payload, retrying automatically twice.
+   * `mode: 'blocking'` additionally loops on a confirm() dialog until it
+   * succeeds or the participant gives up — the original behavior, kept for
+   * the rare case there is still no session id to move on into. `'background'`
+   * gives up quietly after the automatic retries and leaves the failure
+   * visible in sessionSaveStatus/sessionSaveError for the badge's Retry button.
+   */
+  const persistPendingCalibrationSave = useCallback(
+    async (mode: 'background' | 'blocking'): Promise<{ id: string } | null> => {
+      const pending = pendingFinalSaveRef.current;
+      if (!pending) return null;
       setSessionSaveStatus('saving');
       setSessionSaveError(null);
 
-      /** Run up to `concurrency` promises at a time. */
-      const runWithConcurrency = async <T, R>(
-        items: T[],
-        concurrency: number,
-        fn: (item: T, index: number) => Promise<R>
-      ): Promise<R[]> => {
-        const results: R[] = new Array(items.length);
-        let index = 0;
-        const worker = async (): Promise<void> => {
-          while (index < items.length) {
-            const i = index++;
-            results[i] = await fn(items[i], i);
-          }
-        };
-        await Promise.all(
-          Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
-        );
-        return results;
+      const attempt = async (): Promise<{ id: string }> => {
+        const id = sessionIdRef.current ?? (await ensureSessionCreated());
+        return id ? sessionsApi.update(id, pending.payload) : sessionsApi.create(pending.payload);
       };
 
-      try {
-        const videoBlob = await stopVideoRecordingAndGetBlob();
-        maybeExportOfflineMeta(videoBlob);   // ?exportMeta=1 → local video+meta.json for offline reprocess
-        let offlineGazeReport: OfflineGazeProcessResponse | null = null;
-        if (offlineHandlingEnabled()) {
-          if (!videoBlob || videoBlob.size === 0) {
-            throw new Error('Offline handling is enabled, but no calibration video was recorded.');
+      const RETRY_DELAYS_MS = [1500, 4000];
+      let created: { id: string } | null = null;
+      let lastErr: unknown = null;
+      for (let i = 0; !created && i <= RETRY_DELAYS_MS.length; i++) {
+        try {
+          created = await attempt();
+        } catch (e) {
+          lastErr = e;
+          if (i < RETRY_DELAYS_MS.length) {
+            if (mode === 'blocking') {
+              setLoadingMsg(`Connection trouble — retrying save (${i + 1}/${RETRY_DELAYS_MS.length})…`);
+            }
+            await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[i]));
           }
-          const offlineMeta = buildOfflineSessionMeta();
-          setLoadingMsg(`Processing gaze offline on ${offlineBackendUrl()}…`);
-          console.log('[offline] sending calibration video + metadata to gaze backend', {
-            backend: offlineBackendUrl(),
-            videoBytes: videoBlob.size,
-            calibrationDots: offlineMeta.calibration_dots.length,
-            validationDots: offlineMeta.validation_dots.length,
-          });
-          offlineGazeReport = await processOfflineGaze(videoBlob, offlineMeta);
-          const offlineValidation = offlineGazeReport.validation;
-          const offlineMsg = offlineValidation
-            ? `Offline processing complete: ${offlineValidation.overall_deg.toFixed(2)}° validation error`
-            : `Offline processing complete: ${Math.round(offlineGazeReport.calibration_loocv_px)}px LOOCV`;
-          setLoadingMsg(offlineMsg);
-          console.log('[offline] gaze backend report', offlineGazeReport);
         }
+      }
+
+      if (!created && mode === 'blocking') {
+        while (!created) {
+          const reason = lastErr instanceof Error ? lastErr.message : String(lastErr);
+          const savedSoFar = sessionIdRef.current
+            ? 'Everything up to the last break is already saved — only this final step failed.'
+            : 'Nothing has been saved yet for this session.';
+          const tryAgain =
+            typeof window !== 'undefined' &&
+            window.confirm(`Could not save: ${reason}\n\n${savedSoFar}\n\nCheck the connection and retry?`);
+          if (!tryAgain) {
+            setSessionSaveStatus('error');
+            setSessionSaveError(reason);
+            return null;
+          }
+          try {
+            created = await attempt();
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+      }
+
+      if (!created) {
+        const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+        setSessionSaveStatus('error');
+        setSessionSaveError(msg);
+        return null;
+      }
+
+      pendingFinalSaveRef.current = null;
+      backgroundSaveParamsRef.current = null;
+      setLastSavedCounts(pending.counts);
+      setSessionSaveStatus('saved');
+      return created;
+    },
+    [ensureSessionCreated]
+  );
+
+  /** Upload the calibration video + images, build the final payload, then persist it. */
+  const uploadAndPersistCalibration = useCallback(
+    async (params: CalibrationUploadParams, mode: 'background' | 'blocking'): Promise<{ id: string } | null> => {
+      const { videoBlob, offlineGazeReport, errors, avgError, testTrajectories, deviceInfo, sessionOwner, timestamp } = params;
+      try {
         const gridImageCount = calibrationImagesRef.current.length;
         const samples = trainingSamplesRef.current;
-        const timestamp = Date.now();
-
-        // Build list of image uploads: { sampleIndex, blob }.
-        // Anything already sent during a break is skipped — usually that is
-        // everything, which is what keeps this final wait short.
         const imageUploads: { sampleIndex: number; blob: Blob }[] = [];
         for (let i = 0; i < samples.length; i++) {
           if (uploadedImageUrlsRef.current.has(i)) continue;
@@ -2384,28 +2452,7 @@ function App() {
           if (blob) imageUploads.push({ sampleIndex: i, blob });
         }
 
-        // Upload video and all images in parallel (images with concurrency limit 6)
         const IMAGE_CONCURRENCY = 6;
-
-        // Same session id the streaming uploader was validated against (or,
-        // in the rare case that hadn't resolved yet at recording start, the
-        // first chance to get one) — every upload below needs it as proof of
-        // ownership. If it's genuinely unavailable, there is no valid owner
-        // to upload against, so these are skipped rather than sent with a
-        // null id the server would just reject.
-        const ownerSessionId = sessionIdRef.current ?? (await ensureSessionCreated());
-        const sessionOwner: UploadOwner | null = ownerSessionId
-          ? { type: 'session', id: ownerSessionId }
-          : null;
-
-        /**
-         * Close off the streaming upload that has been running since recording
-         * began. Only the tail is still outstanding, so this is normally quick.
-         *
-         * If that upload failed at any point — no S3 CORS for ETag, a dropped
-         * connection, an older deployment without the multipart route — it
-         * returns null and we send the whole blob the original way instead.
-         */
         const finishVideoUpload = async (): Promise<string | null> => {
           if (!videoBlob || videoBlob.size === 0) return null;
           const uploader = videoUploaderRef.current;
@@ -2413,7 +2460,7 @@ function App() {
           if (uploader) {
             const streamedUrl = await uploader.finish();
             if (streamedUrl) return streamedUrl;
-            setLoadingMsg('Uploading calibration video…');
+            if (mode === 'blocking') setLoadingMsg('Uploading calibration video…');
           }
           if (!sessionOwner) return null;
           return uploadApi.uploadBlob(videoBlob, `calibration-${timestamp}.webm`, 'video/webm', sessionOwner);
@@ -2487,63 +2534,123 @@ function App() {
           calibrationMeta: buildOfflineSessionMeta() as unknown as Record<string, unknown>,
         };
 
-        // The media is already uploaded by this point — what is left is one
-        // small JSON write. That makes it cheap and safe to retry on its own,
-        // unlike re-running the uploads above, so a transient network blip
-        // right here does not have to cost the whole session.
-        const persistFinalSession = async (): Promise<{ id: string }> => {
-          const id = sessionIdRef.current ?? (await ensureSessionCreated());
-          return id ? sessionsApi.update(id, finalPayload) : sessionsApi.create(finalPayload);
-        };
-
-        const RETRY_DELAYS_MS = [1500, 4000];
-        let created: { id: string } | null = null;
-        let lastErr: unknown = null;
-        for (let attempt = 0; !created && attempt <= RETRY_DELAYS_MS.length; attempt++) {
-          try {
-            created = await persistFinalSession();
-          } catch (e) {
-            lastErr = e;
-            if (attempt < RETRY_DELAYS_MS.length) {
-              setLoadingMsg(`Connection trouble — retrying save (${attempt + 1}/${RETRY_DELAYS_MS.length})…`);
-              await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
-            }
-          }
-        }
-        // Automatic retries exhausted. Everything up to the last break is
-        // already on the server (that is the whole point of patching at every
-        // break) — so this is never "start over", only "try this last write
-        // again" — worth putting to the participant/researcher rather than
-        // giving up on data that mostly already made it.
-        while (!created) {
-          const reason = lastErr instanceof Error ? lastErr.message : String(lastErr);
+        pendingFinalSaveRef.current = { payload: finalPayload, counts: { samples: sampleCount, images: imageCount } };
+        return await persistPendingCalibrationSave(mode);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setSessionSaveStatus('error');
+        setSessionSaveError(msg);
+        if (mode === 'blocking') {
           const savedSoFar = sessionIdRef.current
-            ? 'Everything up to the last break is already saved — only this final step failed.'
-            : 'Nothing has been saved yet for this session.';
-          const tryAgain =
-            typeof window !== 'undefined' &&
-            window.confirm(`Could not save: ${reason}\n\n${savedSoFar}\n\nCheck the connection and retry?`);
-          if (!tryAgain) throw lastErr ?? new Error('Save cancelled');
-          try {
-            created = await persistFinalSession();
-          } catch (e) {
-            lastErr = e;
+            ? '\n\nThe good news: everything up to the last break was already saved before this happened — only the video/image upload or final write failed.'
+            : '\n\nNothing was saved for this session.';
+          alert(`Could not save session: ${msg}${savedSoFar}\n\n• Run "npm run dev" (Next.js) — API runs on same origin, no env needed.\n• On Vercel: do not set NEXT_PUBLIC_API_URL (same domain). Configure S3 bucket CORS: add app domain to AllowedOrigins, AllowedMethods: PUT, GET.\n• Ensure DB and S3 env vars are set correctly on Vercel.`);
+        }
+        return null;
+      }
+    },
+    [buildCalibrationSamplesPayload, persistPendingCalibrationSave]
+  );
+
+  /** Manual retry for the badge shown during the neuro flow while a background save is pending/failed. */
+  const retryBackgroundCalibrationSave = useCallback(async () => {
+    if (pendingFinalSaveRef.current) {
+      await persistPendingCalibrationSave('background');
+    } else if (backgroundSaveParamsRef.current) {
+      await uploadAndPersistCalibration(backgroundSaveParamsRef.current, 'background');
+    }
+  }, [persistPendingCalibrationSave, uploadAndPersistCalibration]);
+
+  const completeCalibrationAndStartTracking = (errors: number[], testTrajectories?: { patternName: string; points: { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number }[] }[]) => {
+    const avgError = errors.length > 0 ? errors.reduce((a, b) => a + b, 0) / errors.length : 0;
+    setAccuracyScore(avgError);
+    const isAccuracyGood = avgError < 300;
+    setLoadingMsg('Saving samples');
+    setStatus('LOADING_MODEL');
+
+    // Captured now, before stopVideoRecordingAndGetBlob() runs below — the
+    // camera is still attached to videoRef at this exact point, which is the
+    // only reliable moment left to read its real resolution.
+    const deviceInfo = buildDeviceInfo();
+
+    (async () => {
+      setSessionSaveStatus('saving');
+      setSessionSaveError(null);
+
+      try {
+        const videoBlob = await stopVideoRecordingAndGetBlob();
+        maybeExportOfflineMeta(videoBlob);   // ?exportMeta=1 → local video+meta.json for offline reprocess
+        let offlineGazeReport: OfflineGazeProcessResponse | null = null;
+        if (offlineHandlingEnabled()) {
+          if (!videoBlob || videoBlob.size === 0) {
+            throw new Error('Offline handling is enabled, but no calibration video was recorded.');
           }
+          const offlineMeta = buildOfflineSessionMeta();
+          setLoadingMsg(`Processing gaze offline on ${offlineBackendUrl()}…`);
+          console.log('[offline] sending calibration video + metadata to gaze backend', {
+            backend: offlineBackendUrl(),
+            videoBytes: videoBlob.size,
+            calibrationDots: offlineMeta.calibration_dots.length,
+            validationDots: offlineMeta.validation_dots.length,
+          });
+          offlineGazeReport = await processOfflineGaze(videoBlob, offlineMeta);
+          const offlineValidation = offlineGazeReport.validation;
+          const offlineMsg = offlineValidation
+            ? `Offline processing complete: ${offlineValidation.overall_deg.toFixed(2)}° validation error`
+            : `Offline processing complete: ${Math.round(offlineGazeReport.calibration_loocv_px)}px LOOCV`;
+          setLoadingMsg(offlineMsg);
+          console.log('[offline] gaze backend report', offlineGazeReport);
         }
 
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[Session save] Saved session:', created.id);
-        }
-        setLastSavedCounts({ samples: sampleCount, images: imageCount });
-        setSessionSaveStatus('saved');
+        const timestamp = Date.now();
+        // Same session id the streaming uploader was validated against (or,
+        // in the rare case that hadn't resolved yet at recording start, the
+        // first chance to get one) — every upload below needs it as proof of
+        // ownership, and it is also what tells us whether we can move on
+        // into the neuro flow right now (fast path) or have to wait for one
+        // to exist first (slow path — see below).
+        const ownerSessionId = sessionIdRef.current ?? (await ensureSessionCreated());
+        const sessionOwner: UploadOwner | null = ownerSessionId
+          ? { type: 'session', id: ownerSessionId }
+          : null;
+
         const statusMsg = isAccuracyGood
           ? `Calibration Success! Mean Error: ${Math.round(avgError)}px`
           : errors.length > 0 ? `Calibration Complete (Accuracy: ${Math.round(avgError)}px)` : 'Calibration complete (test mode)';
+
+        const uploadParams: CalibrationUploadParams = {
+          videoBlob, offlineGazeReport, errors, avgError, testTrajectories, deviceInfo, sessionOwner, timestamp,
+        };
+
+        if (ownerSessionId) {
+          // FAST PATH — the session row already exists and the gaze model is
+          // already trained in memory, so nothing about starting the neuro
+          // flow depends on the upload below finishing. Move on now; the
+          // upload + final write keep going in the background (see
+          // uploadAndPersistCalibration above).
+          setLoadingMsg(statusMsg);
+          backgroundSaveParamsRef.current = uploadParams;
+          setTimeout(() => {
+            pathSyncSourceRef.current = 'internal';
+            setCreatedSessionId(ownerSessionId);
+            handleChooseNeurological(ownerSessionId);
+          }, 600);
+          void uploadAndPersistCalibration(uploadParams, 'background');
+          return;
+        }
+
+        // SLOW PATH — no session id anywhere yet (the early create right
+        // after demographics never landed, and retrying it here also
+        // failed). There is nothing to move on into without one, so this
+        // stays fully blocking: wait for the upload, retry the final write
+        // with a confirm() if it keeps failing, and only then transition —
+        // the original behavior, for what should be a rare case.
+        const created = await uploadAndPersistCalibration(uploadParams, 'blocking');
+        if (!created) return; // already alerted / confirm()-declined inside
         setLoadingMsg(statusMsg);
         setTimeout(() => {
           pathSyncSourceRef.current = 'internal';
           setCreatedSessionId(created.id);
-          // Auto-start neurological flow instead of showing choice screen
           handleChooseNeurological(created.id);
         }, 1200);
       } catch (e) {
@@ -3607,6 +3714,7 @@ function App() {
                 setExerciseRetryCount(c => c + 1); // unmounts/remounts EyeMovementLayer
             }
         }}
+        onRetryCalibrationSave={() => { void retryBackgroundCalibrationSave(); }}
       />
 
       <NeurologicalFlowSection
