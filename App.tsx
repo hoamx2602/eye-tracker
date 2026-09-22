@@ -65,6 +65,7 @@ import AppMainOverlays from '@/components/AppMainOverlays';
 import { DEFAULT_TEST_ORDER } from '@/lib/neurologicalConfig';
 import { CapturedImage, GazeRecord, VALIDATION_POINTS, generateCalibrationPoints, effectiveCalibrationPointCount, QUICK_CALIBRATION_POINTS, roundedRect } from '@/lib/appHelpers';
 import { CalibrationMetaRecorder, type SessionMeta } from '@/lib/calibrationMeta';
+import { CONSENT_VERSION } from '@/lib/consentText';
 import { ChunkedVideoUploader } from '@/lib/chunkedUpload';
 import { RECORDER_TIMESLICE_MS, VIDEO_BITS_PER_SECOND } from '@/lib/recordingConfig';
 import { isOfflineMetaExportEnabled } from '@/lib/offlineExportMeta';
@@ -143,6 +144,8 @@ function App() {
   const lastNeuroHeadPoseTimeRef = useRef<number>(0);
 
   const demographicsRef = useRef<DemographicsData | null>(null);
+  /** When and to which text version consent was given — set once, at the Agree click. */
+  const consentRef = useRef<{ agreedAt: string; version: string } | null>(null);
 
   // Head Positioning State
   const [headValidation, setHeadValidation] = useState<HeadValidationResult | null>(null);
@@ -1567,6 +1570,39 @@ function App() {
   };
 
   /**
+   * What kind of machine this session's data came from — nothing here is
+   * ever asked of the participant, it is read straight from the browser.
+   *
+   * Worth having once the data is being kept for a future algorithm
+   * revisit: a systematic error that turns out to be one camera resolution,
+   * one OS, or one devicePixelRatio is invisible without it, and there is no
+   * way to go back and ask a past participant what hardware they used.
+   *
+   * Called once early (camera not open yet, so cameraWidth/Height are
+   * absent) and again at the final save, where the camera has definitely
+   * been running for minutes and its real resolution is known.
+   */
+  const buildDeviceInfo = useCallback((): Record<string, unknown> => {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return {};
+    const video = videoRef.current;
+    return {
+      userAgent: navigator.userAgent,
+      language: navigator.language,
+      platform: (navigator as unknown as { userAgentData?: { platform?: string } }).userAgentData?.platform
+        ?? navigator.platform
+        ?? undefined,
+      screenWidthPx: window.screen?.width,
+      screenHeightPx: window.screen?.height,
+      viewportWidthPx: window.innerWidth,
+      viewportHeightPx: window.innerHeight,
+      devicePixelRatio: window.devicePixelRatio,
+      ...(video && video.videoWidth > 0
+        ? { cameraWidthPx: video.videoWidth, cameraHeightPx: video.videoHeight }
+        : {}),
+    };
+  }, []);
+
+  /**
    * The current calibrationGazeSamples/calibrationImageUrls the server would
    * see if we saved right now — built fresh from whatever has been collected
    * so far. Used both for a break's partial patch and for the final save, so
@@ -1611,7 +1647,11 @@ function App() {
       sessionCreatePromiseRef.current = (async () => {
         try {
           const created = await sessionsApi.create({
-            config: configRef.current as unknown as Record<string, unknown>,
+            config: {
+              ...(configRef.current as unknown as Record<string, unknown>),
+              deviceInfo: buildDeviceInfo(),
+              ...(consentRef.current ? { consent: consentRef.current } : {}),
+            },
             demographics: demographicsRef.current
               ? {
                   ...demographicsRef.current,
@@ -1632,7 +1672,7 @@ function App() {
       })();
     }
     return sessionCreatePromiseRef.current;
-  }, []);
+  }, [buildDeviceInfo]);
 
   /**
    * Patch the session with everything collected so far. Called at every
@@ -1999,6 +2039,11 @@ function App() {
     setLoadingMsg('Saving samples');
     setStatus('LOADING_MODEL');
 
+    // Captured now, before stopVideoRecordingAndGetBlob() runs below — the
+    // camera is still attached to videoRef at this exact point, which is the
+    // only reliable moment left to read its real resolution.
+    const deviceInfo = buildDeviceInfo();
+
     (async () => {
       setSessionSaveStatus('saving');
       setSessionSaveError(null);
@@ -2133,6 +2178,8 @@ function App() {
               },
             } : {}),
             ...(testTrajectories && testTrajectories.length > 0 ? { testTrajectories, isTestSession: true } : {}),
+            deviceInfo,
+            ...(consentRef.current ? { consent: consentRef.current } : {}),
           } as unknown as Record<string, unknown>,
           demographics: demographicsRef.current
             ? { ...demographicsRef.current, age: demographicsRef.current.age === '' ? undefined : demographicsRef.current.age }
@@ -2828,6 +2875,10 @@ function App() {
   };
 
   const handleConsentAgree = () => {
+    // The one moment this is provably true: the participant just clicked
+    // Agree on exactly this text. Recorded, not assumed from the fact the UI
+    // wouldn't let them past without it.
+    consentRef.current = { agreedAt: new Date().toISOString(), version: CONSENT_VERSION };
     pathSyncSourceRef.current = 'internal';
     router.push('/demographics');
   };
@@ -3223,6 +3274,11 @@ function App() {
             setStepSaveState('idle');
             setStepSaveError(null);
             if (currentPending?.type === 'grid') {
+                // The grid's images are already on S3 (uploaded during the break
+                // that just ended) and nothing in Postgres will ever point at
+                // them once this attempt is replaced — clean them up rather
+                // than leave them as orphans for the life of the bucket.
+                void uploadApi.deleteBlobs([...uploadedImageUrlsRef.current.values()]);
                 setCalibPoints(generateCalibrationPoints(
                   NEURO_QUICK_MODE
                     ? QUICK_CALIBRATION_POINTS
@@ -3243,9 +3299,14 @@ function App() {
                 if (trainingSamplesRef.current.length > start) {
                     trainingSamplesRef.current = trainingSamplesRef.current.slice(0, start);
                     setTrainingData([...trainingSamplesRef.current]);
-                    for (const index of [...uploadedImageUrlsRef.current.keys()]) {
-                        if (index >= start) uploadedImageUrlsRef.current.delete(index);
+                    const orphaned: string[] = [];
+                    for (const [index, url] of [...uploadedImageUrlsRef.current.entries()]) {
+                        if (index >= start) {
+                            orphaned.push(url);
+                            uploadedImageUrlsRef.current.delete(index);
+                        }
                     }
+                    void uploadApi.deleteBlobs(orphaned);
                 }
                 exerciseDataRef.current = [];
                 exerciseBlobsRef.current = [];

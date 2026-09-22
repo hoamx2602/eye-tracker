@@ -17,6 +17,15 @@
  * renders `written`.
  */
 
+/**
+ * Bump this whenever the wording below changes in any way that affects what
+ * a participant is actually agreeing to. Recorded on every session at the
+ * moment consent is given — so a change made after data collection starts
+ * can be told apart from the session's own, and it is provable afterwards
+ * that a given participant agreed to this exact text, not a later revision.
+ */
+export const CONSENT_VERSION = '2026-09-22';
+
 export interface ConsentPoint {
   /** First person, shown on screen. */
   written: string;

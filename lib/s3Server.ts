@@ -64,6 +64,24 @@ export function isManagedKey(key: unknown): key is string {
   );
 }
 
+/**
+ * Recover the S3 key from one of our own public object URLs.
+ *
+ * Returns null for anything that isn't actually a key we manage — an
+ * unrelated URL, or a path outside UPLOAD_PREFIX — so a caller can reject it
+ * rather than ask S3 to delete something it was never given permission to
+ * name directly.
+ */
+export function keyFromPublicUrl(url: unknown): string | null {
+  if (typeof url !== 'string') return null;
+  try {
+    const key = decodeURIComponent(new URL(url).pathname.replace(/^\//, ''));
+    return isManagedKey(key) ? key : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The bucket name, or null when the deployment has no S3 configured. */
 export function getBucket(): string | null {
   return process.env.S3_BUCKET || null;

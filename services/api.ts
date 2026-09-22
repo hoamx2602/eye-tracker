@@ -258,4 +258,23 @@ export const uploadApi = {
     }
     return publicUrl;
   },
+
+  /**
+   * Best-effort cleanup for objects already uploaded that a "Try again" is
+   * about to make obsolete. Never throws — a failed cleanup is a few KB of
+   * S3 storage, not a reason to interrupt or alarm the participant.
+   */
+  async deleteBlobs(urls: string[]): Promise<void> {
+    const list = urls.filter((u): u is string => typeof u === 'string' && u.length > 0);
+    if (list.length === 0) return;
+    try {
+      await fetch(`${getBaseUrl()}/api/upload/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls: list }),
+      });
+    } catch (e) {
+      console.warn('[uploadApi.deleteBlobs] cleanup failed, orphaned in S3', e);
+    }
+  },
 };
