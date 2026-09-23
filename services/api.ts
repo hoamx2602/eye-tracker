@@ -3,6 +3,8 @@
  * With next dev / same origin: no env needed. Optional: set NEXT_PUBLIC_API_URL for different host.
  */
 
+import type { SampleQuality } from '../types';
+
 export const getBaseUrl = (): string => {
   if (typeof window === 'undefined') return '';
   try {
@@ -53,7 +55,7 @@ export interface CreateSessionPayload {
     imageUrl?: string | null;
     patternName?: string;
     /** How the sample was collected (fixation / pursuit, frames, precision). See types.ts SampleQuality. */
-    quality?: Record<string, unknown>;
+    quality?: SampleQuality;
   }> | null;
   /** Per-dot video-clock windows for offline reprocessing. See lib/calibrationMeta.ts. */
   calibrationMeta?: Record<string, unknown>;
