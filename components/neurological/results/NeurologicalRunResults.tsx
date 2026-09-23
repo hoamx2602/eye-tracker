@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import SmoothPursuitResultsPreview from './SmoothPursuitResultsPreview';
 import EyeSpinner from '@/components/ui/EyeSpinner';
 import type { TestResultPayload } from '../types';
 import type { AntiSaccadeTrialResult } from '../tests/antiSaccade/AntiSaccadeTest';
@@ -23,6 +24,7 @@ const DEFAULT_ORDER = [
   'memory_cards',
   'anti_saccade',
   'saccadic',
+  'smooth_pursuit',
   'fixation_stability',
   'peripheral_vision',
 ] as const;
@@ -35,6 +37,7 @@ const TEST_LABELS: Record<string, string> = {
   saccadic: 'Saccadic Eye Movement',
   fixation_stability: 'Fixation Stability',
   peripheral_vision: 'Peripheral Vision',
+  smooth_pursuit: 'Smooth Pursuit',
 };
 
 function NeurologicalResultsChartToolbar() {
@@ -241,6 +244,17 @@ function renderTestPanel(testId: string, r: Record<string, unknown>, visualOnly 
         metrics={metrics}
         viewportWidth={r.viewportWidth as number | undefined}
         viewportHeight={r.viewportHeight as number | undefined}
+        visualOnly={visualOnly}
+      />
+    );
+  }
+
+  if (testId === 'smooth_pursuit') {
+    return (
+      <SmoothPursuitResultsPreview
+        gazeSamples={r.gazeSamples as Array<{ t: number; x: number; y: number; targetX: number }> | undefined}
+        metrics={r.metrics as Record<string, number | null> | undefined}
+        viewportWidth={r.viewportWidth as number | undefined}
         visualOnly={visualOnly}
       />
     );

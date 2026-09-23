@@ -77,6 +77,9 @@ export const SEED_BASELINES = {
   // p10 ≈ 2×2° scatter (≈6400 px²), p90 ≈ 4×4° scatter (≈100 000 px²)
   fixation_stability: { p10Bcea95: 6000, p90Bcea95: 100000 },
   peripheral_vision:  { p10RtMs: 200,    p90RtMs: 800 },
+  // Seeds. r² = share of gaze variance explained by the target's sinusoid
+  // (offset- and gain-free); catch-up saccades per second, lower is better.
+  smooth_pursuit:     { p10R2: 0.5, p90R2: 0.95, p10SaccadesPerSec: 0.3, p90SaccadesPerSec: 2.5 },
   anti_saccade:       { p10ErrorDeg: 5,  p90ErrorDeg: 60,
                         // Direction-error rate of the first saccade. Seeds, like the rest:
                         // healthy adults commonly err on ~10–25% of trials.
@@ -413,6 +416,25 @@ export function scorePeripheralVision(
   return Math.round(clamp(accuracyScore + speedScore, 0, 100));
 }
 
+/**
+ * Smooth pursuit: 60% how closely the gaze follows the target's sinusoid (r²),
+ * 40% how rarely it has to jump to catch up. Both come from the per-frame
+ * analysis (lib/oculomotorMetrics.analysePursuit) and ignore calibration
+ * offset; gain is not scored because the webcam mapping itself attenuates it.
+ */
+export function scoreSmoothPursuit(
+  result: Record<string, unknown>,
+  scoringConfig?: ScoringConfig
+): number {
+  const m = (result.metrics ?? {}) as { r2?: number | null; saccadesPerSec?: number | null };
+  if (typeof m.r2 !== 'number') return 0;
+  const follow = p10p90Score(m.r2, getBaseline('smooth_pursuit', 'p10R2', scoringConfig), getBaseline('smooth_pursuit', 'p90R2', scoringConfig));
+  const saccades = typeof m.saccadesPerSec === 'number'
+    ? p10p90Score(m.saccadesPerSec, getBaseline('smooth_pursuit', 'p10SaccadesPerSec', scoringConfig), getBaseline('smooth_pursuit', 'p90SaccadesPerSec', scoringConfig), true)
+    : 50;
+  return Math.round(0.6 * follow + 0.4 * saccades);
+}
+
 // ---------------------------------------------------------------------------
 // Master score dispatcher
 // ---------------------------------------------------------------------------
@@ -433,6 +455,7 @@ export const DOMAIN_NAMES: Record<string, string> = {
   saccadic:           'Saccadic Eye Movement',
   fixation_stability: 'Fixation Stability',
   peripheral_vision:  'Peripheral Vision',
+  smooth_pursuit:     'Smooth Pursuit',
 };
 
 /** Domain icons */
@@ -444,6 +467,7 @@ export const DOMAIN_ICONS: Record<string, string> = {
   saccadic:           '⚡',
   fixation_stability: '🌊',
   peripheral_vision:  '👁',
+  smooth_pursuit:     '〰',
 };
 
 function generateObservation(testId: string, score: number): string {
@@ -479,6 +503,10 @@ function generateObservation(testId: string, score: number): string {
       return high ? 'You detected targets in your peripheral field quickly and accurately.'
         : mid ? 'Your peripheral awareness was in the typical range.'
         : 'Detecting targets in the periphery was more challenging — lighting and fatigue can play a role.';
+    case 'smooth_pursuit':
+      return high ? 'Your eyes followed the moving dot smoothly and closely.'
+        : mid ? 'Your smooth tracking was in the typical range.'
+        : 'Your eyes needed more jumps to keep up with the moving dot — fatigue and test conditions can contribute to this.';
     default:
       return high ? 'Performance was strong in this domain.'
         : mid ? 'Performance was in the typical range.'
@@ -498,6 +526,7 @@ export function computeAllScores(
     'memory_cards',
     'anti_saccade',
     'saccadic',
+    'smooth_pursuit',
     'fixation_stability',
     'peripheral_vision',
   ];
@@ -521,6 +550,7 @@ export function computeAllScores(
       case 'saccadic':           score = scoreSaccadic(result, scoringConfig);          break;
       case 'fixation_stability': score = scoreFixationStability(result, scoringConfig); break;
       case 'peripheral_vision':  score = scorePeripheralVision(result, scoringConfig);  break;
+      case 'smooth_pursuit':     score = scoreSmoothPursuit(result, scoringConfig);     break;
       default:                   score = 0;
     }
 

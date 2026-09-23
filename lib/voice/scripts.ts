@@ -309,6 +309,13 @@ export const VOICE_SCRIPTS = {
       'Move your eyes only, not your head.',
     cue: 'Look at each target as soon as it appears.',
   },
+  'neuro.smooth_pursuit': {
+    text:
+      'Smooth pursuit. A dot will appear in the centre of the screen and then move smoothly from side to side. ' +
+      'Follow it with your eyes as closely as you can, the whole time. ' +
+      'Keep your head still and move only your eyes.',
+    cue: 'Follow the dot with your eyes.',
+  },
   'neuro.fixation_stability': {
     text:
       'Fixation stability. A small dot will appear in the centre of the screen. ' +
@@ -380,6 +387,7 @@ export const VOICE_SCRIPTS = {
   'overview.memory_cards': { text: stepSpokenText('memory_cards') },
   'overview.anti_saccade': { text: stepSpokenText('anti_saccade') },
   'overview.saccadic': { text: stepSpokenText('saccadic') },
+  'overview.smooth_pursuit': { text: stepSpokenText('smooth_pursuit') },
   'overview.fixation_stability': { text: stepSpokenText('fixation_stability') },
   'overview.peripheral_vision': { text: stepSpokenText('peripheral_vision') },
 

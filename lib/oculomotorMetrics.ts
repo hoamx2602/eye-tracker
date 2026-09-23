@@ -313,3 +313,122 @@ export function fixationPrecision(frames: readonly GazeFrame[], t0: number, t1: 
   const r = (x: number) => Math.round(x * 10) / 10;
   return { n, rmsS2SPx: r(Math.sqrt(s2s / (n - 1))), sdXPx: r(sx), sdYPx: r(sy), bcea68Px2: Math.round(bcea(0.68)), bcea95Px2: Math.round(bcea(0.95)) };
 }
+
+export interface PursuitAnalysis {
+  /** Usable frames in the analysed window. */
+  n: number;
+  validFraction: number;
+  /**
+   * Amplitude of the gaze's sinusoid at the target frequency / target
+   * amplitude. On a webcam tracker the mapping itself attenuates (slope
+   * ~0.7–0.8 at validation), so compare gains within a device or against the
+   * participant's own calibration slope, not against the lab value of ~0.9.
+   */
+  gain: number | null;
+  /** How far the gaze trails the target, ms (positive = behind). */
+  phaseLagMs: number | null;
+  /**
+   * Catch-up / intrusive saccades per second: velocity spikes in the residual.
+   * Detection limit at 30 Hz with ~8 px landmark noise (synthetic traces):
+   * steps of ≳90 px after the mapping (~2°) are counted reliably, ~55 px
+   * (~1.5°) only about half the time depending on the noise, ~30 px (~1°)
+   * mostly not. Read it as a count of the larger catch-up saccades.
+   */
+  saccadesPerSec: number | null;
+  /** RMS of gaze minus the fitted sinusoid, px — pursuit noise and saccades. */
+  residualRmsPx: number | null;
+  /** Share of the gaze variance the target sinusoid explains (0–1). */
+  r2: number | null;
+}
+
+/**
+ * Smooth pursuit of a target moving as
+ *   p(t) = centre + amplitude · sin(2π f (t − t0))
+ * along one axis. The gaze is fitted by least squares to
+ *   a·sin + b·cos + c
+ * at the same frequency, which gives the gain (√(a²+b²)/amplitude) and the
+ * phase lag without being moved by a constant offset. Residual velocity
+ * spikes above the trial's own robust noise level are counted as saccades.
+ *
+ * `t0`/`t1` bound the analysed window; leave the first half-cycle out, while
+ * the eye is still catching the target up.
+ */
+export function analysePursuit(
+  frames: readonly GazeFrame[],
+  axis: SaccadeAxis,
+  t0: number,
+  t1: number,
+  motionStart: number,
+  frequencyHz: number,
+  amplitudePx: number,
+): PursuitAnalysis {
+  const inWindow = frames.filter((f) => f.t >= t0 && f.t <= t1);
+  const s = median3(axisSamples(frames, axis, t0, t1));
+  const n = s.length;
+  const validFraction = inWindow.length > 0 ? n / inWindow.length : 0;
+  const empty = { n, validFraction, gain: null, phaseLagMs: null, saccadesPerSec: null, residualRmsPx: null, r2: null };
+  if (n < 20 || validFraction < 0.5) return empty;
+
+  const w = 2 * Math.PI * frequencyHz / 1000; // rad per ms
+  // Normal equations for [sin, cos, 1].
+  const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const v = [0, 0, 0];
+  for (const x of s) {
+    const row = [Math.sin(w * (x.t - motionStart)), Math.cos(w * (x.t - motionStart)), 1];
+    for (let i = 0; i < 3; i++) {
+      v[i] += row[i]! * x.p;
+      for (let j = 0; j < 3; j++) M[i]![j] += row[i]! * row[j]!;
+    }
+  }
+  const coef = solve3(M, v);
+  if (!coef) return empty;
+  const [a, b, c] = coef as [number, number, number];
+  const fitted = s.map((x) => a * Math.sin(w * (x.t - motionStart)) + b * Math.cos(w * (x.t - motionStart)) + c);
+  const resid = s.map((x, i) => x.p - fitted[i]!);
+  const mean = s.reduce((acc, x) => acc + x.p, 0) / n;
+  const ssTot = s.reduce((acc, x) => acc + (x.p - mean) ** 2, 0);
+  const ssRes = resid.reduce((acc, r) => acc + r * r, 0);
+
+  // a·sin(θ) + b·cos(θ) = R·sin(θ + φ): φ < 0 means the gaze trails the target.
+  const phi = Math.atan2(b, a);
+  const lagMs = -phi / w;
+
+  // Saccades: residual velocity spikes above a robust threshold.
+  const rv = velocity(resid.map((p, i) => ({ t: s[i]!.t, p })));
+  const absV = rv.map(Math.abs);
+  const med = median(absV);
+  // k = 5 robust SDs: ~0.03 false saccades/s on noise alone, while a ≥60 px
+  // step is still found (k = 6 misses a quarter of them, k = 4 adds 0.1/s false).
+  const thr = Math.max(med + 5 * 1.4826 * median(absV.map((x) => Math.abs(x - med))), (0.02 * amplitudePx) / 100);
+  let saccades = 0;
+  for (let i = 0; i < absV.length; i++) {
+    if (absV[i]! >= thr && (i === 0 || absV[i - 1]! < thr)) saccades++;
+  }
+  const r = (x: number, d = 10) => Math.round(x * d) / d;
+  return {
+    n,
+    validFraction: r(validFraction, 1000),
+    gain: r(Math.hypot(a, b) / amplitudePx, 1000),
+    phaseLagMs: r(lagMs),
+    saccadesPerSec: r(saccades / ((s[n - 1]!.t - s[0]!.t) / 1000), 100),
+    residualRmsPx: r(Math.sqrt(ssRes / n)),
+    r2: ssTot > 0 ? r(1 - ssRes / ssTot, 1000) : null,
+  };
+}
+
+/** 3×3 linear solve by Gaussian elimination with partial pivoting. */
+function solve3(M: number[][], v: number[]): number[] | null {
+  const A = M.map((row, i) => [...row, v[i]!]);
+  for (let col = 0; col < 3; col++) {
+    let piv = col;
+    for (let r = col + 1; r < 3; r++) if (Math.abs(A[r]![col]!) > Math.abs(A[piv]![col]!)) piv = r;
+    if (Math.abs(A[piv]![col]!) < 1e-9) return null;
+    [A[col], A[piv]] = [A[piv]!, A[col]!];
+    for (let r = 0; r < 3; r++) {
+      if (r === col) continue;
+      const f = A[r]![col]! / A[col]![col]!;
+      for (let k = col; k < 4; k++) A[r]![k] -= f * A[col]![k]!;
+    }
+  }
+  return [A[0]![3]! / A[0]![0]!, A[1]![3]! / A[1]![1]!, A[2]![3]! / A[2]![2]!];
+}

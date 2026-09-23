@@ -8,6 +8,7 @@ export const DEFAULT_TEST_ORDER = [
   'memory_cards',
   'anti_saccade',
   'saccadic',
+  'smooth_pursuit',
   'fixation_stability',
   'peripheral_vision',
 ] as const;
@@ -74,6 +75,15 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     targetDotColor: '#f59e0b',
     gazeSampleIntervalMs: DEFAULT_GAZE_SAMPLE_INTERVAL_MS,
   },
+  smooth_pursuit: {
+    frequencyHz: 0.4,
+    cycles: 5,
+    amplitudeFrac: 0.3,
+    startFixationMs: 1000,
+    dotSizePx: 20,
+    dotColor: '#f59e0b',
+    gazeSampleIntervalMs: DEFAULT_GAZE_SAMPLE_INTERVAL_MS,
+  },
   fixation_stability: {
     durationSec: 15,
     blinkIntervalMs: 600,
@@ -100,6 +110,7 @@ export const DEFAULT_TEST_ENABLED: Record<string, boolean> = {
   memory_cards: true,
   anti_saccade: true,
   saccadic: true,
+  smooth_pursuit: true,
   fixation_stability: true,
   peripheral_vision: true,
 };
@@ -125,6 +136,7 @@ export const QUICK_MODE_TEST_PARAMETERS: Record<string, Record<string, unknown>>
   memory_cards: { cardCount: 2, dwellMs: 300 },
   anti_saccade: { trialCount: 1, intervalBetweenTrialsMs: 200, fixationPauseMs: 200, stepFixationMinMs: 300, stepFixationMaxMs: 300 },
   saccadic: { totalCycles: 1, targetDurationMs: 400 },
+  smooth_pursuit: { cycles: 2 },
   fixation_stability: { durationSec: 1 },       // clamps up to the 5 s floor
   peripheral_vision: { trialCount: 1, minDelayMs: 300, maxDelayMs: 600 },  // clamps up to 8 trials
 };

@@ -9,7 +9,7 @@
  * Usage:  npx tsx scripts/check-oculomotor-metrics.ts
  */
 import { GazeFrameQuality, type GazeFrame } from '../lib/gazeFrameStream';
-import { detectTrialSaccade, fixationPrecision, summariseSaccades, type TrialSaccade } from '../lib/oculomotorMetrics';
+import { analysePursuit, detectTrialSaccade, fixationPrecision, summariseSaccades, type TrialSaccade } from '../lib/oculomotorMetrics';
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = '') => {
@@ -137,6 +137,34 @@ const onset = 10_000;
   const p = fixationPrecision(f, onset - 600, onset + 1000);
   check('fixation SD matches injected noise', Math.abs(p.sdXPx! - 10) < 2.5 && Math.abs(p.sdYPx! - 10) < 2.5, `sdX ${p.sdXPx} sdY ${p.sdYPx}`);
   check('RMS-S2S ≈ 2 × SD for 2-D white noise', Math.abs(p.rmsS2SPx! - 2 * 10) < 4, `${p.rmsS2SPx}`);
+}
+
+// 9. Smooth pursuit: a lagging, attenuated follow with catch-up saccades.
+{
+  const f = 0.4, A2 = 400, t0 = 20_000, lag = 120, eyeGain = 0.85, mapGain = 0.75;
+  const w = 2 * Math.PI * f / 1000;
+  const frames: GazeFrame[] = [];
+  // Catch-up saccades: 120 px eye steps (~90 px after the mapping, ~2°) every
+  // 1.25 s, drifting back before the next. Smaller ones sit at or below what
+  // 30 Hz with 8 px noise can count reliably (see analysePursuit).
+  for (let t = t0; t < t0 + 10_000; t += 33.3 + gauss() * 2) {
+    const catchUp = 120 * (((t - t0) % 1250) < 60 ? ((t - t0) % 1250) / 60 : 1) - 120 * (((t - t0) % 1250) / 1250);
+    const x = 720 + mapGain * (eyeGain * A2 * Math.sin(w * (t - t0 - lag)) + catchUp) + gauss() * 8;
+    frames.push({ t, x, y: 450, sx: x, sy: 450, q: GazeFrameQuality.OK });
+  }
+  const p = analysePursuit(frames, 'x', t0 + 1250, t0 + 10_000, t0, f, A2);
+  check('pursuit gain recovered', Math.abs(p.gain! - eyeGain * mapGain) < 0.04, `${p.gain} vs ${(eyeGain * mapGain).toFixed(3)}`);
+  check('pursuit lag recovered', Math.abs(p.phaseLagMs! - lag) < 20, `${p.phaseLagMs} ms`);
+  check('catch-up saccades counted', p.saccadesPerSec! > 0.5 && p.saccadesPerSec! < 1.2, `${p.saccadesPerSec}/s (true 0.8/s)`);
+  const smooth = analysePursuit(
+    frames.map((fr) => {
+      const x = 720 + mapGain * eyeGain * A2 * Math.sin(w * (fr.t - t0 - lag)) + gauss() * 8;
+      return { ...fr, x, sx: x };
+    }),
+    'x', t0 + 1250, t0 + 10_000, t0, f, A2);
+  check('no saccades counted on clean pursuit', smooth.saccadesPerSec! <= 0.15, `${smooth.saccadesPerSec}/s`);
+  const offset = analysePursuit(frames.map((fr) => ({ ...fr, x: fr.x + 200 })), 'x', t0 + 1250, t0 + 10_000, t0, f, A2);
+  check('pursuit gain is offset-invariant', offset.gain === p.gain, `${offset.gain}`);
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

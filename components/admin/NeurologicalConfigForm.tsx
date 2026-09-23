@@ -17,6 +17,7 @@ const TEST_LABELS: Record<string, string> = {
   saccadic: 'Saccadic Eye Movement',
   fixation_stability: 'Fixation Stability',
   peripheral_vision: 'Peripheral Vision',
+  smooth_pursuit: 'Smooth Pursuit',
 };
 
 const ALL_TEST_IDS = [
@@ -25,6 +26,7 @@ const ALL_TEST_IDS = [
   'memory_cards',
   'anti_saccade',
   'saccadic',
+  'smooth_pursuit',
   'fixation_stability',
   'peripheral_vision',
 ];
@@ -64,6 +66,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
       dimRectColor: 'blue',
     },
     saccadic: { targetDurationMs: 1000, fixationMinMs: 1000, fixationMaxMs: 2000, totalCycles: 18, targetDotSizePx: 64, targetDotColor: '#f59e0b' },
+    smooth_pursuit: { frequencyHz: 0.4, cycles: 5, amplitudeFrac: 0.3, startFixationMs: 1000, dotSizePx: 20, dotColor: '#f59e0b' },
     fixation_stability: { durationSec: 15, blinkIntervalMs: 600, centerDotSizePx: 12, centerDotColor: '#f59e0b' },
     peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000, centerDotSizePx: 8, centerDotColor: '#f59e0b', stimulusDotSizePx: 16, stimulusDotColor: '#ffffff' },
   };
@@ -88,7 +91,12 @@ export default function NeurologicalConfigForm() {
         if (!res.ok) throw new Error('Failed to load config');
         const data = await res.json();
         if (cancelled) return;
-        const order = Array.isArray(data.testOrder) ? data.testOrder : [...ALL_TEST_IDS];
+        const order: string[] = Array.isArray(data.testOrder) ? [...data.testOrder] : [...ALL_TEST_IDS];
+        // A test added to the app after this config was saved (smooth_pursuit)
+        // is listed at the end, switched off, so saving an unrelated change
+        // does not silently add it to the battery.
+        const added = ALL_TEST_IDS.filter((id) => !order.includes(id));
+        order.push(...added);
         const rawParams = (data.testParameters ?? {}) as Record<string, Record<string, unknown>>;
         const params: Record<string, Record<string, unknown>> = {};
         // Load global settings (stored under _global key)
@@ -106,7 +114,7 @@ export default function NeurologicalConfigForm() {
         }
         const enabled: Record<string, boolean> = { ...data.testEnabled };
         ALL_TEST_IDS.forEach((id) => {
-          if (enabled[id] === undefined) enabled[id] = true;
+          if (enabled[id] === undefined) enabled[id] = !added.includes(id);
         });
         setConfig({ testOrder: order, testParameters: params, testEnabled: enabled });
       } catch (e) {
@@ -687,6 +695,42 @@ export default function NeurologicalConfigForm() {
                         onChange={(v) => setParam(id, 'gazeSampleIntervalMs', v)}
                         options={[50, 100, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
+                    </>
+                  )}
+                  {id === 'smooth_pursuit' && (
+                    <>
+                      <SelectNumber
+                        label="Frequency (Hz)"
+                        value={Number(params.frequencyHz) || 0.4}
+                        onChange={(v) => setParam(id, 'frequencyHz', v)}
+                        options={[0.2, 0.3, 0.4, 0.5, 0.75, 1].map((n) => ({ value: n, label: `${n} Hz` }))}
+                      />
+                      <SelectNumber
+                        label="Cycles"
+                        value={Number(params.cycles) || 5}
+                        onChange={(v) => setParam(id, 'cycles', v)}
+                        options={[2, 3, 4, 5, 6, 8, 10].map((n) => ({ value: n, label: String(n) }))}
+                      />
+                      <SelectNumber
+                        label="Amplitude (fraction of screen width, each side)"
+                        value={Number(params.amplitudeFrac) || 0.3}
+                        onChange={(v) => setParam(id, 'amplitudeFrac', v)}
+                        options={[0.15, 0.2, 0.25, 0.3, 0.35].map((n) => ({ value: n, label: `${Math.round(n * 100)}%` }))}
+                      />
+                      <SelectNumber
+                        label="Dot size (px)"
+                        value={Number(params.dotSizePx) || 20}
+                        onChange={(v) => setParam(id, 'dotSizePx', v)}
+                        options={[12, 16, 20, 24, 32].map((n) => ({ value: n, label: `${n} px` }))}
+                      />
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Dot color (hex)</label>
+                        <DotColorPicker
+                          value={params.dotColor}
+                          fallback="#f59e0b"
+                          onChange={(v) => setParam(id, 'dotColor', v)}
+                        />
+                      </div>
                     </>
                   )}
                   {id === 'peripheral_vision' && (

@@ -184,6 +184,17 @@ export const NEURO_STEPS: AssessmentStep[] = [
       'A small dot will appear at the centre of the screen. Your only task is to hold your gaze on it, as steadily as you can, for the full duration. The dot may blink — that is normal, and it helps you stay focused. Blink naturally when you need to, but try not to look away. This measures how stable your gaze is when you actively try to keep it fixed.',
   },
   {
+    id: 'smooth_pursuit',
+    label: 'Smooth Pursuit',
+    // 1 s centre + 5 cycles at 0.4 Hz.
+    duration: '~15 sec',
+    durationSec: 15,
+    section: 'neuro',
+    tagline: 'Follow a dot moving smoothly from side to side.',
+    description:
+      'A dot will move smoothly back and forth across the screen. Follow it with your eyes as closely as you can, without moving your head. This measures how smoothly your eyes can track a moving target — one of the eye movements most often affected after a concussion.',
+  },
+  {
     id: 'peripheral_vision',
     label: 'Peripheral Vision',
     duration: '~30 sec',

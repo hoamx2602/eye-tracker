@@ -56,6 +56,9 @@ import {
   DEFAULT_DURATION_SEC,
   DEFAULT_BLINK_INTERVAL_MS,
 } from '@/components/neurological/tests/fixationStability/constants';
+import SmoothPursuitTest from '@/components/neurological/tests/smoothPursuit/SmoothPursuitTest';
+import SmoothPursuitPractice from '@/components/neurological/tests/smoothPursuit/SmoothPursuitPractice';
+import { SMOOTH_PURSUIT_GUIDE_STEPS } from '@/components/neurological/tests/smoothPursuit/constants';
 import PeripheralVisionTest from '@/components/neurological/tests/peripheralVision/PeripheralVisionTest';
 import PeripheralVisionPractice from '@/components/neurological/tests/peripheralVision/PeripheralVisionPractice';
 import {
@@ -76,6 +79,7 @@ const TEST_LABELS: Record<string, string> = {
   saccadic: 'Saccadic Eye Movement',
   fixation_stability: 'Fixation Stability',
   peripheral_vision: 'Peripheral Vision',
+  smooth_pursuit: 'Smooth Pursuit',
 };
 
 /** One line per test, for the break screen's "coming up next" and the real-test countdown. */
@@ -87,6 +91,7 @@ const TEST_SUMMARIES: Record<string, string> = {
   saccadic: 'Watch the centre dot; when a target appears on either side, look at it at once.',
   fixation_stability: 'Hold your gaze on a single dot in the centre of the screen.',
   peripheral_vision: 'Keep looking at the centre and press space when you spot a flash at the edge.',
+  smooth_pursuit: 'Follow the dot with your eyes as it moves smoothly from side to side.',
 };
 
 /**
@@ -437,6 +442,23 @@ export default function NeurologicalFlowSection({
             testContent={<PeripheralVisionTest />}
             config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.peripheral_vision as Record<string, unknown>) ?? { trialCount: PERIPHERAL_DEFAULT_TRIAL_COUNT, stimulusDurationMs: DEFAULT_STIMULUS_DURATION_MS, minDelayMs: DEFAULT_MIN_DELAY_MS, maxDelayMs: DEFAULT_MAX_DELAY_MS }) }}
             {...flowPropsFor('peripheral_vision')}
+          />
+        </NeuroGazeProvider>
+        </NeuroHeadPoseProvider>
+      )}
+      {status === 'NEURO_FLOW' && neuroPhase === 'tests' && currentNeuroTestId === 'smooth_pursuit' && (
+        <NeuroHeadPoseProvider headPose={neuroHeadPose}>
+        <NeuroGazeProvider gaze={gazePos} gazeModelReady={gazeModelReady}>
+          <GuidePracticeTestFlow
+            testId="smooth_pursuit"
+            testLabel={TEST_LABELS.smooth_pursuit}
+            guideSteps={SMOOTH_PURSUIT_GUIDE_STEPS}
+            enablePractice={!quickMode}
+            practiceContent={<SmoothPursuitPractice />}
+            practiceTitle="Smooth Pursuit"
+            testContent={<SmoothPursuitTest />}
+            config={{ ...globalParams, ...((neuroConfigSnapshot?.testParameters?.smooth_pursuit as Record<string, unknown>) ?? {}) }}
+            {...flowPropsFor('smooth_pursuit')}
           />
         </NeuroGazeProvider>
         </NeuroHeadPoseProvider>
