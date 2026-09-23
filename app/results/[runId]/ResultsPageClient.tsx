@@ -130,7 +130,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
             platform.
           */}
           <p className="text-sm text-gray-500">
-            You can close this tab now — there's nothing else to do here. Completed {finishedOn}.
+            You can close this tab now. Completed {finishedOn}.
           </p>
         </div>
       </main>
