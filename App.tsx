@@ -7,6 +7,7 @@ import { PATHS, parsePathname } from '@/lib/paths';
 import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
 import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 import { gazeFrameStream, GazeFrameQuality } from '@/lib/gazeFrameStream';
+import { getDriftOffset, resetDriftOffset } from '@/lib/driftCorrection';
 import { NEURO_VERIFY_META_KEY, NEURO_VERIFY_SNAPSHOT_KEY } from '@/lib/neuroVerifyMode';
 import {
   NEURO_PREVIEW_RUN_ID,
@@ -3374,12 +3375,17 @@ function App() {
       frameQuality = earQuality;
     }
 
-    const smoothed = smootherRef.current.process(prediction.x, prediction.y, timestamp, frameQuality);
+    const filtered = smootherRef.current.process(prediction.x, prediction.y, timestamp, frameQuality);
+    // Drift correction from the last pre-test centre check (lib/driftCorrection).
+    // Only the live gaze is corrected; the frame stream keeps the uncorrected
+    // output next to the offset that was applied.
+    const drift = statusRef.current === 'NEURO_FLOW' ? getDriftOffset() : { x: 0, y: 0 };
+    const smoothed = { ...filtered, x: filtered.x - drift.x, y: filtered.y - drift.y };
     if (Math.random() < 0.05) { // throttle log
       console.log(`[NeuroGaze] inputVector len=${inputVector.length}, method=${configRef.current.regressionMethod}, pred=`, prediction, ` smoothed=`, smoothed, ` hasModel=`, hybridRegressorRef.current.hasTrainedModel());
     }
     neuroLiveGazeRef.current = { x: smoothed.x, y: smoothed.y };
-    recordGazeFrame(GazeFrameQuality.OK, { x: prediction.x, y: prediction.y, sx: smoothed.x, sy: smoothed.y }, pose);
+    recordGazeFrame(GazeFrameQuality.OK, { x: prediction.x, y: prediction.y, sx: filtered.x, sy: filtered.y }, pose);
     setGazePos(smoothed);
 
     if (statusRef.current === 'TRACKING') {
@@ -3548,6 +3554,7 @@ function App() {
     setTrainingData([]);
     hybridRegressorRef.current = new HybridRegressor();
     setGazeModelReady(false);
+    resetDriftOffset();
     neuroLiveGazeRef.current = { x: 0, y: 0 };
     smootherRef.current.reset();
     validationErrorsRef.current = [];

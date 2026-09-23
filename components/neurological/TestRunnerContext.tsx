@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef } from 'react';
 import type { TestResultPayload } from './types';
 import { gazeFrameStream, toGazeFrameColumns, type GazeFrame } from '@/lib/gazeFrameStream';
+import { takeLastDriftCheck, type DriftCheck } from '@/lib/driftCorrection';
 
 export interface TestRunnerContextValue {
   testId: string;
@@ -34,7 +35,10 @@ export function TestRunnerProvider({
   // The per-test 10 Hz samples stay for the result previews; metrics that need
   // timing (latency, fixation spread) are computed from these frames.
   const captureTokenRef = useRef<number | null>(null);
+  // The centre check made in the countdown just before this test.
+  const driftCheckRef = useRef<DriftCheck | null>(null);
   useEffect(() => {
+    driftCheckRef.current = takeLastDriftCheck();
     captureTokenRef.current = gazeFrameStream.begin();
     return () => {
       if (captureTokenRef.current !== null) gazeFrameStream.end(captureTokenRef.current);
@@ -52,6 +56,7 @@ export function TestRunnerProvider({
       ...(frames.length > 0 && {
         gazeFrames: toGazeFrameColumns(frames, { w: window.innerWidth, h: window.innerHeight }),
       }),
+      ...(driftCheckRef.current && { driftCheck: driftCheckRef.current }),
     });
   }, [testId]);
 
