@@ -429,6 +429,12 @@ export default function HomePage() {
 
         </div>
       </div>
+
+      <footer className="border-t border-gray-800 py-6">
+        <p className="text-center text-xs text-gray-600">
+          © {new Date().getFullYear()} Neurotree. All rights reserved.
+        </p>
+      </footer>
     </div>
   );
 }
