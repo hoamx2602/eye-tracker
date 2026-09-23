@@ -5,6 +5,9 @@ import { usePracticeGate } from '../../PracticeGate';
 import {
   DEFAULT_FIXATION_PAUSE_MS,
   DEFAULT_MOVEMENT_DURATION_MS,
+  DEFAULT_STEP_DURATION_MS,
+  DEFAULT_STEP_FIXATION_MAX_MS,
+  DEFAULT_STEP_FIXATION_MIN_MS,
   OPPOSITE_DIRECTION,
   PRACTICE_TRIALS,
   RECT_HALF_PX,
@@ -13,13 +16,14 @@ import {
   RECT_COLOR_PALETTE,
   isDimRectInstructable,
   resolveShowReferenceLines,
+  resolveParadigm,
   type AntiSaccadeDirection,
   type AntiSaccadeRectColor,
   type AntiSaccadeStimulusShape,
 } from './constants';
 import StimulusShape from './StimulusShape';
 import ReferenceLines from './ReferenceLines';
-import { generateTrialDirections } from './utils';
+import { generateTrialDirections, randomDurationMs } from './utils';
 
 const BOX_SIZE = 360;
 const CENTER = BOX_SIZE / 2;
@@ -110,7 +114,12 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   const practiceGateRef = useRef(practiceGate);
   practiceGateRef.current = practiceGate;
   const restartDelaySec = getRestartDelaySec(config);
-  const movementDurationMs = getMovementDurationMs(config, TRAVEL_DISTANCE_PX);
+  // Same paradigm as the real test (resolveParadigm): in `step` the shapes jump
+  // to the side after a random wait instead of gliding there.
+  const isStep = resolveParadigm(config) === 'step';
+  const movementDurationMs = isStep
+    ? Math.max(600, Number(config?.stepDurationMs) || DEFAULT_STEP_DURATION_MS)
+    : getMovementDurationMs(config, TRAVEL_DISTANCE_PX);
   // Whether the real test draws a dim rect at all — AntiSaccadeTest.tsx uses
   // this exact same condition (dimRectOpacity > 0). Practice used to render
   // one unconditionally, boosted to a visible minimum, regardless of this —
@@ -130,8 +139,10 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   const primaryRectColor = getRectColor(config, 'primaryRectColor', 'red');
   const dimRectColor = getRectColor(config, 'dimRectColor', 'blue');
 
-  const fixationPauseMs = getFixationPauseMs(config);
-  const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS));
+  const configuredFixationMs = getFixationPauseMs(config);
+  const stepFixMin = Math.max(300, Number(config?.stepFixationMinMs) || DEFAULT_STEP_FIXATION_MIN_MS);
+  const stepFixMax = Math.max(stepFixMin, Number(config?.stepFixationMaxMs) || DEFAULT_STEP_FIXATION_MAX_MS);
+  const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS, isStep));
   const [trialIndex, setTrialIndex] = useState(0);
   const [visualStarted, setVisualStarted] = useState(false);
   const [restartIn, setRestartIn] = useState<number | null>(null);
@@ -144,6 +155,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   useEffect(() => {
     if (restartIn !== null) return;
 
+    const fixationPauseMs = isStep ? randomDurationMs(stepFixMin, stepFixMax) : configuredFixationMs;
     setVisualStarted(false);
     let rafId: number;
 
@@ -167,7 +179,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
       clearTimeout(t);
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [trialIndex, restartIn, movementDurationMs, restartDelaySec, fixationPauseMs]);
+  }, [trialIndex, restartIn, movementDurationMs, restartDelaySec, configuredFixationMs, isStep, stepFixMin, stepFixMax]);
 
   // Countdown then restart
   useEffect(() => {
@@ -177,7 +189,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
         if (prev === null || prev <= 0) return null;
         const next = prev - 1;
         if (next === 0) {
-          directionsRef.current = generateTrialDirections(PRACTICE_TRIALS);
+          directionsRef.current = generateTrialDirections(PRACTICE_TRIALS, isStep);
           setTrialIndex(0);
           setVisualStarted(false);
           return null;
@@ -225,7 +237,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
                 dimColor={dimRectColor}
                 opacity={dimOpacity}
                 style={{
-                  transition: visualStarted ? `transform ${movementDurationMs}ms linear` : 'none',
+                  transition: visualStarted && !isStep ? `transform ${movementDurationMs}ms linear` : 'none',
                   transform: `translate(${visualStarted ? dimEnd.x : 0}px, ${visualStarted ? dimEnd.y : 0}px)`,
                 }}
               />
@@ -242,7 +254,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
               dimColor={dimRectColor}
               opacity={1}
               style={{
-                transition: visualStarted ? `transform ${movementDurationMs}ms linear` : 'none',
+                transition: visualStarted && !isStep ? `transform ${movementDurationMs}ms linear` : 'none',
                 transform: `translate(${visualStarted ? primaryEnd.x : 0}px, ${visualStarted ? primaryEnd.y : 0}px)`,
               }}
             />

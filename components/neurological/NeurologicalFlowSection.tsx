@@ -37,6 +37,7 @@ import AntiSaccadePractice from '@/components/neurological/tests/antiSaccade/Ant
 import {
   getAntiSaccadeGuideSteps,
   isDimRectInstructable,
+  resolveParadigm as resolveAntiSaccadeParadigm,
   DEFAULT_TRIAL_COUNT,
   DEFAULT_INTERVAL_BETWEEN_TRIALS_MS,
   DIM_RECT_OPACITY_DEFAULT,
@@ -82,7 +83,7 @@ const TEST_SUMMARIES: Record<string, string> = {
   head_orientation: 'Turn your head slowly left, right, up and down, holding each position.',
   visual_search: 'Find the numbers scattered on screen and look at them in order, 1, 2, 3…',
   memory_cards: 'Turn cards over two at a time and find every matching pair.',
-  anti_saccade: 'Two shapes move apart — look at the dim one, not the bright one.',
+  anti_saccade: 'A bright and a dim shape jump to opposite sides — look at the dim one, not the bright one.',
   saccadic: 'Watch the centre dot; when a target appears on either side, look at it at once.',
   fixation_stability: 'Hold your gaze on a single dot in the centre of the screen.',
   peripheral_vision: 'Keep looking at the centre and press space when you spot a flash at the edge.',
@@ -378,7 +379,7 @@ export default function NeurologicalFlowSection({
           <GuidePracticeTestFlow
             testId="anti_saccade"
             testLabel={TEST_LABELS.anti_saccade}
-            guideSteps={getAntiSaccadeGuideSteps(isDimRectInstructable(antiSaccadeConfig))}
+            guideSteps={getAntiSaccadeGuideSteps(isDimRectInstructable(antiSaccadeConfig), resolveAntiSaccadeParadigm(antiSaccadeConfig))}
             enablePractice={!quickMode}
             practiceContent={(config) => <AntiSaccadePractice config={config} />}
             practiceTitle="Anti-Saccade"

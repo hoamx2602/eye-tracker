@@ -40,10 +40,54 @@ export function resolveShowReferenceLines(config: Record<string, unknown> | unde
 }
 
 /**
+ * How the stimulus leaves the centre.
+ *
+ * - `step` (default): the shape jumps to one side at once, after a random
+ *   central fixation. The standard anti-saccade paradigm — the reflexive pull
+ *   towards a sudden onset is what the task asks the participant to resist,
+ *   and the onset gives the saccade a defined start to be timed from.
+ * - `moving`: the original version — the shapes glide apart over
+ *   `movementDurationMs`. Kept so earlier sessions can be reproduced.
+ */
+export type AntiSaccadeParadigm = 'step' | 'moving';
+
+export function resolveParadigm(config: Record<string, unknown> | undefined): AntiSaccadeParadigm {
+  return config?.paradigm === 'moving' ? 'moving' : 'step';
+}
+
+/** Step paradigm: random central fixation before each jump (ms). */
+export const DEFAULT_STEP_FIXATION_MIN_MS = 1000;
+export const DEFAULT_STEP_FIXATION_MAX_MS = 2000;
+/** Step paradigm: how long the shape stays at the side (ms) — the response window. */
+export const DEFAULT_STEP_DURATION_MS = 1500;
+
+/**
  * Returns guide steps for Anti-Saccade, adapted based on whether the dim rect is shown.
  * When showDimRect is false (dimRectOpacity = 0), instructions do not mention a dim rectangle.
  */
-export function getAntiSaccadeGuideSteps(showDimRect = true): GuideStep[] {
+export function getAntiSaccadeGuideSteps(showDimRect = true, paradigm: AntiSaccadeParadigm = 'step'): GuideStep[] {
+  if (paradigm === 'step') {
+    return [
+      {
+        id: '1',
+        title: 'Anti-Saccade',
+        body: showDimRect
+          ? 'A shape will appear in the centre of the screen. Look at it. After a moment, a bright shape will jump to one side and a dim shape to the other side. Your task is to look at the dim shape, not the bright one.'
+          : 'A shape will appear in the centre of the screen. Look at it. After a moment, it will jump to one side. Your task is to look at the OPPOSITE side, away from the shape.',
+      },
+      {
+        id: '2',
+        body: showDimRect
+          ? 'Your eyes will want to go to the bright shape — resist that, and move them to the dim one as quickly as you can. Then look back at the centre for the next one.'
+          : 'Your eyes will want to follow the shape — resist that, and move them to the opposite side as quickly as you can. Then look back at the centre for the next one.',
+      },
+      {
+        id: '3',
+        title: 'Trials',
+        body: 'You will see several trials. The side and the timing change at random, so you cannot guess them — just react.',
+      },
+    ];
+  }
   return [
     {
       id: '1',

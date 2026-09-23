@@ -159,7 +159,7 @@ export const NEURO_STEPS: AssessmentStep[] = [
     section: 'neuro',
     tagline: 'Look at the dim shape, not the bright one.',
     description:
-      'Two shapes will appear in the centre of the screen and then move apart in opposite directions — one bright, one dim. Your task is to look at the dim one. This is intentionally difficult, because your reflex is to look at whatever is brightest and moving. The test measures your ability to override that reflex and direct your gaze deliberately.',
+      'A shape appears in the centre of the screen. After a moment, a bright shape jumps to one side and a dim shape to the other. Your task is to look at the dim one. This is intentionally difficult, because your reflex is to look at whatever is brightest and sudden. The test measures your ability to override that reflex and direct your gaze deliberately.',
   },
   {
     id: 'saccadic',

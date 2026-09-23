@@ -47,6 +47,10 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
     },
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg', cardGapPx: 28 },
     anti_saccade: {
+      paradigm: 'step',
+      stepFixationMinMs: 1000,
+      stepFixationMaxMs: 2000,
+      stepDurationMs: 1500,
       trialCount: 12,
       movementSpeedPxPerSec: 120,
       fixationPauseMs: 1000,
@@ -456,14 +460,47 @@ export default function NeurologicalConfigForm() {
                   )}
                   {id === 'anti_saccade' && (
                     <>
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Paradigm</label>
+                        <select
+                          value={params.paradigm === 'moving' ? 'moving' : 'step'}
+                          onChange={(e) => setParam(id, 'paradigm', e.target.value)}
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
+                        >
+                          <option value="step">Step — shapes jump to the sides (standard)</option>
+                          <option value="moving">Moving — shapes glide apart (original)</option>
+                        </select>
+                      </div>
                       <SelectNumber
                         label="Trial count"
                         value={Number(params.trialCount) ?? 12}
                         onChange={(v) => setParam(id, 'trialCount', v)}
                         options={[2, 4, 6, 8, 10, 12, 15, 18, 20, 24, 30].map((n) => ({ value: n, label: String(n) }))}
                       />
+                      {params.paradigm !== 'moving' && (
+                        <>
+                          <SelectNumber
+                            label="Step: centre, shortest wait (ms)"
+                            value={Number(params.stepFixationMinMs) || 1000}
+                            onChange={(v) => setParam(id, 'stepFixationMinMs', v)}
+                            options={[500, 700, 1000, 1200, 1500].map((n) => ({ value: n, label: `${n} ms` }))}
+                          />
+                          <SelectNumber
+                            label="Step: centre, longest wait (ms)"
+                            value={Number(params.stepFixationMaxMs) || 2000}
+                            onChange={(v) => setParam(id, 'stepFixationMaxMs', v)}
+                            options={[1000, 1500, 2000, 2500, 3000].map((n) => ({ value: n, label: `${n} ms` }))}
+                          />
+                          <SelectNumber
+                            label="Step: time at the side (ms)"
+                            value={Number(params.stepDurationMs) || 1500}
+                            onChange={(v) => setParam(id, 'stepDurationMs', v)}
+                            options={[1000, 1200, 1500, 2000, 2500].map((n) => ({ value: n, label: `${n} ms` }))}
+                          />
+                        </>
+                      )}
                       <SelectNumber
-                        label="Movement speed (px/s)"
+                        label="Movement speed (px/s, moving paradigm)"
                         value={Number(params.movementSpeedPxPerSec) ?? 120}
                         onChange={(v) => setParam(id, 'movementSpeedPxPerSec', v)}
                         options={[80, 100, 120, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} px/s` }))}

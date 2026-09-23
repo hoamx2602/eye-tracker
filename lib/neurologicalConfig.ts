@@ -47,6 +47,11 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     gazeSampleIntervalMs: DEFAULT_GAZE_SAMPLE_INTERVAL_MS,
   },
   anti_saccade: {
+    // 'step' (jump after a random fixation) or 'moving' (the original glide) — see antiSaccade/constants.ts.
+    paradigm: 'step',
+    stepFixationMinMs: 1000,
+    stepFixationMaxMs: 2000,
+    stepDurationMs: 1500,
     trialCount: 12,
     movementSpeedPxPerSec: 120,
     intervalBetweenTrialsMs: 800,
@@ -118,7 +123,7 @@ export const QUICK_MODE_TEST_PARAMETERS: Record<string, Record<string, unknown>>
   head_orientation: { durationPerDirectionSec: 1, order: ['left'] },
   visual_search: { numberCount: 6, practiceCount: 0 },
   memory_cards: { cardCount: 2, dwellMs: 300 },
-  anti_saccade: { trialCount: 1, intervalBetweenTrialsMs: 200, fixationPauseMs: 200 },
+  anti_saccade: { trialCount: 1, intervalBetweenTrialsMs: 200, fixationPauseMs: 200, stepFixationMinMs: 300, stepFixationMaxMs: 300 },
   saccadic: { totalCycles: 1, targetDurationMs: 400 },
   fixation_stability: { durationSec: 1 },       // clamps up to the 5 s floor
   peripheral_vision: { trialCount: 1, minDelayMs: 300, maxDelayMs: 600 },  // clamps up to 8 trials

@@ -279,6 +279,27 @@ export const VOICE_SCRIPTS = {
     // of just being longer than it needed to be.
     cue: 'Look in the opposite direction from the red square.',
   },
+  // The step paradigm (antiSaccade/constants.ts resolveParadigm, the default):
+  // the shape jumps to a side instead of gliding there. No recorded clips yet —
+  // the browser voice reads these until `npm run voice:generate` is run.
+  'neuro.anti_saccade.step': {
+    text:
+      'Anti-saccade. Look at the shape in the centre of the screen. ' +
+      'After a moment, a bright shape will jump to one side and a dim shape to the other. ' +
+      'Your task is to resist looking at the bright one, and look at the dim shape instead, as quickly as you can. ' +
+      'This feels unnatural — that is exactly what we are measuring. ' +
+      'Keep your head still and move only your eyes.',
+    cue: 'Look at the dim shape.',
+  },
+  'neuro.anti_saccade.step_no_dim': {
+    text:
+      'Anti-saccade. Look at the red square in the centre of the screen. ' +
+      'After a moment, it will jump to one side. ' +
+      'Your task is to look at the opposite side — away from the square, not towards it — as quickly as you can. ' +
+      'This feels unnatural — that is exactly what we are measuring. ' +
+      'Keep your head still and move only your eyes.',
+    cue: 'Look in the opposite direction from the red square.',
+  },
   'neuro.saccadic': {
     text:
       'Saccadic eye movement. Look at the small dot in the centre of the screen. ' +
