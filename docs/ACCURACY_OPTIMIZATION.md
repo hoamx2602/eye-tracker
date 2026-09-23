@@ -62,8 +62,8 @@ Catch-up saccades under ~1.5° are below what 30 Hz resolves reliably.
   (≥8 frames, spread < 60 px, offset < 20% of the short screen side). Stored per test as
   `driftCheck`. See `lib/driftCorrection.ts`, `scripts/check-drift-correction.ts`.
 - **Calibration dot** appears at 44 px and shrinks to ~14 px over 700 ms (iOS / Tobii
-  idea); the expanding "ping" ring is gone. Note: the advisor earlier asked to keep the
-  calibration UI unchanged — confirm before running participants.
+  idea); the expanding "ping" ring is gone. The advisor had asked to keep the calibration
+  UI unchanged; this change was confirmed with them on 2026-09-23.
 
 ## Not yet verified
 
@@ -73,7 +73,7 @@ Catch-up saccades under ~1.5° are below what 30 Hz resolves reliably.
   and synthetic data — tune them from the first real sessions (`gazeFrames` has
   everything needed to re-run the analysis offline).
 - Seed baselines (error rate 10–60%, pursuit r² 0.5–0.95) are guesses, like the rest.
-- New / changed spoken clips fall back to the browser voice until regenerated:
-  `npm run voice:generate` (see `npx tsx scripts/build-audio-manifest.ts` for the list).
+- All spoken clips, new and changed, are recorded (Deepgram, same voice); none falls
+  back to the browser voice.
 - Degrees need the physical screen size, which `main` does not measure
   (the card step was rolled back); stimulus sizes stay fractions of the viewport.
