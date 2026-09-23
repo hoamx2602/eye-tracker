@@ -75,7 +75,7 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     gazeSampleIntervalMs: DEFAULT_GAZE_SAMPLE_INTERVAL_MS,
   },
   fixation_stability: {
-    durationSec: 5,
+    durationSec: 15,
     blinkIntervalMs: 600,
     centerDotSizePx: 12,
     centerDotColor: '#f59e0b',

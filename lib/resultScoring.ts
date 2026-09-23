@@ -77,7 +77,10 @@ export const SEED_BASELINES = {
   // p10 ≈ 2×2° scatter (≈6400 px²), p90 ≈ 4×4° scatter (≈100 000 px²)
   fixation_stability: { p10Bcea95: 6000, p90Bcea95: 100000 },
   peripheral_vision:  { p10RtMs: 200,    p90RtMs: 800 },
-  anti_saccade:       { p10ErrorDeg: 5,  p90ErrorDeg: 60 },
+  anti_saccade:       { p10ErrorDeg: 5,  p90ErrorDeg: 60,
+                        // Direction-error rate of the first saccade. Seeds, like the rest:
+                        // healthy adults commonly err on ~10–25% of trials.
+                        p10ErrorRate: 0.1, p90ErrorRate: 0.6 },
   memory_cards:       { p10Efficiency: 0.5, p90Efficiency: 1.0 },
   // head_orientation yaw/pitch are in geometric-headpose "scaled radians":
   //   value = (nose_offset / face_width) × 2π
@@ -193,6 +196,17 @@ export function scoreAntiSaccade(
   if (Array.isArray(result.trials)) {
     const t0 = (result.trials as any[])[0];
     if (t0) console.log('[SCORE DEBUG] anti_saccade - trials[0] keys:', JSON.stringify(Object.keys(t0)), 'sample:', JSON.stringify(t0).slice(0, 300));
+  }
+
+  // Preferred: the first-saccade direction-error rate (lib/oculomotorMetrics),
+  // which a calibration offset cannot move. Used once at least half the trials
+  // could be decided; otherwise too many were lost to blinks / head position.
+  const sacc = metrics.saccades as { errorRate?: number | null; correct?: number; errors?: number; trials?: number } | undefined;
+  if (sacc && typeof sacc.errorRate === 'number' && (sacc.trials ?? 0) > 0
+      && ((sacc.correct ?? 0) + (sacc.errors ?? 0)) >= (sacc.trials ?? 0) / 2) {
+    const p10 = getBaseline('anti_saccade', 'p10ErrorRate', scoringConfig);
+    const p90 = getBaseline('anti_saccade', 'p90ErrorRate', scoringConfig);
+    return p10p90Score(sacc.errorRate, p10, p90, true);
   }
 
   // Compute avgAngularErrorDeg from per-trial data if metrics doesn't have it

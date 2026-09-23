@@ -175,9 +175,9 @@ export const NEURO_STEPS: AssessmentStep[] = [
   {
     id: 'fixation_stability',
     label: 'Fixation Stability',
-    // DEFAULT_DURATION_SEC is 5; an administrator may set anything from 5 to 15.
-    duration: '5-15 sec',
-    durationSec: 10,
+    // DEFAULT_DURATION_SEC is 15; an administrator may set anything from 5 to 30.
+    duration: '~15 sec',
+    durationSec: 15,
     section: 'neuro',
     tagline: 'Hold your gaze perfectly still on a central dot.',
     description:

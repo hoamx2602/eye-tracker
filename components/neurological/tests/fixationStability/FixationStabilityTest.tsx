@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTestRunner } from '../../TestRunnerContext';
+import { fixationPrecision } from '@/lib/oculomotorMetrics';
+import { GazeFrameQuality } from '@/lib/gazeFrameStream';
 import { useNeuroGaze } from '../../NeuroGazeContext';
 import { useNeuroHeadPose } from '../../NeuroHeadPoseContext';
 import {
@@ -36,6 +38,14 @@ export interface FixationStabilityResult {
     meanDeviationPx?: number;
     bcea68Px2?: number;
     bcea95Px2?: number;
+    /**
+     * Precision on the raw per-frame gaze (lib/oculomotorMetrics.fixationPrecision).
+     * The fields above use the OneEuro-smoothed 10 Hz samples, which report the
+     * filter's stillness as much as the eye's.
+     */
+    rawPrecision?: ReturnType<typeof fixationPrecision>;
+    /** Share of frames with usable gaze (no blink, head in position). */
+    validFrameFraction?: number;
   };
 }
 
@@ -71,7 +81,9 @@ function countMicroSaccades(
 }
 
 export default function FixationStabilityTest() {
-  const { config, completeTest } = useTestRunner();
+  const { config, completeTest, getGazeFrames } = useTestRunner();
+  const getGazeFramesRef = useRef(getGazeFrames);
+  getGazeFramesRef.current = getGazeFrames;
   useNeuroGaze();
   const completeTestRef = useRef(completeTest);
   completeTestRef.current = completeTest;
@@ -130,7 +142,15 @@ export default function FixationStabilityTest() {
         intervalRef.current = null;
       }
       const endTime = performance.now();
-      const samples = gazeSamplesRef.current;
+      // {0,0} is the placeholder App.tsx writes while the head is out of
+      // position or no face is found — not a gaze position. Left in, one such
+      // sample puts a point in the screen corner and inflates the BCEA.
+      const samples = gazeSamplesRef.current.filter((s) => s.x !== 0 || s.y !== 0);
+      const frames = getGazeFramesRef.current();
+      const rawPrecision = fixationPrecision(frames, startTimeRef.current, endTime);
+      const validFrameFraction = frames.length > 0
+        ? Math.round((frames.filter((f) => f.q === GazeFrameQuality.OK).length / frames.length) * 1000) / 1000
+        : undefined;
       const c = getCenter();
       const cx = c.x;
       const cy = c.y;
@@ -179,6 +199,8 @@ export default function FixationStabilityTest() {
           meanDeviationPx,
           bcea68Px2,
           bcea95Px2,
+          rawPrecision,
+          validFrameFraction,
         },
       });
     }, durationSec * 1000);

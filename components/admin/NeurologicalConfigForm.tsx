@@ -64,7 +64,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
       dimRectColor: 'blue',
     },
     saccadic: { targetDurationMs: 1000, fixationMinMs: 1000, fixationMaxMs: 2000, totalCycles: 18, targetDotSizePx: 64, targetDotColor: '#f59e0b' },
-    fixation_stability: { durationSec: 5, blinkIntervalMs: 600, centerDotSizePx: 12, centerDotColor: '#f59e0b' },
+    fixation_stability: { durationSec: 15, blinkIntervalMs: 600, centerDotSizePx: 12, centerDotColor: '#f59e0b' },
     peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000, centerDotSizePx: 8, centerDotColor: '#f59e0b', stimulusDotSizePx: 16, stimulusDotColor: '#ffffff' },
   };
   return { ...defaults[id], ...(params[id] ?? {}) };
@@ -657,9 +657,9 @@ export default function NeurologicalConfigForm() {
                     <>
                       <SelectNumber
                         label="Duration (s)"
-                        value={Number(params.durationSec) ?? 5}
+                        value={Number(params.durationSec) || 15}
                         onChange={(v) => setParam(id, 'durationSec', v)}
-                        options={[5, 6, 8, 10, 12, 15].map((n) => ({ value: n, label: `${n} s` }))}
+                        options={[5, 6, 8, 10, 12, 15, 20, 25, 30].map((n) => ({ value: n, label: `${n} s` }))}
                       />
                       <SelectNumber
                         label="Blink interval (ms)"
