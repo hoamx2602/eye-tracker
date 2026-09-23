@@ -1,3 +1,4 @@
+import type { GazeFrameColumns } from '@/lib/gazeFrameStream';
 /**
  * Shared types for the Guide + Practice + Test framework (ticket 04).
  * Each test (05–11) defines its own result payload shape; this is the common contract.
@@ -32,6 +33,8 @@ export interface TestResultPayload {
   endTime: number;
   events?: TestEvent[];
   gazeSamples?: GazeSample[];
+  /** Every camera frame of gaze during the test (lib/gazeFrameStream). Added by TestRunnerProvider. */
+  gazeFrames?: GazeFrameColumns;
   metrics?: Record<string, unknown>;
   [key: string]: unknown;
 }

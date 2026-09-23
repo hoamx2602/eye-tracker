@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PATHS, parsePathname } from '@/lib/paths';
 import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
 import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
+import { gazeFrameStream, GazeFrameQuality } from '@/lib/gazeFrameStream';
 import { NEURO_VERIFY_META_KEY, NEURO_VERIFY_SNAPSHOT_KEY } from '@/lib/neuroVerifyMode';
 import {
   NEURO_PREVIEW_RUN_ID,
@@ -384,6 +385,15 @@ function App() {
   const heatmapRef = useRef<HeatmapRef>(null);
   
   const lastVideoTimeRef = useRef(-1);
+  /**
+   * Capture time of the newest camera frame, from requestVideoFrameCallback.
+   * The rAF loop runs on display refresh, not on camera frames, so its own
+   * `now` is up to a frame late and jitters; the neuro tests' latency needs
+   * the time the frame was actually taken. Null where the API is missing.
+   */
+  const frameMetaRef = useRef<{ mediaTime: number; t: number } | null>(null);
+  /** Capture time of the frame being processed in this pass of processVideo. */
+  const frameTimeRef = useRef(0);
   const detectionFrameCounterRef = useRef(0);
   const detectionStrideRef = useRef(1);
   const detectionAvgMsRef = useRef(0);
@@ -815,6 +825,7 @@ function App() {
         if (videoRef.current) videoRef.current.onloadedmetadata = resolve;
       });
       videoRef.current.play();
+      watchFrameCaptureTimes(videoRef.current);
       processVideo();
     } catch (err) {
       console.error('[Camera] getUserMedia failed:', err);
@@ -1169,12 +1180,50 @@ function App() {
       }
   };
 
+  /** Keep frameMetaRef on the newest camera frame for as long as this video element plays. */
+  const watchFrameCaptureTimes = (video: HTMLVideoElement) => {
+    type FrameMeta = { mediaTime: number; captureTime?: number; presentationTime: number };
+    const v = video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: (now: number, meta: FrameMeta) => void) => number;
+    };
+    if (typeof v.requestVideoFrameCallback !== 'function') return;
+    const onFrame = (_now: number, meta: FrameMeta) => {
+      // captureTime is only reported for camera streams (and not by every
+      // browser); presentationTime is the next best thing on the same clock.
+      frameMetaRef.current = { mediaTime: meta.mediaTime, t: meta.captureTime ?? meta.presentationTime };
+      if (videoRef.current === video && video.srcObject) v.requestVideoFrameCallback!(onFrame);
+    };
+    v.requestVideoFrameCallback(onFrame);
+  };
+
+  /** One entry of the per-frame gaze stream (lib/gazeFrameStream) for this pass's frame. */
+  const recordGazeFrame = (
+    q: GazeFrameQuality,
+    gaze?: { x: number; y: number; sx: number; sy: number },
+    pose?: { yaw: number; pitch: number },
+  ) => {
+    if (!gazeFrameStream.recording) return;
+    const toDeg = 180 / Math.PI;
+    gazeFrameStream.push({
+      t: frameTimeRef.current,
+      x: gaze?.x ?? NaN,
+      y: gaze?.y ?? NaN,
+      sx: gaze?.sx ?? NaN,
+      sy: gaze?.sy ?? NaN,
+      q,
+      ...(pose && { yaw: pose.yaw * toDeg, pitch: pose.pitch * toDeg }),
+    });
+  };
+
   const processVideo = useCallback(() => {
     if (!videoRef.current) return;
     
     const now = performance.now();
     if (videoRef.current.currentTime !== lastVideoTimeRef.current) {
       lastVideoTimeRef.current = videoRef.current.currentTime;
+      const meta = frameMetaRef.current;
+      frameTimeRef.current =
+        meta && Math.abs(meta.mediaTime - videoRef.current.currentTime) < 0.002 && meta.t <= now ? meta.t : now;
       const currentStatus = statusRef.current;
       // Only exercises trade detections for smooth dot motion; a static dot does
       // not move, so while one is being collected every frame is worth keeping.
@@ -1440,6 +1489,7 @@ function App() {
              // the ref while nothing is confirming it is still correct.
              if (statusRef.current === 'TRACKING' || statusRef.current === 'NEURO_FLOW') {
                neuroLiveGazeRef.current = { x: 0, y: 0 };
+               recordGazeFrame(GazeFrameQuality.NO_FACE);
              }
           }
       }
@@ -1457,6 +1507,7 @@ function App() {
               pointCollectorRef.current?.addBlink(now);
               if (exerciseActiveRef.current) exerciseBlinkTimesRef.current.push(now);
             }
+            if (blinking) recordGazeFrame(GazeFrameQuality.BLINK);
 
             if (!blinking) {
                 // Pass optional MediaPipe outputs for richer feature extraction
@@ -1528,6 +1579,7 @@ function App() {
           // shows up as an obviously-placeholder value instead of a
           // plausible-looking but wrong one.
           neuroLiveGazeRef.current = { x: 0, y: 0 };
+          recordGazeFrame(GazeFrameQuality.HEAD_INVALID);
         }
       }
     }
@@ -3295,7 +3347,11 @@ function App() {
     // Both gates drop the frame and hold the last output — they never delay one,
     // so saccade latency / velocity in the neuro tests are unaffected.
     // A partial blink drags the iris landmark down without crossing the blink threshold.
-    if (partialBlinkGateRef.current.isPartialBlink(features, timestamp)) return;
+    const pose = features.matrixHeadPose ?? features.headPose;
+    if (partialBlinkGateRef.current.isPartialBlink(features, timestamp)) {
+      recordGazeFrame(GazeFrameQuality.PARTIAL_BLINK, undefined, pose);
+      return;
+    }
 
     const inputVector = eyeTrackingService.prepareFeatureVector(features, configRef.current);
 
@@ -3303,7 +3359,10 @@ function App() {
     const prediction = hybridRegressorRef.current.predict(inputVector, configRef.current.regressionMethod);
 
     // Far outside the screen the mapping is extrapolating, not measuring gaze.
-    if (!isPlausibleGaze(prediction.x, prediction.y, window.innerWidth, window.innerHeight)) return;
+    if (!isPlausibleGaze(prediction.x, prediction.y, window.innerWidth, window.innerHeight)) {
+      recordGazeFrame(GazeFrameQuality.IMPLAUSIBLE, undefined, pose);
+      return;
+    }
 
     // Compute frame quality for glasses mode: average EAR as proxy for glare/blink artifacts
     const cfg = configRef.current;
@@ -3320,6 +3379,7 @@ function App() {
       console.log(`[NeuroGaze] inputVector len=${inputVector.length}, method=${configRef.current.regressionMethod}, pred=`, prediction, ` smoothed=`, smoothed, ` hasModel=`, hybridRegressorRef.current.hasTrainedModel());
     }
     neuroLiveGazeRef.current = { x: smoothed.x, y: smoothed.y };
+    recordGazeFrame(GazeFrameQuality.OK, { x: prediction.x, y: prediction.y, sx: smoothed.x, sy: smoothed.y }, pose);
     setGazePos(smoothed);
 
     if (statusRef.current === 'TRACKING') {
