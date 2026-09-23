@@ -62,7 +62,7 @@ export interface Session {
   createdAt: string;
   updatedAt: string;
   config: Record<string, unknown> | null;
-  demographics: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[] } | null;
+  demographics: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[]; wearsGlasses?: boolean; device?: string } | null;
   participantEmail?: string | null;
   validationErrors: number[];
   meanErrorPx: number | null;

@@ -1969,6 +1969,59 @@ function App() {
   }, [buildDeviceInfo]);
 
   /**
+   * "Take the assessment again" from the results screen lands here
+   * (/setup?redoFrom=<old session id>) with the consent-and-fullscreen click
+   * already done on that page — this only has to copy the old session's
+   * demographics and consent onto a brand-new one, the same fields
+   * handleDemographicsSubmit would have set from a freshly filled-in form,
+   * so nothing downstream (glasses optimization, the final save payload,
+   * participant history in admin) can tell the difference from a normal
+   * sitting except that this participant has done it before.
+   *
+   * Deliberately does not reuse the old session id or copy its calibration
+   * data forward: this is a full new sitting, not a resume, matching the
+   * "no cross-session continuation" decision already made for the admin
+   * participant-history view.
+   */
+  const redoPrefillStartedRef = useRef(false);
+  useEffect(() => {
+    const redoFrom = searchParams.get('redoFrom');
+    if (!redoFrom || redoPrefillStartedRef.current) return;
+    redoPrefillStartedRef.current = true;
+    (async () => {
+      try {
+        const prior = await sessionsApi.get(redoFrom);
+        const priorConsent = (prior.config as { consent?: { agreedAt: string; version: string } } | null)
+          ?.consent;
+        if (!prior.demographics || !priorConsent) {
+          // Nothing safe to skip past without both on file — send them
+          // through the real flow instead of starting a session with no
+          // recorded consent.
+          pathSyncSourceRef.current = 'internal';
+          router.push('/consent');
+          return;
+        }
+        const d = prior.demographics;
+        demographicsRef.current = {
+          age: typeof d.age === 'number' ? d.age : '',
+          gender: d.gender ?? '',
+          email: d.email || prior.participantEmail || '',
+          country: d.country ?? '',
+          device: d.device ?? 'not_specified',
+          eyeConditions: Array.isArray(d.eyeConditions) && d.eyeConditions.length > 0 ? d.eyeConditions : ['none'],
+          wearsGlasses: d.wearsGlasses === true,
+        };
+        consentRef.current = priorConsent;
+        void ensureSessionCreated();
+      } catch (e) {
+        console.warn('[Redo] could not load prior session — falling back to the full flow', e);
+        pathSyncSourceRef.current = 'internal';
+        router.push('/consent');
+      }
+    })();
+  }, [searchParams, router, ensureSessionCreated]);
+
+  /**
    * Patch the session with everything collected so far. Called at every
    * break. Serialized through sessionPatchChainRef so two of these can never
    * be in flight together — each one sends the complete current state, so an

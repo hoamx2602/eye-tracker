@@ -17,7 +17,7 @@
  *   - /results/[runId]/print                 — the PDF layout, unchanged
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { REALTIME_TRACKING_LINK_ENABLED } from '@/lib/featureFlags';
 
@@ -33,6 +33,19 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
     month: 'long',
     year: 'numeric',
   });
+
+  // window.close() only actually closes a tab the page itself opened via
+  // script (or, in some browsers, one with no other history) — a tab the
+  // participant navigated to normally (typed the link, clicked it from an
+  // email) is left untouched with no error thrown to catch. There's no way
+  // to ask the browser whether it worked, so this infers a failure the only
+  // way available: if the tab is still around a moment after asking it to
+  // close, it didn't, and the fallback copy takes over from there.
+  const [closeMayHaveFailed, setCloseMayHaveFailed] = useState(false);
+  const handleCloseTab = () => {
+    window.close();
+    window.setTimeout(() => setCloseMayHaveFailed(true), 400);
+  };
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
@@ -95,8 +108,46 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
             </p>
           </div>
 
+          <div className="w-full flex flex-col sm:flex-row gap-3 justify-center pt-2">
+            <button
+              type="button"
+              onClick={handleCloseTab}
+              className="px-5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 text-sm font-semibold transition"
+            >
+              Close this tab
+            </button>
+            {/*
+              Reuses the exact same demographics and consent already on file
+              for this session — the point of the button is a genuinely
+              fresh sitting without making someone retype what they already
+              gave, not a way to resume something unfinished. See the
+              redoFrom handling in App.tsx (mirrors handleDemographicsSubmit)
+              for where that actually happens.
+
+              Fullscreen has to be requested here, synchronously inside this
+              click, not after the navigation — by the time /setup mounts
+              this gesture's activation window has likely already closed.
+            */}
+            <Link
+              href={`/setup?redoFrom=${runData.session.id}`}
+              onClick={() => {
+                document.documentElement.requestFullscreen().catch(() => {});
+              }}
+              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition"
+            >
+              Take the assessment again
+            </Link>
+          </div>
+
+          {closeMayHaveFailed && (
+            <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+              Your browser didn&apos;t allow closing this tab automatically — please close it yourself
+              when you&apos;re ready.
+            </p>
+          )}
+
           <p className="text-sm text-gray-500">
-            You can close this window now. Completed {finishedOn}.
+            You can also just close this window whenever you like. Completed {finishedOn}.
           </p>
         </div>
       </main>
