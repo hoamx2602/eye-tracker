@@ -109,9 +109,17 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   practiceGateRef.current = practiceGate;
   const restartDelaySec = getRestartDelaySec(config);
   const movementDurationMs = getMovementDurationMs(config, TRAVEL_DISTANCE_PX);
-  const dimOpacity = getPracticeDimRectOpacity(config);
-  const showDimRect = true; // always rendered in practice, even if barely visible, matching the real test's own opacity
-  // But only described in words when it is actually something a participant
+  // Whether the real test draws a dim rect at all — AntiSaccadeTest.tsx uses
+  // this exact same condition (dimRectOpacity > 0). Practice used to render
+  // one unconditionally, boosted to a visible minimum, regardless of this —
+  // so a config with dimRectOpacity: 0 (the no-dim task, nothing to follow)
+  // still showed a faint dim square in practice that the real test would
+  // never show, teaching a task participants weren't actually being tested
+  // on. Only boost visibility for a dim rect that would exist either way.
+  const dimRectEnabled = getDimRectOpacity(config) > 0;
+  const showDimRect = dimRectEnabled;
+  const dimOpacity = dimRectEnabled ? getPracticeDimRectOpacity(config) : 0;
+  // Only described in words when it is actually something a participant
   // could follow — the real test's config decides this, so practice and the
   // real test never teach two different tasks. See constants.ts.
   const dimRectInstructable = isDimRectInstructable(config);
