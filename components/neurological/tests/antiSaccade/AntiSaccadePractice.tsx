@@ -12,11 +12,13 @@ import {
   STIMULUS_SHAPE_OPTIONS,
   RECT_COLOR_PALETTE,
   isDimRectInstructable,
+  resolveShowReferenceLines,
   type AntiSaccadeDirection,
   type AntiSaccadeRectColor,
   type AntiSaccadeStimulusShape,
 } from './constants';
 import StimulusShape from './StimulusShape';
+import ReferenceLines from './ReferenceLines';
 import { generateTrialDirections } from './utils';
 
 const BOX_SIZE = 360;
@@ -123,6 +125,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   // could follow — the real test's config decides this, so practice and the
   // real test never teach two different tasks. See constants.ts.
   const dimRectInstructable = isDimRectInstructable(config);
+  const showReferenceLines = resolveShowReferenceLines(config);
   const stimulusShape = getStimulusShape(config);
   const primaryRectColor = getRectColor(config, 'primaryRectColor', 'red');
   const dimRectColor = getRectColor(config, 'dimRectColor', 'blue');
@@ -206,6 +209,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
         </p>
       )}
       <div className="relative rounded-xl overflow-hidden bg-gray-900" style={{ width: BOX_SIZE, height: BOX_SIZE }}>
+        {showReferenceLines && <ReferenceLines className="absolute inset-0" />}
         {direction ? (
           <>
             {/* Dim rect — always at center before animation, moves opposite to primary when started */}

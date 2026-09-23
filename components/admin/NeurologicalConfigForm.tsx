@@ -54,6 +54,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
       practiceRestartDelaySec: 3,
       dimRectOpacity: 0.1,
       showDimRect: true,
+      showReferenceLines: true,
       stimulusShape: 'rectangle',
       primaryRectColor: 'red',
       dimRectColor: 'blue',
@@ -530,6 +531,17 @@ export default function NeurologicalConfigForm() {
                           className="w-full accent-blue-500 h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer"
                         />
                       </div>
+                      <label className="flex items-center gap-3 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={params.showReferenceLines !== false}
+                          onChange={(e) => setParam(id, 'showReferenceLines', e.target.checked)}
+                          className="rounded border-slate-500 bg-slate-800 h-4 w-4"
+                        />
+                        <span className="text-white text-sm font-medium">
+                          Show centre reference lines
+                        </span>
+                      </label>
                       <SelectNumber
                         label="Fixation pause (ms)"
                         value={Number(params.fixationPauseMs) || 1000}

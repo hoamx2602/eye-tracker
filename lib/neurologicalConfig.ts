@@ -54,6 +54,7 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
     practiceRestartDelaySec: 3,
     dimRectOpacity: 0.1,
     showDimRect: true,
+    showReferenceLines: true,
     stimulusShape: 'rectangle',
     primaryRectColor: 'red',
     dimRectColor: 'blue',

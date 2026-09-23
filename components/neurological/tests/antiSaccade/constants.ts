@@ -28,6 +28,18 @@ export function isDimRectInstructable(config: Record<string, unknown> | undefine
 }
 
 /**
+ * The faint dashed cross-hair marking screen centre — not a target,
+ * just a fixed reference so a participant can judge how far a shape has
+ * travelled. Read by both the real test and practice from the same
+ * config key, so an admin turning it off turns it off everywhere at
+ * once rather than leaving practice showing a reference the real test
+ * doesn't (or the other way round).
+ */
+export function resolveShowReferenceLines(config: Record<string, unknown> | undefined): boolean {
+  return config?.showReferenceLines !== false;
+}
+
+/**
  * Returns guide steps for Anti-Saccade, adapted based on whether the dim rect is shown.
  * When showDimRect is false (dimRectOpacity = 0), instructions do not mention a dim rectangle.
  */

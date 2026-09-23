@@ -16,11 +16,13 @@ import {
   STIMULUS_SHAPE_OPTIONS,
   RECT_COLOR_PALETTE,
   isDimRectInstructable,
+  resolveShowReferenceLines,
   type AntiSaccadeDirection,
   type AntiSaccadeRectColor,
   type AntiSaccadeStimulusShape,
 } from './constants';
 import StimulusShape from './StimulusShape';
+import ReferenceLines from './ReferenceLines';
 import { dimPosition, generateTrialDirections, primaryPosition } from './utils';
 import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 
@@ -144,6 +146,7 @@ export default function AntiSaccadeTest() {
     return Number.isFinite(v) ? Math.max(0, Math.min(0.9, v)) : 0.1;
   })();
   const showDimRect = dimRectOpacity > 0;
+  const showReferenceLines = resolveShowReferenceLines(config);
   // Below DIM_RECT_TEXT_THRESHOLD the rectangle still renders (showDimRect
   // above) but is too faint to meaningfully ask someone to "follow" — the
   // words describe the task by direction instead. See constants.ts.
@@ -341,11 +344,7 @@ export default function AntiSaccadeTest() {
       role="region"
       aria-label="Anti-saccade: look opposite direction from the primary square"
     >
-      {/* Centre lines */}
-      <div className="pointer-events-none fixed inset-0" aria-hidden>
-        <div className="absolute inset-y-0 left-1/2 -translate-x-px w-px border-l-2 border-dashed border-white/15" />
-        <div className="absolute inset-x-0 top-1/2 -translate-y-px h-px border-t-2 border-dashed border-white/15" />
-      </div>
+      {showReferenceLines && <ReferenceLines className="fixed inset-0" />}
 
       <p className="text-center text-gray-400 text-sm pt-4 pb-2">
         Look in the opposite direction from the{' '}
