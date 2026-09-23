@@ -2010,6 +2010,7 @@ function App() {
           device: d.device ?? 'not_specified',
           eyeConditions: Array.isArray(d.eyeConditions) && d.eyeConditions.length > 0 ? d.eyeConditions : ['none'],
           wearsGlasses: d.wearsGlasses === true,
+          notes: typeof d.notes === 'string' ? d.notes : '',
         };
         consentRef.current = priorConsent;
         void ensureSessionCreated();

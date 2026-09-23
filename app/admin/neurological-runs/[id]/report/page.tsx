@@ -12,6 +12,7 @@ type Demographics = {
   gender?: string;
   country?: string;
   eyeConditions?: string[];
+  notes?: string;
 };
 
 type SessionContext = {
@@ -708,6 +709,12 @@ function NeurologicalRunReportInner() {
                 <div className="meta-item">
                   <dt>Eye Conditions</dt>
                   <dd>{demo.eyeConditions.join(', ')}</dd>
+                </div>
+              )}
+              {demo?.notes && (
+                <div className="meta-item">
+                  <dt>Notes</dt>
+                  <dd style={{ whiteSpace: 'pre-wrap' }}>{demo.notes}</dd>
                 </div>
               )}
               {run.session?.meanErrorPx != null && (

@@ -35,7 +35,7 @@ export interface RawEyeFeaturesPayload {
 export interface CreateSessionPayload {
   config?: Record<string, unknown>;
   /** Demographics at calibration time (age, gender, country, eyeConditions) */
-  demographics?: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[] };
+  demographics?: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[]; wearsGlasses?: boolean; notes?: string };
   /** Participant email, also stored in its own indexed column for lookup. */
   participantEmail?: string;
   validationErrors?: number[];
@@ -62,7 +62,7 @@ export interface Session {
   createdAt: string;
   updatedAt: string;
   config: Record<string, unknown> | null;
-  demographics: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[]; wearsGlasses?: boolean; device?: string } | null;
+  demographics: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[]; wearsGlasses?: boolean; device?: string; notes?: string } | null;
   participantEmail?: string | null;
   validationErrors: number[];
   meanErrorPx: number | null;

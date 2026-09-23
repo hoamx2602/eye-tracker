@@ -13,6 +13,8 @@ export type DemographicsData = {
   device: string;
   eyeConditions: string[];
   wearsGlasses: boolean;
+  /** Free-text notes on the participant, entered by whoever is running the session. */
+  notes: string;
 };
 
 /**
@@ -57,6 +59,7 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
   const [country, setCountry] = useState('');
   const [eyeConditions, setEyeConditions] = useState<string[]>([]);
   const [wearsGlasses, setWearsGlasses] = useState(false);
+  const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
 
 
@@ -101,6 +104,7 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
       device: 'not_specified',
       eyeConditions: eyeConditions.length === 0 ? ['none'] : eyeConditions.filter((x) => x !== 'none'),
       wearsGlasses,
+      notes: notes.trim(),
     });
   };
 
@@ -235,6 +239,20 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
               </label>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="demographics-notes" className="block text-sm font-medium text-gray-300 mb-1">
+            Notes
+          </label>
+          <textarea
+            id="demographics-notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            placeholder="Any other relevant information about the participant..."
+          />
         </div>
       </div>
       <div className="p-6 border-t border-gray-700 flex gap-3 justify-end">
