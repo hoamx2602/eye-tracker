@@ -2,23 +2,12 @@
 import React from 'react';
 import { CalibrationPoint, CalibrationPhase, CalibrationMethod } from '../types';
 import { useVoiceRepeat } from '@/lib/voice/VoiceProvider';
+import { calibDotStyle } from '@/lib/calibrationDot';
 
 /** How often the short spoken reminder repeats while dots are being shown. */
 const VOICE_CUE_INTERVAL_MS = 25000;
 
-/**
- * Timer-mode dot: appears large and shrinks to a small point.
- *
- * A change in size pulls the eye to the dot without any instruction, and as
- * it contracts the eye is drawn to its centre — the spot the dot's screen
- * coordinates actually label. A static 32 px dot lets the eye land anywhere on
- * it. The shrink (DOT_SHRINK_MS) also covers the saccade and settling time, so
- * by the time the gaze-contingent collector (lib/fixationSampling) accepts
- * frames the dot is already small. Same idea as the iOS / Tobii calibration dot.
- */
-const DOT_START_PX = 44;
-const DOT_END_SCALE = 0.32; // ≈ 14 px
-const DOT_SHRINK_MS = 700;
+/** Timer-mode dot: appears large and shrinks to a point — see lib/calibrationDot. */
 
 interface CalibrationLayerProps {
   points: CalibrationPoint[];
@@ -114,16 +103,11 @@ const CalibrationLayer: React.FC<CalibrationLayerProps> = ({
                 style={{
                   left: `${point.x}%`,
                   top: `${point.y}%`,
-                  width: DOT_START_PX,
-                  height: DOT_START_PX,
-                  border: '4px solid white',
-                  transform: `translate(-50%, -50%) scale(${DOT_END_SCALE})`,
-                  animation: `calib-dot-shrink ${DOT_SHRINK_MS}ms cubic-bezier(0.2, 0.7, 0.3, 1) both`,
-                  ['--calib-dot-end' as string]: DOT_END_SCALE,
+                  ...calibDotStyle(),
                 }}
               >
-                {/* Inner pupil dot — the point the eye should end on */}
-                <div className="w-2 h-2 bg-black rounded-full"></div>
+                {/* Inner pupil dot — the point the eye should end on (≈2.4 px at the end) */}
+                <div className="w-3 h-3 bg-black rounded-full"></div>
               </div>
             );
         }

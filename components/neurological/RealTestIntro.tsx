@@ -19,12 +19,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useVoiceOnMount } from '@/lib/voice/VoiceProvider';
 import { gazeFrameStream } from '@/lib/gazeFrameStream';
 import { commitDriftCheck, evaluateDriftCheck, recordSkippedDriftCheck } from '@/lib/driftCorrection';
+import { CALIB_DOT_SHRINK_MS, calibDotStyle } from '@/lib/calibrationDot';
 
 const COUNTDOWN_SECONDS = 5;
 /** The drift dot replaces the number for the last this-many seconds. */
 const DRIFT_DOT_SECONDS = 2;
 /** Frames from the first part of the dot are the saccade to it and settling, not fixation. */
-const DRIFT_SETTLE_MS = 700;
+const DRIFT_SETTLE_MS = CALIB_DOT_SHRINK_MS;
 
 export type RealTestIntroProps = {
   /** Test name, e.g. "Saccadic Eye Movement". */
@@ -87,11 +88,11 @@ export default function RealTestIntro({ testLabel, summary, onStart }: RealTestI
       {showDriftDot && (
         <>
           <div
-            className="fixed left-1/2 top-1/2 w-11 h-11 rounded-full bg-red-600 border-4 border-white flex items-center justify-center pointer-events-none"
-            style={{ animation: 'calib-dot-shrink 700ms cubic-bezier(0.2, 0.7, 0.3, 1) both', transform: 'translate(-50%, -50%) scale(0.32)' }}
+            className="fixed left-1/2 top-1/2 rounded-full bg-red-600 flex items-center justify-center pointer-events-none"
+            style={calibDotStyle()}
             aria-hidden
           >
-            <div className="w-2 h-2 bg-black rounded-full" />
+            <div className="w-3 h-3 bg-black rounded-full" />
           </div>
           <p className="fixed left-0 right-0 top-[calc(50%+3rem)] text-center text-sm text-gray-300">Look at the dot</p>
         </>
