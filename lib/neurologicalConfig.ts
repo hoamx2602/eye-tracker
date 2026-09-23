@@ -62,6 +62,8 @@ export const DEFAULT_TEST_PARAMETERS: Record<string, Record<string, unknown>> = 
   },
   saccadic: {
     targetDurationMs: 1000,
+    fixationMinMs: 1000,
+    fixationMaxMs: 2000,
     totalCycles: 18,
     targetDotSizePx: 64,
     targetDotColor: '#f59e0b',

@@ -164,12 +164,13 @@ export const NEURO_STEPS: AssessmentStep[] = [
   {
     id: 'saccadic',
     label: 'Saccadic Eye Movement',
-    duration: '~20 sec',
-    durationSec: 20,
+    // 18 targets × (1–2 s centre dot + 1 s target).
+    duration: '~45 sec',
+    durationSec: 45,
     section: 'neuro',
-    tagline: 'React quickly to targets appearing alternately on each side.',
+    tagline: 'React quickly to targets appearing at random on either side.',
     description:
-      'A target will appear on the left or the right of the screen and switch sides about once a second. Move your eyes to it as fast as you can the moment it appears, then wait for it to move again. Speed matters here. This test measures the raw speed and accuracy of voluntary eye movement.',
+      'Look at a small dot in the centre of the screen. After a moment, a target will appear on the left or the right — the side and the timing are random. Move your eyes to it as fast as you can the moment it appears, then back to the centre dot. Speed matters here. This test measures the raw speed and accuracy of reflexive eye movement.',
   },
   {
     id: 'fixation_stability',

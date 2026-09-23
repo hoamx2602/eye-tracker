@@ -281,10 +281,11 @@ export const VOICE_SCRIPTS = {
   },
   'neuro.saccadic': {
     text:
-      'Saccadic eye movement. A target will appear on the left or the right of the screen, ' +
-      'and will switch sides about once a second. ' +
+      'Saccadic eye movement. Look at the small dot in the centre of the screen. ' +
+      'After a moment, a target will appear on the left or the right. ' +
       'As soon as it appears, look straight at it as quickly and accurately as you can, ' +
-      'then wait for it to move again. Move your eyes only, not your head.',
+      'then back to the centre dot. The side and the timing are random, so just react. ' +
+      'Move your eyes only, not your head.',
     cue: 'Look at each target as soon as it appears.',
   },
   'neuro.fixation_stability': {

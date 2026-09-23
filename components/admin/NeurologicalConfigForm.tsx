@@ -59,7 +59,7 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
       primaryRectColor: 'red',
       dimRectColor: 'blue',
     },
-    saccadic: { targetDurationMs: 1000, totalCycles: 18, targetDotSizePx: 64, targetDotColor: '#f59e0b' },
+    saccadic: { targetDurationMs: 1000, fixationMinMs: 1000, fixationMaxMs: 2000, totalCycles: 18, targetDotSizePx: 64, targetDotColor: '#f59e0b' },
     fixation_stability: { durationSec: 5, blinkIntervalMs: 600, centerDotSizePx: 12, centerDotColor: '#f59e0b' },
     peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000, centerDotSizePx: 8, centerDotColor: '#f59e0b', stimulusDotSizePx: 16, stimulusDotColor: '#ffffff' },
   };
@@ -575,6 +575,18 @@ export default function NeurologicalConfigForm() {
                         value={Number(params.targetDurationMs) ?? 1000}
                         onChange={(v) => setParam(id, 'targetDurationMs', v)}
                         options={[500, 700, 1000, 1500, 2000, 2500, 3000].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
+                      <SelectNumber
+                        label="Centre dot, shortest wait (ms)"
+                        value={Number(params.fixationMinMs) || 1000}
+                        onChange={(v) => setParam(id, 'fixationMinMs', v)}
+                        options={[500, 700, 1000, 1200, 1500].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
+                      <SelectNumber
+                        label="Centre dot, longest wait (ms)"
+                        value={Number(params.fixationMaxMs) || 2000}
+                        onChange={(v) => setParam(id, 'fixationMaxMs', v)}
+                        options={[1000, 1500, 2000, 2500, 3000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
                       <SelectNumber
                         label="Total cycles"

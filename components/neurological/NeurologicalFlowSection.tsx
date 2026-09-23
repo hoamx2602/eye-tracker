@@ -83,7 +83,7 @@ const TEST_SUMMARIES: Record<string, string> = {
   visual_search: 'Find the numbers scattered on screen and look at them in order, 1, 2, 3…',
   memory_cards: 'Turn cards over two at a time and find every matching pair.',
   anti_saccade: 'Two shapes move apart — look at the dim one, not the bright one.',
-  saccadic: 'A target jumps between left and right. Look at it as soon as it appears.',
+  saccadic: 'Watch the centre dot; when a target appears on either side, look at it at once.',
   fixation_stability: 'Hold your gaze on a single dot in the centre of the screen.',
   peripheral_vision: 'Keep looking at the centre and press space when you spot a flash at the edge.',
 };
