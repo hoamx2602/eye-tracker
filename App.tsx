@@ -7,6 +7,7 @@ import { PATHS, parsePathname } from '@/lib/paths';
 import { neuroDebugLog, neuroPersistWarn } from '@/lib/neuroDebugLog';
 import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
 import { gazeFrameStream, GazeFrameQuality } from '@/lib/gazeFrameStream';
+import { CALIB_DOT_SHRINK_MS } from '@/lib/calibrationDot';
 import { getDriftOffset, resetDriftOffset } from '@/lib/driftCorrection';
 import { NEURO_VERIFY_META_KEY, NEURO_VERIFY_SNAPSHOT_KEY } from '@/lib/neuroVerifyMode';
 import {
@@ -1791,7 +1792,14 @@ function App() {
     const speedMultiplier = NEURO_QUICK_MODE
       ? 0.5
       : config.calibrationSpeed === 'FAST' ? 0.5 : config.calibrationSpeed === 'SLOW' ? 1.5 : 1.0;
-    const opts = timerFixationOptions(speedMultiplier, outlierMadK());
+    // No frame counts until the dot has finished shrinking (lib/calibrationDot):
+    // collecting while it is still large labels a point the eye has not yet
+    // been drawn to, and moved the dot on the moment it became small. Tobii's
+    // own flow rests the target ~0.5 s before collecting; the shrink is that rest.
+    const opts = {
+      ...timerFixationOptions(speedMultiplier, outlierMadK()),
+      ...(!NEURO_QUICK_MODE && { minSettleMs: CALIB_DOT_SHRINK_MS }),
+    };
     const onset = performance.now();
     const collector = new FixationCollector(onset, opts, fixationNoiseRef.current);
     pointCollectorRef.current = collector;
