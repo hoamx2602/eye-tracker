@@ -253,7 +253,11 @@ export const VOICE_SCRIPTS = {
       'Your task is to resist looking at the bright one, and instead look at the dim shape ' +
       'on the opposite side. This feels unnatural — that is exactly what we are measuring. ' +
       'Keep your head still and move only your eyes.',
-    cue: 'Look at the dim shape, not the bright one.',
+    // Repeats every 5s during the real test (see CUE_INTERVAL_OVERRIDES_MS in
+    // GuidePracticeTestFlow.tsx) against trials that cycle in well under
+    // that — kept to the one word that actually matters mid-task, since the
+    // full rule was already given in the guide and practice before this.
+    cue: 'Look at the dim shape.',
   },
   // Played instead of neuro.anti_saccade when the dim shape is configured too
   // faint to meaningfully follow (dimRectOpacity below DIM_RECT_TEXT_THRESHOLD
@@ -268,7 +272,12 @@ export const VOICE_SCRIPTS = {
       'Your task is to look in the opposite direction — away from the square, not towards it. ' +
       'This feels unnatural — that is exactly what we are measuring. ' +
       'Keep your head still and move only your eyes.',
-    cue: 'Look away from the red square, to the opposite side.',
+    // Matches the on-screen caption's own wording exactly ("opposite
+    // direction from the [colour] square" — see AntiSaccadeTest.tsx) rather
+    // than paraphrasing it as "away from": the two saying the same thing in
+    // different words was itself part of what read as long-winded, on top
+    // of just being longer than it needed to be.
+    cue: 'Look in the opposite direction from the red square.',
   },
   'neuro.saccadic': {
     text:
