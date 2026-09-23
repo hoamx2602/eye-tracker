@@ -6,6 +6,20 @@ import { useVoiceRepeat } from '@/lib/voice/VoiceProvider';
 /** How often the short spoken reminder repeats while dots are being shown. */
 const VOICE_CUE_INTERVAL_MS = 25000;
 
+/**
+ * Timer-mode dot: appears large and shrinks to a small point.
+ *
+ * A change in size pulls the eye to the dot without any instruction, and as
+ * it contracts the eye is drawn to its centre — the spot the dot's screen
+ * coordinates actually label. A static 32 px dot lets the eye land anywhere on
+ * it. The shrink (DOT_SHRINK_MS) also covers the saccade and settling time, so
+ * by the time the gaze-contingent collector (lib/fixationSampling) accepts
+ * frames the dot is already small. Same idea as the iOS / Tobii calibration dot.
+ */
+const DOT_START_PX = 44;
+const DOT_END_SCALE = 0.32; // ≈ 14 px
+const DOT_SHRINK_MS = 700;
+
 interface CalibrationLayerProps {
   points: CalibrationPoint[];
   currentPointIndex: number;
@@ -82,27 +96,43 @@ const CalibrationLayer: React.FC<CalibrationLayerProps> = ({
         if (idx !== currentPointIndex) return null;
 
         // Visual State Logic
-        let scale = 'scale-100';
         let bgColor = 'bg-red-500';
         let shadow = 'shadow-[0_0_10px_rgba(255,0,0,0.5)]';
 
         if (method === CalibrationMethod.TIMER) {
+            // No expanding ring while capturing: it pulled attention outwards
+            // exactly when the gaze has to stay on the centre.
             if (isCapturing) {
-                scale = 'scale-125';
                 bgColor = 'bg-red-600';
-                shadow = 'shadow-[0_0_25px_rgba(255,0,0,1)]';
+                shadow = 'shadow-[0_0_12px_rgba(255,0,0,0.9)]';
             }
-        } else {
-             // Click & Hold Visuals
-             bgColor = 'bg-red-500'; // Default base
-             if (progress > 0) {
-                 scale = `scale-${100 + (progress * 25)}`; // Grow slightly
-                 shadow = `shadow-[0_0_25px_${getProgressColor()}]`;
-             }
+            return (
+              <div
+                // Keyed on the presentation, so a re-queued dot shrinks again.
+                key={`${point.id}-${currentPointIndex}`}
+                className={`absolute rounded-full flex items-center justify-center pointer-events-none ${bgColor} ${shadow}`}
+                style={{
+                  left: `${point.x}%`,
+                  top: `${point.y}%`,
+                  width: DOT_START_PX,
+                  height: DOT_START_PX,
+                  border: '4px solid white',
+                  transform: `translate(-50%, -50%) scale(${DOT_END_SCALE})`,
+                  animation: `calib-dot-shrink ${DOT_SHRINK_MS}ms cubic-bezier(0.2, 0.7, 0.3, 1) both`,
+                  ['--calib-dot-end' as string]: DOT_END_SCALE,
+                }}
+              >
+                {/* Inner pupil dot — the point the eye should end on */}
+                <div className="w-2 h-2 bg-black rounded-full"></div>
+              </div>
+            );
         }
 
-        const dynamicStyle = method === CalibrationMethod.CLICK_HOLD && progress > 0
-            ? { backgroundColor: getProgressColor() } 
+        // Click & Hold: grows slightly and turns green as the hold completes.
+        // (Scale is inline: a Tailwind class built at runtime is never generated.)
+        const holdScale = 1 + progress * 0.25;
+        const dynamicStyle = progress > 0
+            ? { backgroundColor: getProgressColor(), boxShadow: `0 0 25px ${getProgressColor()}` }
             : {};
 
         return (
@@ -112,23 +142,18 @@ const CalibrationLayer: React.FC<CalibrationLayerProps> = ({
             onMouseUp={onPointMouseUp}
             onMouseLeave={onPointMouseUp} // Handle dragging out
             className={`absolute w-8 h-8 rounded-full flex items-center justify-center transition-all duration-75 ease-linear
-              ${scale} ${bgColor} ${shadow}
+              ${bgColor} ${shadow}
             `}
             style={{
               left: `${point.x}%`,
               top: `${point.y}%`,
-              transform: 'translate(-50%, -50%)',
+              transform: `translate(-50%, -50%) scale(${holdScale})`,
               border: '4px solid white',
               ...dynamicStyle
             }}
           >
             {/* Inner pupil dot */}
             <div className="w-1.5 h-1.5 bg-black rounded-full pointer-events-none"></div>
-            
-            {/* Timer Loading Ring */}
-            {method === CalibrationMethod.TIMER && isCapturing && (
-              <div className="absolute inset-0 border-2 border-white rounded-full animate-ping opacity-75 pointer-events-none"></div>
-            )}
           </div>
         );
       })}
