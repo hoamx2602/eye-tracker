@@ -2,12 +2,14 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useRef } from 'react';
 import type { TestResultPayload } from './types';
-import { gazeFrameStream, toGazeFrameColumns } from '@/lib/gazeFrameStream';
+import { gazeFrameStream, toGazeFrameColumns, type GazeFrame } from '@/lib/gazeFrameStream';
 
 export interface TestRunnerContextValue {
   testId: string;
   config: Record<string, unknown>;
   completeTest: (payload: TestResultPayload) => void;
+  /** Every gaze frame since this test started (lib/gazeFrameStream). */
+  getGazeFrames: () => readonly GazeFrame[];
 }
 
 const TestRunnerContext = createContext<TestRunnerContextValue | null>(null);
@@ -53,10 +55,16 @@ export function TestRunnerProvider({
     });
   }, [testId]);
 
+  const getGazeFrames = useCallback(
+    () => (captureTokenRef.current !== null ? gazeFrameStream.peek(captureTokenRef.current) : []),
+    []
+  );
+
   const value: TestRunnerContextValue = {
     testId,
     config,
     completeTest,
+    getGazeFrames,
   };
 
   return (
