@@ -31,10 +31,30 @@ const IN_TEST_CUE_INTERVAL_MS = 30000;
  * and at the default 30s interval the real test ran essentially silent —
  * the on-error clip (neuro.visual_search.wrong_order) only fires after they
  * have already gotten one wrong.
+ *
+ * Peripheral vision is the extreme case: at the configured 8 trials with an
+ * 800-2000ms gap between them, the whole real test is over in roughly
+ * 10-16s — well under the 30s default, so the cue (which is the only place
+ * "press space" gets said once the real test starts; realtest.intro is
+ * generic across every test) never fired at all. See also `immediate`
+ * below, which matters more here than the interval itself.
  */
 const CUE_INTERVAL_OVERRIDES_MS: Record<string, number> = {
   anti_saccade: 5000,
   visual_search: 5000,
+  peripheral_vision: 6000,
+};
+
+/**
+ * Tests where the repeat cue should fire the instant the real test starts,
+ * not one interval in. Reserved for tests short enough, or high-stakes
+ * enough at the very first trial, that waiting even one interval would mean
+ * the participant does the opening trials without ever having heard what to
+ * do once it's actually being recorded (guide/practice explained it, but
+ * that can be a while ago by the time the real test begins).
+ */
+const CUE_IMMEDIATE_OVERRIDES: Record<string, boolean> = {
+  peripheral_vision: true,
 };
 
 /** Self-assessment config passed down from admin config snapshot. */
@@ -274,7 +294,8 @@ export default function GuidePracticeTestFlow({
   useVoiceRepeat(
     voiceKey,
     CUE_INTERVAL_OVERRIDES_MS[testId] ?? IN_TEST_CUE_INTERVAL_MS,
-    repeatCue && phase === 'test' && pendingPayload === null
+    repeatCue && phase === 'test' && pendingPayload === null,
+    { immediate: CUE_IMMEDIATE_OVERRIDES[testId] ?? false }
   );
 
   function handleRedo() {
