@@ -219,6 +219,7 @@ const STEP_ICONS: Record<string, React.ReactNode> = {
   saccadic: <BoltIcon />,
   fixation_stability: <TargetIcon />,
   peripheral_vision: <EyeIcon />,
+  smooth_pursuit: <HArrowIcon />,
 };
 
 const CALIBRATION_STEPS: Step[] = withIcons(STEP_CONTENT_SET_1);

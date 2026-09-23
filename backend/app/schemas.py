@@ -26,6 +26,14 @@ class ProcessRequest(BaseModel):
         description="Held-out dots used only for reporting true offline accuracy.",
     )
     screen: ScreenGeometryIn
+    settled_windows: bool = Field(
+        default=False,
+        description=(
+            "True when each dot window already starts at a settled fixation "
+            "(gaze-contingent browser sampling); only a small leading margin is "
+            "then dropped instead of the 40% approach transient."
+        ),
+    )
     frame_stride: int = 1
     saccade_velocity_threshold_deg_s: float = 30.0
     calibration_outlier_sigma: float = Field(

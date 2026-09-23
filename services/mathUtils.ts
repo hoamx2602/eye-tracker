@@ -68,15 +68,19 @@ export class Matrix {
     return M.map(row => row.slice(n));
   }
 
-  static solveLeastSquares(inputs: number[][], outputs: number[][]): number[][] | null {
+  /**
+   * @param penaliseBias  false leaves column 0 (the bias) out of the penalty, which
+   *   is what you want once the other columns are standardised — shrinking the
+   *   intercept pulls every prediction toward the origin.
+   */
+  static solveLeastSquares(inputs: number[][], outputs: number[][], lambda = 0.001, penaliseBias = true): number[][] | null {
     try {
       const X = inputs;
       const Y = outputs;
       const XT = Matrix.transpose(X);
       const XTX = Matrix.multiply(XT, X);
 
-      const lambda = 0.001; // Ridge Regularization
-      for(let i=0; i<XTX.length; i++) XTX[i][i] += lambda;
+      for(let i = penaliseBias ? 0 : 1; i<XTX.length; i++) XTX[i][i] += lambda;
 
       const XTX_Inv = Matrix.invert(XTX);
       if (!XTX_Inv) return null;
@@ -89,7 +93,7 @@ export class Matrix {
   }
 
   /** Weighted Ridge: W = (XᵀDX + λI)⁻¹ XᵀDY where D = diag(weights). */
-  static weightedSolveLeastSquares(inputs: number[][], outputs: number[][], weights: number[], lambda = 0.001): number[][] | null {
+  static weightedSolveLeastSquares(inputs: number[][], outputs: number[][], weights: number[], lambda = 0.001, penaliseBias = true): number[][] | null {
     try {
       const n = inputs.length, d = inputs[0].length, o = outputs[0].length;
       const XtWX: number[][] = Array.from({ length: d }, () => new Array<number>(d).fill(0));
@@ -101,7 +105,7 @@ export class Matrix {
           for (let k = 0; k < o; k++) XtWY[j][k] += w * inputs[i][j] * outputs[i][k];
         }
       }
-      for (let i = 0; i < d; i++) XtWX[i][i] += lambda;
+      for (let i = penaliseBias ? 0 : 1; i < d; i++) XtWX[i][i] += lambda;
       const inv = Matrix.invert(XtWX);
       return inv ? Matrix.multiply(inv, XtWY) : null;
     } catch { return null; }
@@ -251,10 +255,50 @@ export class TPSRegressor {
   }
 }
 
+/** Column means and spreads of the feature vector, for standardising it before the solve. */
+interface FeatureScaling { mu: number[]; sd: number[] }
+
+function scalingOf(inputs: number[][]): FeatureScaling {
+  const d = inputs[0].length;
+  const mu = new Array<number>(d).fill(0);
+  const sd = new Array<number>(d).fill(1);
+  for (let j = 0; j < d; j++) {
+    let m = 0;
+    for (const row of inputs) m += row[j];
+    m /= inputs.length;
+    let v = 0;
+    for (const row of inputs) v += (row[j] - m) ** 2;
+    const s = Math.sqrt(v / Math.max(1, inputs.length - 1));
+    // A constant column (the bias) keeps mu=0, sd=1: centring it would delete it.
+    if (s > 1e-9) { mu[j] = m; sd[j] = s; }
+  }
+  return { mu, sd };
+}
+
+const applyScaling = (input: number[], s: FeatureScaling): number[] =>
+  input.map((v, j) => (v - (s.mu[j] ?? 0)) / (s.sd[j] ?? 1));
+
+/**
+ * Ridge strength on the standardised features.
+ *
+ * The raw vector mixes iris offsets (≈±2), head angles in radians (≈±0.1) and
+ * their cross terms, so a single penalty over raw columns shrank them by wildly
+ * different amounts. Standardising first and penalising at λ=3 beat the previous
+ * unstandardised λ=0.001 by a median of 9.7 px on 67% of 69 stored sessions, and
+ * held at every grid size (scripts/check-gaze-mapping.ts). Sessions with very few
+ * samples — test/quick runs with no exercise data — did worse at λ=3, so those
+ * get a light penalty instead.
+ */
+const RIDGE_LAMBDA = 3;
+const RIDGE_LAMBDA_FEW_SAMPLES = 0.5;
+const FEW_SAMPLES_BELOW = 25;
+
 /**
  * Hybrid Regressor (Ridge + kNN)
  */
 export class HybridRegressor {
+  /** Scaling fitted on the training set; predictions must use the same one. */
+  private scaling: FeatureScaling | null = null;
   private weights: number[][] | null = null;
   private trainingData: { input: number[], output: number[], error: number[] }[] = [];
   public lastMeanCVErrorRidge: number = 0;
@@ -269,10 +313,13 @@ export class HybridRegressor {
   }
 
   train(inputs: number[][], outputs: number[][], sampleWeights?: number[]): boolean {
-    // 1. Train Ridge (Always required as fallback)
+    // 1. Train Ridge (Always required as fallback) on standardised features — see RIDGE_LAMBDA.
+    this.scaling = scalingOf(inputs);
+    const scaled = inputs.map((row) => applyScaling(row, this.scaling!));
+    const lambda = inputs.length >= FEW_SAMPLES_BELOW ? RIDGE_LAMBDA : RIDGE_LAMBDA_FEW_SAMPLES;
     this.weights = sampleWeights
-      ? Matrix.weightedSolveLeastSquares(inputs, outputs, sampleWeights)
-      : Matrix.solveLeastSquares(inputs, outputs);
+      ? Matrix.weightedSolveLeastSquares(scaled, outputs, sampleWeights, lambda, false)
+      : Matrix.solveLeastSquares(scaled, outputs, lambda, false);
     if (!this.weights) return false;
 
     // Residuals for kNN
@@ -309,15 +356,20 @@ export class HybridRegressor {
         const testInput = inputs[i];
         const testOutput = outputs[i];
 
-        // Train Ridge CV
-        const weightsCV = Matrix.solveLeastSquares(trainInputs, trainOutputs);
+        // Train Ridge CV — same standardisation as train(), refitted per fold.
+        const scalingCV = scalingOf(trainInputs);
+        const lambdaCV = trainInputs.length >= FEW_SAMPLES_BELOW ? RIDGE_LAMBDA : RIDGE_LAMBDA_FEW_SAMPLES;
+        const weightsCV = Matrix.solveLeastSquares(
+          trainInputs.map((row) => applyScaling(row, scalingCV)), trainOutputs, lambdaCV, false,
+        );
         if (!weightsCV) continue;
 
         // Predict Ridge
+        const testScaled = applyScaling(testInput, scalingCV);
         let predRidgeX = 0, predRidgeY = 0;
-        for (let j = 0; j < testInput.length; j++) {
-            predRidgeX += testInput[j] * weightsCV[j][0];
-            predRidgeY += testInput[j] * weightsCV[j][1];
+        for (let j = 0; j < testScaled.length; j++) {
+            predRidgeX += testScaled[j] * weightsCV[j][0];
+            predRidgeY += testScaled[j] * weightsCV[j][1];
         }
         
         const distRidge = Math.sqrt(Math.pow(predRidgeX - testOutput[0], 2) + Math.pow(predRidgeY - testOutput[1], 2));
@@ -371,10 +423,11 @@ export class HybridRegressor {
 
   private predictLinear(input: number[]): number[] {
     if (!this.weights) return [0, 0];
+    const v = this.scaling ? applyScaling(input, this.scaling) : input;
     let x = 0, y = 0;
-    for (let i = 0; i < input.length; i++) {
-      x += input[i] * this.weights[i][0];
-      y += input[i] * this.weights[i][1];
+    for (let i = 0; i < v.length; i++) {
+      x += v[i] * this.weights[i][0];
+      y += v[i] * this.weights[i][1];
     }
     return [x, y];
   }

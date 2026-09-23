@@ -5,24 +5,33 @@ export const SACCADIC_GUIDE_STEPS: GuideStep[] = [
   {
     id: '1',
     title: 'Saccadic Eye Movement',
-    body: 'A target will appear on the left or right side of the screen and switch sides every second. Your task is to look at the target as soon as it appears.',
+    body: 'A small dot will appear in the centre of the screen. Look at it. After a moment, a target will appear on the left or the right. Your task is to look at the target as soon as it appears.',
   },
   {
     id: '2',
-    body: 'Move your eyes quickly to the target when it appears. Try to fixate on it accurately. The target will alternate between left and right.',
+    body: 'Move your eyes quickly to the target when it appears, then back to the centre dot when it returns. The side and the timing change at random, so you cannot guess them — just react.',
   },
   {
     id: '3',
-    title: 'Cycles',
-    body: 'You will see several cycles (left, right, left, right…). We measure how quickly and accurately you look at each target.',
+    title: 'Targets',
+    body: 'You will see several targets. We measure how quickly and accurately you look at each one.',
   },
 ];
 
 export type SaccadicTargetSide = 'left' | 'right';
 
-/** Duration (ms) each target is shown before switching to the other side. */
+/** Duration (ms) each target is shown before the centre dot returns. */
 export const DEFAULT_TARGET_DURATION_MS = 1000;
-/** Total number of target appearances (cycles). 18 = 9 left + 9 right. */
+/**
+ * Central fixation before each target is drawn uniformly from this range (ms).
+ * A fixed interval lets the participant time the jump in advance, and the
+ * measured "latency" becomes an anticipation.
+ */
+export const DEFAULT_FIXATION_MIN_MS = 1000;
+export const DEFAULT_FIXATION_MAX_MS = 2000;
+/** Diameter of the central fixation dot (px). */
+export const FIXATION_DOT_SIZE_PX = 14;
+/** Total number of target appearances (cycles). 18 = 9 left + 9 right, in random order. */
 export const DEFAULT_TOTAL_CYCLES = 18;
 /** Practice: number of cycles. */
 export const PRACTICE_CYCLES = 3;

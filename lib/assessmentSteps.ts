@@ -159,28 +159,40 @@ export const NEURO_STEPS: AssessmentStep[] = [
     section: 'neuro',
     tagline: 'Look at the dim shape, not the bright one.',
     description:
-      'Two shapes will appear in the centre of the screen and then move apart in opposite directions — one bright, one dim. Your task is to look at the dim one. This is intentionally difficult, because your reflex is to look at whatever is brightest and moving. The test measures your ability to override that reflex and direct your gaze deliberately.',
+      'A shape appears in the centre of the screen. After a moment, a bright shape jumps to one side and a dim shape to the other. Your task is to look at the dim one. This is intentionally difficult, because your reflex is to look at whatever is brightest and sudden. The test measures your ability to override that reflex and direct your gaze deliberately.',
   },
   {
     id: 'saccadic',
     label: 'Saccadic Eye Movement',
-    duration: '~20 sec',
-    durationSec: 20,
+    // 18 targets × (1–2 s centre dot + 1 s target).
+    duration: '~45 sec',
+    durationSec: 45,
     section: 'neuro',
-    tagline: 'React quickly to targets appearing alternately on each side.',
+    tagline: 'React quickly to targets appearing at random on either side.',
     description:
-      'A target will appear on the left or the right of the screen and switch sides about once a second. Move your eyes to it as fast as you can the moment it appears, then wait for it to move again. Speed matters here. This test measures the raw speed and accuracy of voluntary eye movement.',
+      'Look at a small dot in the centre of the screen. After a moment, a target will appear on the left or the right — the side and the timing are random. Move your eyes to it as fast as you can the moment it appears, then back to the centre dot. Speed matters here. This test measures the raw speed and accuracy of reflexive eye movement.',
   },
   {
     id: 'fixation_stability',
     label: 'Fixation Stability',
-    // DEFAULT_DURATION_SEC is 5; an administrator may set anything from 5 to 15.
-    duration: '5-15 sec',
-    durationSec: 10,
+    // DEFAULT_DURATION_SEC is 15; an administrator may set anything from 5 to 30.
+    duration: '~15 sec',
+    durationSec: 15,
     section: 'neuro',
     tagline: 'Hold your gaze perfectly still on a central dot.',
     description:
       'A small dot will appear at the centre of the screen. Your only task is to hold your gaze on it, as steadily as you can, for the full duration. The dot may blink — that is normal, and it helps you stay focused. Blink naturally when you need to, but try not to look away. This measures how stable your gaze is when you actively try to keep it fixed.',
+  },
+  {
+    id: 'smooth_pursuit',
+    label: 'Smooth Pursuit',
+    // 1 s centre + 5 cycles at 0.4 Hz.
+    duration: '~15 sec',
+    durationSec: 15,
+    section: 'neuro',
+    tagline: 'Follow a dot moving smoothly from side to side.',
+    description:
+      'A dot will move smoothly back and forth across the screen. Follow it with your eyes as closely as you can, without moving your head. This measures how smoothly your eyes can track a moving target — one of the eye movements most often affected after a concussion.',
   },
   {
     id: 'peripheral_vision',

@@ -17,6 +17,7 @@ const TEST_LABELS: Record<string, string> = {
   saccadic: 'Saccadic Eye Movement',
   fixation_stability: 'Fixation Stability',
   peripheral_vision: 'Peripheral Vision',
+  smooth_pursuit: 'Smooth Pursuit',
 };
 
 const ALL_TEST_IDS = [
@@ -25,6 +26,7 @@ const ALL_TEST_IDS = [
   'memory_cards',
   'anti_saccade',
   'saccadic',
+  'smooth_pursuit',
   'fixation_stability',
   'peripheral_vision',
 ];
@@ -47,6 +49,10 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
     },
     memory_cards: { cardCount: 16, dwellMs: 800, symbolSize: 'lg', cardGapPx: 28 },
     anti_saccade: {
+      paradigm: 'step',
+      stepFixationMinMs: 1000,
+      stepFixationMaxMs: 2000,
+      stepDurationMs: 1500,
       trialCount: 12,
       movementSpeedPxPerSec: 120,
       fixationPauseMs: 1000,
@@ -59,8 +65,9 @@ function ensureParams(id: string, params: Record<string, Record<string, unknown>
       primaryRectColor: 'red',
       dimRectColor: 'blue',
     },
-    saccadic: { targetDurationMs: 1000, totalCycles: 18, targetDotSizePx: 64, targetDotColor: '#f59e0b' },
-    fixation_stability: { durationSec: 5, blinkIntervalMs: 600, centerDotSizePx: 12, centerDotColor: '#f59e0b' },
+    saccadic: { targetDurationMs: 1000, fixationMinMs: 1000, fixationMaxMs: 2000, totalCycles: 18, targetDotSizePx: 64, targetDotColor: '#f59e0b' },
+    smooth_pursuit: { frequencyHz: 0.4, cycles: 5, amplitudeFrac: 0.3, startFixationMs: 1000, dotSizePx: 20, dotColor: '#f59e0b' },
+    fixation_stability: { durationSec: 15, blinkIntervalMs: 600, centerDotSizePx: 12, centerDotColor: '#f59e0b' },
     peripheral_vision: { trialCount: 16, stimulusDurationMs: 300, minDelayMs: 800, maxDelayMs: 2000, centerDotSizePx: 8, centerDotColor: '#f59e0b', stimulusDotSizePx: 16, stimulusDotColor: '#ffffff' },
   };
   return { ...defaults[id], ...(params[id] ?? {}) };
@@ -84,7 +91,12 @@ export default function NeurologicalConfigForm() {
         if (!res.ok) throw new Error('Failed to load config');
         const data = await res.json();
         if (cancelled) return;
-        const order = Array.isArray(data.testOrder) ? data.testOrder : [...ALL_TEST_IDS];
+        const order: string[] = Array.isArray(data.testOrder) ? [...data.testOrder] : [...ALL_TEST_IDS];
+        // A test added to the app after this config was saved (smooth_pursuit)
+        // is listed at the end, switched off, so saving an unrelated change
+        // does not silently add it to the battery.
+        const added = ALL_TEST_IDS.filter((id) => !order.includes(id));
+        order.push(...added);
         const rawParams = (data.testParameters ?? {}) as Record<string, Record<string, unknown>>;
         const params: Record<string, Record<string, unknown>> = {};
         // Load global settings (stored under _global key)
@@ -102,7 +114,7 @@ export default function NeurologicalConfigForm() {
         }
         const enabled: Record<string, boolean> = { ...data.testEnabled };
         ALL_TEST_IDS.forEach((id) => {
-          if (enabled[id] === undefined) enabled[id] = true;
+          if (enabled[id] === undefined) enabled[id] = !added.includes(id);
         });
         setConfig({ testOrder: order, testParameters: params, testEnabled: enabled });
       } catch (e) {
@@ -456,14 +468,47 @@ export default function NeurologicalConfigForm() {
                   )}
                   {id === 'anti_saccade' && (
                     <>
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Paradigm</label>
+                        <select
+                          value={params.paradigm === 'moving' ? 'moving' : 'step'}
+                          onChange={(e) => setParam(id, 'paradigm', e.target.value)}
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm"
+                        >
+                          <option value="step">Step — shapes jump to the sides (standard)</option>
+                          <option value="moving">Moving — shapes glide apart (original)</option>
+                        </select>
+                      </div>
                       <SelectNumber
                         label="Trial count"
                         value={Number(params.trialCount) ?? 12}
                         onChange={(v) => setParam(id, 'trialCount', v)}
                         options={[2, 4, 6, 8, 10, 12, 15, 18, 20, 24, 30].map((n) => ({ value: n, label: String(n) }))}
                       />
+                      {params.paradigm !== 'moving' && (
+                        <>
+                          <SelectNumber
+                            label="Step: centre, shortest wait (ms)"
+                            value={Number(params.stepFixationMinMs) || 1000}
+                            onChange={(v) => setParam(id, 'stepFixationMinMs', v)}
+                            options={[500, 700, 1000, 1200, 1500].map((n) => ({ value: n, label: `${n} ms` }))}
+                          />
+                          <SelectNumber
+                            label="Step: centre, longest wait (ms)"
+                            value={Number(params.stepFixationMaxMs) || 2000}
+                            onChange={(v) => setParam(id, 'stepFixationMaxMs', v)}
+                            options={[1000, 1500, 2000, 2500, 3000].map((n) => ({ value: n, label: `${n} ms` }))}
+                          />
+                          <SelectNumber
+                            label="Step: time at the side (ms)"
+                            value={Number(params.stepDurationMs) || 1500}
+                            onChange={(v) => setParam(id, 'stepDurationMs', v)}
+                            options={[1000, 1200, 1500, 2000, 2500].map((n) => ({ value: n, label: `${n} ms` }))}
+                          />
+                        </>
+                      )}
                       <SelectNumber
-                        label="Movement speed (px/s)"
+                        label="Movement speed (px/s, moving paradigm)"
                         value={Number(params.movementSpeedPxPerSec) ?? 120}
                         onChange={(v) => setParam(id, 'movementSpeedPxPerSec', v)}
                         options={[80, 100, 120, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} px/s` }))}
@@ -577,6 +622,18 @@ export default function NeurologicalConfigForm() {
                         options={[500, 700, 1000, 1500, 2000, 2500, 3000].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
                       <SelectNumber
+                        label="Centre dot, shortest wait (ms)"
+                        value={Number(params.fixationMinMs) || 1000}
+                        onChange={(v) => setParam(id, 'fixationMinMs', v)}
+                        options={[500, 700, 1000, 1200, 1500].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
+                      <SelectNumber
+                        label="Centre dot, longest wait (ms)"
+                        value={Number(params.fixationMaxMs) || 2000}
+                        onChange={(v) => setParam(id, 'fixationMaxMs', v)}
+                        options={[1000, 1500, 2000, 2500, 3000].map((n) => ({ value: n, label: `${n} ms` }))}
+                      />
+                      <SelectNumber
                         label="Total cycles"
                         value={Number(params.totalCycles) ?? 18}
                         onChange={(v) => setParam(id, 'totalCycles', v)}
@@ -608,9 +665,9 @@ export default function NeurologicalConfigForm() {
                     <>
                       <SelectNumber
                         label="Duration (s)"
-                        value={Number(params.durationSec) ?? 5}
+                        value={Number(params.durationSec) || 15}
                         onChange={(v) => setParam(id, 'durationSec', v)}
-                        options={[5, 6, 8, 10, 12, 15].map((n) => ({ value: n, label: `${n} s` }))}
+                        options={[5, 6, 8, 10, 12, 15, 20, 25, 30].map((n) => ({ value: n, label: `${n} s` }))}
                       />
                       <SelectNumber
                         label="Blink interval (ms)"
@@ -638,6 +695,42 @@ export default function NeurologicalConfigForm() {
                         onChange={(v) => setParam(id, 'gazeSampleIntervalMs', v)}
                         options={[50, 100, 150, 200, 250, 300].map((n) => ({ value: n, label: `${n} ms` }))}
                       />
+                    </>
+                  )}
+                  {id === 'smooth_pursuit' && (
+                    <>
+                      <SelectNumber
+                        label="Frequency (Hz)"
+                        value={Number(params.frequencyHz) || 0.4}
+                        onChange={(v) => setParam(id, 'frequencyHz', v)}
+                        options={[0.2, 0.3, 0.4, 0.5, 0.75, 1].map((n) => ({ value: n, label: `${n} Hz` }))}
+                      />
+                      <SelectNumber
+                        label="Cycles"
+                        value={Number(params.cycles) || 5}
+                        onChange={(v) => setParam(id, 'cycles', v)}
+                        options={[2, 3, 4, 5, 6, 8, 10].map((n) => ({ value: n, label: String(n) }))}
+                      />
+                      <SelectNumber
+                        label="Amplitude (fraction of screen width, each side)"
+                        value={Number(params.amplitudeFrac) || 0.3}
+                        onChange={(v) => setParam(id, 'amplitudeFrac', v)}
+                        options={[0.15, 0.2, 0.25, 0.3, 0.35].map((n) => ({ value: n, label: `${Math.round(n * 100)}%` }))}
+                      />
+                      <SelectNumber
+                        label="Dot size (px)"
+                        value={Number(params.dotSizePx) || 20}
+                        onChange={(v) => setParam(id, 'dotSizePx', v)}
+                        options={[12, 16, 20, 24, 32].map((n) => ({ value: n, label: `${n} px` }))}
+                      />
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-0.5">Dot color (hex)</label>
+                        <DotColorPicker
+                          value={params.dotColor}
+                          fallback="#f59e0b"
+                          onChange={(v) => setParam(id, 'dotColor', v)}
+                        />
+                      </div>
                     </>
                   )}
                   {id === 'peripheral_vision' && (

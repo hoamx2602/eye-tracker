@@ -34,6 +34,7 @@ const NEURO_TEST_IDS = [
   'memory_cards',
   'anti_saccade',
   'saccadic',
+  'smooth_pursuit',
   'fixation_stability',
   'peripheral_vision',
 ] as const;

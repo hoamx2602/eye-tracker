@@ -10,6 +10,9 @@ import {
   DEFAULT_MOVEMENT_DURATION_MS,
   DEFAULT_TRIAL_COUNT,
   DEFAULT_FIXATION_PAUSE_MS,
+  DEFAULT_STEP_DURATION_MS,
+  DEFAULT_STEP_FIXATION_MAX_MS,
+  DEFAULT_STEP_FIXATION_MIN_MS,
   GAZE_SAMPLE_INTERVAL_MS,
   RECT_HALF_PX,
   TRAVEL_DISTANCE_PX,
@@ -17,14 +20,18 @@ import {
   RECT_COLOR_PALETTE,
   isDimRectInstructable,
   resolveShowReferenceLines,
+  resolveParadigm,
   type AntiSaccadeDirection,
+  type AntiSaccadeParadigm,
   type AntiSaccadeRectColor,
   type AntiSaccadeStimulusShape,
 } from './constants';
 import StimulusShape from './StimulusShape';
 import ReferenceLines from './ReferenceLines';
-import { dimPosition, generateTrialDirections, primaryPosition } from './utils';
+import { dimPosition, generateTrialDirections, primaryPosition, randomDurationMs } from './utils';
 import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
+import { detectTrialSaccade, summariseSaccades, type SaccadeSummary, type TrialSaccade } from '@/lib/oculomotorMetrics';
+import { useStimulusOnset } from '@/lib/stimulusOnset';
 
 function mean(nums: number[]): number {
   if (nums.length === 0) return 0;
@@ -65,7 +72,17 @@ export type AntiSaccadeHeadPose = { yaw: number; pitch: number; roll: number };
 
 export interface AntiSaccadeTrialResult {
   direction: AntiSaccadeDirection;
+  /** Stimulus onset: first painted frame of the jump (step) or of the movement (moving). */
   startTime: number;
+  paradigm?: AntiSaccadeParadigm;
+  /** Central fixation before this trial, ms (randomised in the step paradigm). */
+  fixationMs?: number;
+  /**
+   * Per-frame analysis of the first saccade (lib/oculomotorMetrics): `error`
+   * means it went towards the bright shape. Independent of calibration offset,
+   * unlike the AOI latency and the mean-gaze angle below.
+   */
+  saccade?: TrialSaccade;
   firstCorrectGazeTime?: number;
   latencyMs?: number;
   gazeSamples: Array<{ t: number; x: number; y: number; head?: AntiSaccadeHeadPose }>;
@@ -94,6 +111,8 @@ export interface AntiSaccadeResult {
     avgLatency?: number;
     directionAccuracy?: number;
     fixationStability?: number;
+    /** Per-frame summary: error rate, correction rate, latency of correct and error saccades. */
+    saccades?: SaccadeSummary;
   };
 }
 
@@ -131,8 +150,10 @@ function getTravelToEdges(edgeMarginPx: number): { travelX: number; travelY: num
 }
 
 export default function AntiSaccadeTest() {
-  const { config, completeTest } = useTestRunner();
+  const { config, completeTest, getGazeFrames } = useTestRunner();
   useNeuroGaze();
+  const paradigm = resolveParadigm(config);
+  const isStep = paradigm === 'step';
 
   const trialCount = Math.max(2, Math.min(30, Number(config.trialCount) ?? DEFAULT_TRIAL_COUNT));
   const speedPxPerSec = (() => {
@@ -160,8 +181,16 @@ export default function AntiSaccadeTest() {
   /** How long (ms) both rects stay at center before moving apart each trial. */
   const rawFixationPause = Number(config.fixationPauseMs);
   const fixationPauseMs = Math.max(0, Number.isFinite(rawFixationPause) ? rawFixationPause : DEFAULT_FIXATION_PAUSE_MS);
+  // Step paradigm: an unpredictable fixation, so the jump cannot be anticipated.
+  const stepFixationMinMs = Math.max(300, Number(config.stepFixationMinMs) || DEFAULT_STEP_FIXATION_MIN_MS);
+  const stepFixationMaxMs = Math.max(stepFixationMinMs, Number(config.stepFixationMaxMs) || DEFAULT_STEP_FIXATION_MAX_MS);
+  const stepDurationMs = Math.max(600, Number(config.stepDurationMs) || DEFAULT_STEP_DURATION_MS);
 
-  const directions = useMemo(() => generateTrialDirections(trialCount), [trialCount]);
+  const directions = useMemo(() => generateTrialDirections(trialCount, isStep), [trialCount, isStep]);
+  const fixationDurations = useMemo(
+    () => directions.map(() => (isStep ? randomDurationMs(stepFixationMinMs, stepFixationMaxMs) : fixationPauseMs)),
+    [directions, isStep, stepFixationMinMs, stepFixationMaxMs, fixationPauseMs]
+  );
   const startTimeRef = useRef(0);
   const [trialIndex, setTrialIndex] = useState(0);
   const [phase, setPhase] = useState<'fixation' | 'moving' | 'between'>('fixation');
@@ -181,8 +210,9 @@ export default function AntiSaccadeTest() {
   const direction = directions[trialIndex];
   const travelPx = direction ? (isHorizontalDirection(direction) ? travelX : travelY) : TRAVEL_DISTANCE_PX;
 
-  const trialDurationMs =
-    speedPxPerSec > 0
+  const trialDurationMs = isStep
+    ? stepDurationMs
+    : speedPxPerSec > 0
       ? Math.max(300, Math.min(15000, (1000 * travelPx) / speedPxPerSec))
       : fallbackDurationMs;
 
@@ -208,6 +238,11 @@ export default function AntiSaccadeTest() {
     trialsResultsRef.current = [];
   }, []);
 
+  // Onset = the first painted frame of the jump / movement, on the gaze frames' clock.
+  useStimulusOnset(trialIndex, phase === 'moving' && visualStarted, useCallback((t: number) => {
+    movementStartRef.current = t;
+  }, []));
+
   // Visual movement is driven by CSS transitions (no React setState per frame).
   // Fixation phase: rects frozen at center. Moving phase: trigger CSS transition once.
   useEffect(() => {
@@ -232,7 +267,7 @@ export default function AntiSaccadeTest() {
 
       if (phase === 'fixation') {
         // Wait fixationPauseMs before starting movement
-        if (now - fixationStartRef.current >= fixationPauseMs) {
+        if (now - fixationStartRef.current >= (fixationDurations[trialIndex] ?? fixationPauseMs)) {
           movementStartRef.current = now;
           firstCorrectGazeTimeRef.current = null;
           trialGazeSamplesRef.current = [];
@@ -241,8 +276,10 @@ export default function AntiSaccadeTest() {
       } else if (phase === 'moving') {
         const elapsed = now - movementStartRef.current;
         const p = Math.min(1, elapsed / trialDurationMs);
+        // In the step paradigm the shapes are at their end positions from the onset.
+        const posProgress = isStep ? 1 : p;
 
-        const dimPosNow = dimPosition(dir, center.x, center.y, p, travelPx);
+        const dimPosNow = dimPosition(dir, center.x, center.y, posProgress, travelPx);
         const g = neuroLiveGazeRef.current;
         const tRel = (now - movementStartRef.current) / 1000;
         const hp = headPoseRef.current;
@@ -279,6 +316,8 @@ export default function AntiSaccadeTest() {
           trialsResultsRef.current.push({
             direction: dir,
             startTime: trialStart,
+            paradigm,
+            fixationMs: fixationDurations[trialIndex],
             firstCorrectGazeTime: firstCorrect ?? undefined,
             latencyMs: firstCorrect != null ? firstCorrect - trialStart : undefined,
             gazeSamples: gs,
@@ -297,6 +336,16 @@ export default function AntiSaccadeTest() {
             clearInterval(interval);
             const endTime = performance.now();
             const trials = trialsResultsRef.current;
+            // First saccade of each trial on the per-frame gaze. The correct
+            // direction is away from the primary (bright) shape.
+            const frames = getGazeFrames();
+            const { travelX: tx, travelY: ty } = getTravelToEdges(edgePaddingPx);
+            for (const tr of trials) {
+              const horizontal = isHorizontalDirection(tr.direction);
+              const awaySign = tr.direction === 'left' || tr.direction === 'up' ? 1 : -1;
+              tr.saccade = detectTrialSaccade(frames, tr.startTime, horizontal ? 'x' : 'y', awaySign, horizontal ? tx : ty);
+            }
+            const saccades = summariseSaccades(trials.map((t) => t.saccade!));
             const withLatency = trials.filter((t) => t.latencyMs != null);
             const avgLatency =
               withLatency.length > 0
@@ -314,7 +363,8 @@ export default function AntiSaccadeTest() {
               trials,
               scanningPath,
               gazePath: scanningPath,
-              metrics: { avgLatency, directionAccuracy, fixationStability },
+              paradigm,
+              metrics: { avgLatency, directionAccuracy, fixationStability, saccades },
               viewportWidth: typeof window !== 'undefined' ? window.innerWidth : undefined,
               viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
             });
@@ -328,7 +378,7 @@ export default function AntiSaccadeTest() {
     }, gazeIntervalMs);
 
     return () => clearInterval(interval);
-  }, [trialIndex, trialCount, phase, directions, speedPxPerSec, fallbackDurationMs, intervalMs, gazeIntervalMs, fixationPauseMs, center.x, center.y, trialDurationMs, travelPx, completeTest]);
+  }, [trialIndex, trialCount, phase, directions, fixationDurations, isStep, paradigm, speedPxPerSec, fallbackDurationMs, intervalMs, gazeIntervalMs, fixationPauseMs, center.x, center.y, trialDurationMs, travelPx, edgePaddingPx, completeTest, getGazeFrames]);
 
   if (trialIndex >= trialCount) {
     return (
@@ -387,7 +437,7 @@ export default function AntiSaccadeTest() {
             opacity={visualStarted || phase === 'fixation' ? 1 : 0}
             ariaHidden
             style={{
-              transition: visualStarted ? `transform ${trialDurationMs}ms linear` : 'none',
+              transition: visualStarted && !isStep ? `transform ${trialDurationMs}ms linear` : 'none',
               transform: `translate(${visualStarted ? primaryTranslate.x : 0}px, ${visualStarted ? primaryTranslate.y : 0}px)`,
             }}
           />
@@ -405,7 +455,7 @@ export default function AntiSaccadeTest() {
               opacity={visualStarted ? dimRectOpacity : 0}
               ariaHidden
               style={{
-                transition: visualStarted ? `transform ${trialDurationMs}ms linear` : 'none',
+                transition: visualStarted && !isStep ? `transform ${trialDurationMs}ms linear` : 'none',
                 transform: `translate(${visualStarted ? dimTranslate.x : 0}px, ${visualStarted ? dimTranslate.y : 0}px)`,
               }}
             />

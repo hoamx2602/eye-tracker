@@ -1,7 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { angularErrorDeg } from '@/lib/resultScoring';
+import { smoothSegment } from '@/lib/smoothing';
 import {
   ScatterChart,
   Scatter,
@@ -36,7 +37,7 @@ type CalibrationSample = {
   };
 };
 
-type TestTrajectoryPoint = { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number };
+type TestTrajectoryPoint = { t: number; targetX: number; targetY: number; gazeX: number | null; gazeY: number | null };
 export type TestTrajectorySegment = { patternName: string; points: TestTrajectoryPoint[] };
 
 type Props = {
@@ -95,6 +96,14 @@ function StatBox({ label, value, unit, color }: { label: string; value: string; 
 }
 
 export default function SessionAnalytics({ samples, validationErrors, meanErrorPx, faceDistanceCm = 60, testTrajectories }: Props) {
+  // Test-mode charts show spike-filtered gaze by default; the stored series stays raw.
+  const [showRawTrajectories, setShowRawTrajectories] = useState(false);
+  const shownTrajectories = useMemo(
+    () => (showRawTrajectories
+      ? testTrajectories
+      : testTrajectories?.map((seg) => smoothSegment(seg, { method: 'REMOVE_OUTLIERS', window: 0 }))) ?? null,
+    [testTrajectories, showRawTrajectories],
+  );
   const samplesWithFeatures = useMemo(
     () => samples.filter((s) => Array.isArray(s.features) && s.features.length >= FEATURE_DIMENSION_NAMES.length),
     [samples],
@@ -226,10 +235,19 @@ export default function SessionAnalytics({ samples, validationErrors, meanErrorP
       {testTrajectories && testTrajectories.length > 0 && (
         <SectionCard
           title="Test mode: Target vs Eye tracking"
-          subtitle="Target position (%) and predicted gaze (%) over time — each exercise step recorded in Test mode."
+          subtitle="Target position (%) and predicted gaze (%) over time — each exercise step recorded in Test mode. Outliers (off-screen samples and spikes) are removed unless raw is selected; a gap is a dropped sample."
         >
           <div className="space-y-6">
-            {testTrajectories.map((seg, i) => (
+            <label className="flex items-center gap-2 text-xs text-slate-400 select-none">
+              <input
+                type="checkbox"
+                checked={showRawTrajectories}
+                onChange={(e) => setShowRawTrajectories(e.target.checked)}
+                className="accent-violet-500"
+              />
+              Show raw gaze (unfiltered)
+            </label>
+            {(shownTrajectories ?? []).map((seg, i) => (
               <details key={i} className="rounded-lg border border-slate-700 bg-slate-900/40 overflow-hidden" open={i === 0}>
                 <summary className="cursor-pointer select-none px-3 py-2 flex items-center justify-between gap-3 hover:bg-slate-800/50">
                   <span className="text-sm font-medium text-slate-200">{seg.patternName}</span>

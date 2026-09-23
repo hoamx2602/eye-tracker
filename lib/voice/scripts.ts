@@ -279,13 +279,42 @@ export const VOICE_SCRIPTS = {
     // of just being longer than it needed to be.
     cue: 'Look in the opposite direction from the red square.',
   },
+  // The step paradigm (antiSaccade/constants.ts resolveParadigm, the default):
+  // the shape jumps to a side instead of gliding there. No recorded clips yet —
+  // the browser voice reads these until `npm run voice:generate` is run.
+  'neuro.anti_saccade.step': {
+    text:
+      'Anti-saccade. Look at the shape in the centre of the screen. ' +
+      'After a moment, a bright shape will jump to one side and a dim shape to the other. ' +
+      'Your task is to resist looking at the bright one, and look at the dim shape instead, as quickly as you can. ' +
+      'This feels unnatural — that is exactly what we are measuring. ' +
+      'Keep your head still and move only your eyes.',
+    cue: 'Look at the dim shape.',
+  },
+  'neuro.anti_saccade.step_no_dim': {
+    text:
+      'Anti-saccade. Look at the red square in the centre of the screen. ' +
+      'After a moment, it will jump to one side. ' +
+      'Your task is to look at the opposite side — away from the square, not towards it — as quickly as you can. ' +
+      'This feels unnatural — that is exactly what we are measuring. ' +
+      'Keep your head still and move only your eyes.',
+    cue: 'Look in the opposite direction from the red square.',
+  },
   'neuro.saccadic': {
     text:
-      'Saccadic eye movement. A target will appear on the left or the right of the screen, ' +
-      'and will switch sides about once a second. ' +
+      'Saccadic eye movement. Look at the small dot in the centre of the screen. ' +
+      'After a moment, a target will appear on the left or the right. ' +
       'As soon as it appears, look straight at it as quickly and accurately as you can, ' +
-      'then wait for it to move again. Move your eyes only, not your head.',
+      'then back to the centre dot. The side and the timing are random, so just react. ' +
+      'Move your eyes only, not your head.',
     cue: 'Look at each target as soon as it appears.',
+  },
+  'neuro.smooth_pursuit': {
+    text:
+      'Smooth pursuit. A dot will appear in the centre of the screen and then move smoothly from side to side. ' +
+      'Follow it with your eyes as closely as you can, the whole time. ' +
+      'Keep your head still and move only your eyes.',
+    cue: 'Follow the dot with your eyes.',
   },
   'neuro.fixation_stability': {
     text:
@@ -358,6 +387,7 @@ export const VOICE_SCRIPTS = {
   'overview.memory_cards': { text: stepSpokenText('memory_cards') },
   'overview.anti_saccade': { text: stepSpokenText('anti_saccade') },
   'overview.saccadic': { text: stepSpokenText('saccadic') },
+  'overview.smooth_pursuit': { text: stepSpokenText('smooth_pursuit') },
   'overview.fixation_stability': { text: stepSpokenText('fixation_stability') },
   'overview.peripheral_vision': { text: stepSpokenText('peripheral_vision') },
 

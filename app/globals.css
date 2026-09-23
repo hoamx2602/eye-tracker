@@ -73,3 +73,9 @@ html {
   border: none !important;
   box-shadow: none !important;
 }
+
+/* Calibration dot (components/CalibrationLayer.tsx): large → small point. */
+@keyframes calib-dot-shrink {
+  from { transform: translate(-50%, -50%) scale(1); }
+  to   { transform: translate(-50%, -50%) scale(var(--calib-dot-end, 0.2)); }
+}

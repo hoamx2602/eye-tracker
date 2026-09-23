@@ -380,6 +380,7 @@ def personalize_on_session(
     viewing_distance_cm: float,
     hfov_deg: float,
     crop_fn=None,
+    settle_frac: float = _SETTLE_FRAC,
 ) -> PersonalizationResult:
     """
     Full personalization step (mutates the model's gaze branch — snapshot first
@@ -403,7 +404,7 @@ def personalize_on_session(
             bad = quality[in_w] < _QUALITY_GATE
             yw[bad] = np.nan
             pw[bad] = np.nan
-        agg = _aggregate_dot(yw, pw)
+        agg = _aggregate_dot(yw, pw, settle_frac=settle_frac)
         if agg is None or not np.isfinite(np.nanmedian(head_w[in_w])):
             continue
         m_yaw.append(agg[0])
@@ -443,6 +444,7 @@ def personalize_on_session(
     crops = collect_dot_crops(
         video_path, [windows[di] for di in used], crop_fn,
         frames.get("quality", np.ones_like(t)), t,
+        settle_frac=settle_frac,
     )
     n_crops = sum(len(c) for c in crops)
     res.n_crops = n_crops

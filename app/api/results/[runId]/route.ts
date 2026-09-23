@@ -54,7 +54,7 @@ export async function GET(
     if (testResults) {
       for (const [testId, result] of Object.entries(testResults)) {
         // Keep everything except high-volume gazeSamples arrays inside individual test results
-        const { gazeSamples: _gs, events: _ev, ...rest } = result as Record<string, unknown> & { gazeSamples?: unknown; events?: unknown };
+        const { gazeSamples: _gs, gazeFrames: _gf, events: _ev, ...rest } = result as Record<string, unknown> & { gazeSamples?: unknown; gazeFrames?: unknown; events?: unknown };
         strippedResults[testId] = rest as Record<string, unknown>;
       }
     }

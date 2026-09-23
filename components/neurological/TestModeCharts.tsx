@@ -59,7 +59,7 @@ export default function TestModeCharts({
   testTrajectories: TestTrajectorySegment[] | null;
   smoothing?: ChartSmoothingConfig;
 }) {
-  const cfg: ChartSmoothingConfig = smoothing ?? { method: 'NONE', window: 1 };
+  const cfg: ChartSmoothingConfig = smoothing ?? { method: 'REMOVE_OUTLIERS', window: 0 };
 
   const smoothedTrajectories = useMemo(
     () => testTrajectories?.map((seg) => smoothSegment(seg, cfg)) ?? null,
@@ -70,11 +70,13 @@ export default function TestModeCharts({
   if (!smoothedTrajectories || smoothedTrajectories.length === 0) return null;
 
   const smoothingLabel =
-    cfg.method === 'NONE' || cfg.window < 2
+    cfg.method === 'NONE'
       ? null
-      : cfg.method === 'GAUSSIAN'
-        ? `Gaussian smoothing (σ window ${cfg.window})`
-        : `Moving average (window ${cfg.window})`;
+      : cfg.method === 'GAUSSIAN' && cfg.window >= 2
+        ? `Outliers removed · Gaussian smoothing (σ window ${cfg.window})`
+        : cfg.method === 'MOVING_AVERAGE' && cfg.window >= 2
+          ? `Outliers removed · moving average (window ${cfg.window})`
+          : 'Outliers removed (off-screen samples and spikes; gaps are dropped samples)';
 
   return (
     <div className="space-y-4">
