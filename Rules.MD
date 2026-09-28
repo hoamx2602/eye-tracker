@@ -175,6 +175,11 @@ Mục tiêu: **UI không đổi**, **hành vi/feature không đổi**, nhưng **
     - Bỏ qua head positioning trước calibration.
     - Thay đổi cách lưu session, validation, hoặc cách gọi API mà không cập nhật tài liệu.
 
+- **Module routes**
+  - Mỗi module có route riêng: `/eye-tracking/*` (luồng eye-tracking), `/facial-droop`, `/iop`; `/` là hub (`components/ModuleHub.tsx`).
+  - Đường dẫn luồng eye-tracking lấy từ `PATHS` trong `lib/paths.ts` (đã có prefix `/eye-tracking`), không viết chuỗi `'/consent'`, `'/'`… trực tiếp.
+  - URL cũ ở gốc (`/consent`, `/tracking`, `/neuro/*`, `/facial-speech`) được redirect trong `next.config.mjs`.
+
 - **Document**
   - Nếu thêm rule mới hoặc pattern mới:
     - Cập nhật thêm vào `Rules.MD` (mục phù hợp) với mô tả ngắn, rõ ràng.

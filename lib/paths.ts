@@ -3,29 +3,40 @@
  * Use these so each screen has a stable URL for testing and deep-linking.
  */
 
+/** Every screen of the eye-tracking flow lives under this prefix. */
+export const EYE_TRACKING_BASE = '/eye-tracking';
+
+/** Top-level module entry points (see app/page.tsx). */
+export const MODULE_PATHS = {
+  HUB: '/',
+  EYE_TRACKING: EYE_TRACKING_BASE,
+  FACIAL_DROOP: '/facial-droop',
+  IOP: '/iop',
+} as const;
+
 export const PATHS = {
-  /** Entry: idle, head positioning, calibration */
-  HOME: '/',
+  /** Entry: eye-tracking home */
+  HOME: EYE_TRACKING_BASE,
   /** Consent screen */
-  CONSENT: '/consent',
+  CONSENT: `${EYE_TRACKING_BASE}/consent`,
   /** Demographics screen */
-  DEMOGRAPHICS: '/demographics',
+  DEMOGRAPHICS: `${EYE_TRACKING_BASE}/demographics`,
   /** Actual calibration flow */
-  CALIBRATION: '/calibration',
+  CALIBRATION: `${EYE_TRACKING_BASE}/calibration`,
   /** Setup guide: camera permission → lighting → posture */
-  SETUP: '/setup',
+  SETUP: `${EYE_TRACKING_BASE}/setup`,
   /** Post-calibration: choose Real-time vs Neurological */
-  CHOICE: '/choice',
+  CHOICE: `${EYE_TRACKING_BASE}/choice`,
   /** Real-time eye tracking */
-  TRACKING: '/tracking',
+  TRACKING: `${EYE_TRACKING_BASE}/tracking`,
   /** Neuro pre-test (symptom assessment) */
-  NEURO_PRE: '/neuro/pre',
-  /** Neuro test by id (e.g. /neuro/test/head_orientation) */
-  NEURO_TEST: (testId: string) => `/neuro/test/${testId}`,
+  NEURO_PRE: `${EYE_TRACKING_BASE}/neuro/pre`,
+  /** Neuro test by id (e.g. /eye-tracking/neuro/test/head_orientation) */
+  NEURO_TEST: (testId: string) => `${EYE_TRACKING_BASE}/neuro/test/${testId}`,
   /** Neuro post-test (symptom assessment) */
-  NEURO_POST: '/neuro/post',
+  NEURO_POST: `${EYE_TRACKING_BASE}/neuro/post`,
   /** Neuro run complete */
-  NEURO_DONE: '/neuro/done',
+  NEURO_DONE: `${EYE_TRACKING_BASE}/neuro/done`,
 } as const;
 
 const NEURO_TEST_IDS = [
@@ -55,7 +66,12 @@ export type ParsedPath =
  * Parse pathname into a known screen. Use for syncing URL → state.
  */
 export function parsePathname(pathname: string): ParsedPath {
-  const normalized = pathname.replace(/\/$/, '') || '/';
+  // Screens are matched relative to the eye-tracking prefix. Anything outside
+  // it (e.g. /experiments, which also mounts App) starts on the home screen.
+  const trimmed = pathname.replace(/\/$/, '');
+  const insideBase = trimmed === EYE_TRACKING_BASE || trimmed.startsWith(`${EYE_TRACKING_BASE}/`);
+  const relative = insideBase ? trimmed.slice(EYE_TRACKING_BASE.length) : '';
+  const normalized = relative || '/';
   if (normalized === '/') return { screen: 'home' };
   if (normalized === '/consent') return { screen: 'consent' };
   if (normalized === '/demographics') return { screen: 'demographics' };

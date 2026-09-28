@@ -798,7 +798,7 @@ function App() {
         document.exitFullscreen().catch(() => {});
       }
       pathSyncSourceRef.current = 'internal';
-      router.push('/setup');
+      router.push(PATHS.SETUP);
     }
   };
 
@@ -1998,7 +1998,7 @@ function App() {
           // through the real flow instead of starting a session with no
           // recorded consent.
           pathSyncSourceRef.current = 'internal';
-          router.push('/consent');
+          router.push(PATHS.CONSENT);
           return;
         }
         const d = prior.demographics;
@@ -2017,7 +2017,7 @@ function App() {
       } catch (e) {
         console.warn('[Redo] could not load prior session — falling back to the full flow', e);
         pathSyncSourceRef.current = 'internal';
-        router.push('/consent');
+        router.push(PATHS.CONSENT);
       }
     })();
   }, [searchParams, router, ensureSessionCreated]);
@@ -2777,7 +2777,7 @@ function App() {
   const startRealTimeTracking = useCallback(() => {
     if (process.env.NODE_ENV === 'development') console.log('[App] startRealTimeTracking: resetting and going to HOME');
     reset();
-    router.push('/');
+    router.push(PATHS.HOME);
   }, [reset, router]);
 
   const {
@@ -3333,7 +3333,7 @@ function App() {
   };
 
   const handleStartCalibrationClick = () => {
-    router.push('/consent');
+    router.push(PATHS.CONSENT);
   };
 
   const handleConsentAgree = () => {
@@ -3342,17 +3342,17 @@ function App() {
     // wouldn't let them past without it.
     consentRef.current = { agreedAt: new Date().toISOString(), version: CONSENT_VERSION };
     pathSyncSourceRef.current = 'internal';
-    router.push('/demographics');
+    router.push(PATHS.DEMOGRAPHICS);
   };
 
   const handleConsentDecline = () => {
     pathSyncSourceRef.current = 'internal';
-    router.push('/');
+    router.push(PATHS.HOME);
   };
 
   const handleDemographicsBack = () => {
     pathSyncSourceRef.current = 'internal';
-    router.push('/consent');
+    router.push(PATHS.CONSENT);
   };
 
   const handleDemographicsSubmit = (data: DemographicsData) => {
@@ -3386,7 +3386,7 @@ function App() {
       console.warn('Fullscreen denied', e);
     });
     pathSyncSourceRef.current = 'internal';
-    router.push('/setup');
+    router.push(PATHS.SETUP);
   };
 
   const handleSetupComplete = () => {
@@ -3394,7 +3394,7 @@ function App() {
     if (skipQ || preSymptomScores) {
       // Pre-questionnaire already done or skipped → go straight to calibration
       pathSyncSourceRef.current = 'internal';
-      router.push('/calibration');
+      router.push(PATHS.CALIBRATION);
       setTimeout(() => handleStartProcess(), 300);
     } else {
       // Show pre-questionnaire before calibration
@@ -3422,13 +3422,13 @@ function App() {
     } catch (_) {}
     // Proceed to calibration
     pathSyncSourceRef.current = 'internal';
-    router.push('/calibration');
+    router.push(PATHS.CALIBRATION);
     setTimeout(() => handleStartProcess(), 300);
   };
 
   const handleSetupBack = () => {
     pathSyncSourceRef.current = 'internal';
-    router.push('/demographics');
+    router.push(PATHS.DEMOGRAPHICS);
   };
 
   const startActualCalibration = () => {
@@ -3599,7 +3599,7 @@ function App() {
     // Short delay before home, to ensure downloads are registered by browser
     setTimeout(() => {
       pathSyncSourceRef.current = 'internal';
-      router.push('/');
+      router.push(PATHS.HOME);
     }, 150);
   };
 
@@ -3696,7 +3696,7 @@ function App() {
         onStartCalibrationClick={handleStartCalibrationClick}
         onGoHome={() => {
           pathSyncSourceRef.current = 'internal';
-          router.push('/');
+          router.push(PATHS.HOME);
         }}
         onChooseRealTime={startRealTimeTracking}
         onChooseNeurological={handleChooseNeurological}

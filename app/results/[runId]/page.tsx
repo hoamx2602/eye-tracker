@@ -9,6 +9,7 @@
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import ResultsPageClient from './ResultsPageClient';
+import { PATHS } from '@/lib/paths';
 import { DEFAULT_CONFIG, ChartSmoothingMethod } from '@/types';
 
 // Always render fresh — config (smoothing, faceDistance) must reflect latest admin settings
@@ -22,7 +23,7 @@ export default async function ResultsPage({ params }: Props) {
   const { runId } = await params;
 
   if (!runId || runId.length < 5) {
-    redirect('/');
+    redirect(PATHS.HOME);
   }
 
   let run;
@@ -46,7 +47,7 @@ export default async function ResultsPage({ params }: Props) {
       },
     });
   } catch {
-    redirect('/');
+    redirect(PATHS.HOME);
   }
 
   // Fetch current AppConfig for chart display preferences (smoothing) and faceDistance
@@ -60,7 +61,7 @@ export default async function ResultsPage({ params }: Props) {
     return (
       <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center gap-4 p-8 text-center">
         <p className="text-gray-400 text-lg">No results found for this link.</p>
-        <a href="/" className="text-blue-400 hover:text-blue-300 text-sm transition">← Back to homepage</a>
+        <a href={PATHS.HOME} className="text-blue-400 hover:text-blue-300 text-sm transition">← Back to homepage</a>
       </div>
     );
   }

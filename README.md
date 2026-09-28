@@ -4,6 +4,17 @@
 
 # Precision Eye Tracker
 
+## Modules and routes
+
+| Route | Module |
+|---|---|
+| `/` | Hub: pick an assessment |
+| `/eye-tracking/*` | Eye-tracking flow (home, consent, calibration, tracking, neuro tests) |
+| `/facial-droop` | Facial drooping & motor-speech capture (admin: `/admin/facial-droop`) |
+| `/iop` | IOP risk features from a frontal eye photo ([docs](docs/IOP_ANALYZER.md)) |
+
+Old root URLs (`/consent`, `/tracking`, `/neuro/*`, `/facial-speech`) redirect to the new ones.
+
 Web-based eye tracking (MediaPipe Face Mesh, calibration, TPS/hybrid regression). **Next.js** app deployable on Vercel with API routes + PostgreSQL.
 
 ## Run locally
