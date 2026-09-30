@@ -45,6 +45,19 @@ export function maskedPhoto(roi: RgbImage, mask: Uint8Array): RgbaImage {
   return out;
 }
 
+/**
+ * The photo inside `mask` at full brightness, the rest of `context` dimmed,
+ * black elsewhere: highlights a subset while keeping where it sits readable.
+ */
+export function highlightedPhoto(roi: RgbImage, mask: Uint8Array, context: Uint8Array, dim = 0.22): RgbaImage {
+  const out = blank(roi.width, roi.height);
+  for (let i = 0; i < mask.length; i++) {
+    const k = mask[i] ? 1 : context[i] ? dim : 0;
+    if (k) put(out, i, roi.data[i * 3] * k, roi.data[i * 3 + 1] * k, roi.data[i * 3 + 2] * k);
+  }
+  return out;
+}
+
 /** White where the mask is set, black elsewhere. */
 export function binary(mask: Uint8Array, width: number, height: number): RgbaImage {
   const out = blank(width, height);
@@ -101,6 +114,12 @@ export function rednessHeatmap(roi: RgbImage, sclera: Uint8Array, maxRedness = 0
     blend(out, i, REDNESS, 0.15 + 0.85 * strength);
   }
   return out;
+}
+
+/** Blends `mask` pixels of an existing image towards a colour. */
+export function tint(img: RgbaImage, mask: Uint8Array, colour: Rgb, alpha: number): RgbaImage {
+  for (let i = 0; i < mask.length; i++) if (mask[i]) blend(img, i, colour, alpha);
+  return img;
 }
 
 /** Sets `mask` pixels of an existing image to one colour (outlines, highlights). */

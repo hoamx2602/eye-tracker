@@ -87,26 +87,36 @@ the radius, and the lid points are within 45%.
 
 ## Visualisations
 
-Every analysed eye has a Visualisations panel with three tabs. Every image
+Every analysed eye has a Visualisations panel with three tabs. Image
+tiles are drawn from the original photo, at up to 3× the normalised scale
+(`lib/iop/viz/display.ts`). The geometry is scaled exactly, and the sclera
+and reddish-pixel masks are rebuilt per pixel with the same rules, so thin
+vessels stay visible. The numbers in the captions are still the ones
+measured at the normalised scale (iris radius 50 px). Every image
 tile has a caption with its numbers and a PNG download. **Download figure**
 lays out the tab's tiles as one lettered figure (a)–(h) for slides and
 papers. All of it runs in the browser (`lib/iop/viz/*`,
 `components/iop/viz/*`).
 
-- **Segmentation.** The analysis notebook's figure set, rebuilt from this
-  pipeline's masks:
-  1. labelled regions over the crop;
-  2. segmented sclera;
-  3. sclera with the active-contour boundary;
-  4. reddish pixels;
-  5. their binary mask (P in Eq. 7);
-  6. segmented iris;
-  7. segmented pupil;
-  8. label map.
+- **Segmentation.** The analysis notebook's figure set and more, in 12
+  tiles:
+  - labelled regions;
+  - segmented sclera;
+  - sclera with the active-contour boundary;
+  - label map;
+  - reddish pixels (full colour over the dimmed sclera) and their binary
+    mask (P in Eq. 7);
+  - vessel network and sclera-minus-vessels (black top-hat on the green
+    channel; a reference view, not a paper feature). This is the look of the
+    notebook's "red pixel" mask, which in fact kept bright pixels;
+  - segmented iris;
+  - segmented pupil;
+  - what was excluded from the sclera (canthi, glare);
+  - redness map.
 - **Pipeline.** Each step in order:
   1. normalised crop;
   2. red layer;
-  3. highlights removed;
+  3. highlights removed, inside the pupil-search square only;
   4. iris and pupil circles;
   5. eyelids, where close-ups show the lid-edge candidates, the points the
      RANSAC fit kept and the two lid circles;

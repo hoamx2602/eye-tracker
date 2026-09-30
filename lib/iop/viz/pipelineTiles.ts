@@ -1,14 +1,15 @@
 /**
  * The pipeline as a strip of steps, for showing how each number was reached:
- * normalised crop, red layer, highlight removal, circles, eyelids, sclera,
- * redness and the active contour.
+ * crop, red layer, highlight removal, circles, eyelids, sclera, redness and
+ * the active contour. Drawn at display resolution (see display.ts).
  */
 import { removeHighlights } from '../circleSearch';
 import { channel, gaussianBlur } from '../imageOps';
-import type { EyeAnalysis } from '../types';
+import type { Circle, EyeAnalysis, GrayImage } from '../types';
+import type { DisplayEye } from './display';
 import { drawCircle, drawDots, drawOutline, type Overlay, type VizTile } from './draw';
 import { OUTLINE, REGION_COLOURS } from './palette';
-import { greyscale, paint, photo, rednessHeatmap, regionOverlay, type RgbaImage } from './raster';
+import { greyscale, paint, photo, rednessHeatmap, regionOverlay } from './raster';
 import { regionMasks, thickBoundary } from './regions';
 
 const LID_SOURCE_TEXT: Record<EyeAnalysis['source'], string> = {
@@ -17,84 +18,104 @@ const LID_SOURCE_TEXT: Record<EyeAnalysis['source'], string> = {
   manual: 'Hand-marked: two eyelid circles through the clicked corners and lid extremes.',
 };
 
-function lidOverlay(eye: EyeAnalysis): Overlay {
+/** Side of the square the pupil search works in, as in circleSearch.findPupil. */
+const PUPIL_BOX_HALF = 0.95;
+
+function lidOverlay(view: DisplayEye): Overlay {
+  const f = view.factor;
   return (ctx, scale) => {
-    const evidence = eye.lidEvidence;
+    const evidence = view.lidEvidence;
     if (evidence) {
-      drawDots(ctx, scale, evidence.edges, OUTLINE.edge, 1);
-      drawDots(ctx, scale, evidence.inliers, OUTLINE.inlier, 1.1);
-      drawCircle(ctx, scale, evidence.upperLid, OUTLINE.lid, 1);
-      drawCircle(ctx, scale, evidence.lowerLid, OUTLINE.lid, 1);
-    } else if (eye.source === 'mediapipe') {
-      drawDots(ctx, scale, eye.eyelid, OUTLINE.inlier, 1.6);
+      drawDots(ctx, scale, evidence.edges, OUTLINE.edge, f);
+      drawDots(ctx, scale, evidence.inliers, OUTLINE.inlier, 1.1 * f);
+      drawCircle(ctx, scale, evidence.upperLid, OUTLINE.lid, f);
+      drawCircle(ctx, scale, evidence.lowerLid, OUTLINE.lid, f);
+    } else if (view.eye.source === 'mediapipe') {
+      drawDots(ctx, scale, view.eyelid, OUTLINE.inlier, 1.6 * f);
     }
-    drawOutline(ctx, scale, eye.eyelid, OUTLINE.contour, 1.5);
+    drawOutline(ctx, scale, view.eyelid, OUTLINE.contour, 1.5 * f);
   };
 }
 
-export function pipelineTiles(eye: EyeAnalysis): VizTile[] {
-  const { width, height } = eye.roi;
-  const red = gaussianBlur(channel(eye.roi, 0), 1);
-  const regions = regionMasks(eye);
+/** The red layer with highlights removed inside the pupil-search square only, as the pipeline does. */
+function highlightsRemovedInBox(red: GrayImage, iris: Circle): GrayImage {
+  const half = iris.r * PUPIL_BOX_HALF;
+  const x0 = Math.max(0, Math.round(iris.cx - half));
+  const y0 = Math.max(0, Math.round(iris.cy - half));
+  const x1 = Math.min(red.width, Math.round(iris.cx + half));
+  const y1 = Math.min(red.height, Math.round(iris.cy + half));
+  const w = x1 - x0;
+  const h = y1 - y0;
+  if (w < 3 || h < 3) return red;
+  const box = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) box[y * w + x] = red.data[(y0 + y) * red.width + x0 + x];
+  const filled = removeHighlights({ width: w, height: h, data: box }).data;
+  const out = Float32Array.from(red.data);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) out[(y0 + y) * red.width + x0 + x] = filled[y * w + x];
+  return { width: red.width, height: red.height, data: out };
+}
+
+export function pipelineTiles(view: DisplayEye): VizTile[] {
+  const { eye, roi, factor: f } = view;
+  const { width, height } = roi;
+  const line = Math.max(2, Math.round(2 * f));
+  const red = gaussianBlur(channel(roi, 0), f);
+  const regions = regionMasks(view);
   const circles: Overlay = (ctx, scale) => {
-    drawCircle(ctx, scale, eye.iris, OUTLINE.iris);
-    drawCircle(ctx, scale, eye.pupil, OUTLINE.pupil);
+    drawCircle(ctx, scale, view.iris, OUTLINE.iris, 1.5 * f);
+    drawCircle(ctx, scale, view.pupil, OUTLINE.pupil, 1.5 * f);
+  };
+  const pupilBox: Overlay = (ctx, scale) => {
+    const half = view.iris.r * PUPIL_BOX_HALF;
+    ctx.strokeStyle = OUTLINE.lid;
+    ctx.lineWidth = f * scale;
+    ctx.strokeRect((view.iris.cx - half) * scale, (view.iris.cy - half) * scale, 2 * half * scale, 2 * half * scale);
   };
   const scleraOnly = { ...regions, pupil: new Uint8Array(regions.pupil.length), iris: new Uint8Array(regions.iris.length) };
   return [
     {
-      id: 'crop',
-      title: '1 · Normalised crop',
-      caption: `Rescaled so the iris radius is 50 px (x${eye.roiScale.toFixed(2)} from the photo), as the paper fixes the eye crop size.`,
-      image: () => photo(eye.roi),
+      id: 'crop', title: '1 · Normalised crop',
+      caption: `Features are measured with the iris rescaled to 50 px (x${eye.roiScale.toFixed(2)} of the photo), the paper's fixed crop size. Shown here at x${f.toFixed(1)} that scale for detail.`,
+      image: () => photo(roi),
     },
     {
-      id: 'red-layer',
-      title: '2 · Red layer',
+      id: 'red-layer', title: '2 · Red layer',
       caption: 'The paper detects pupil and iris on the red channel, where the pupil is darkest against the iris.',
       image: () => greyscale(red),
     },
     {
-      id: 'highlights',
-      title: '3 · Highlights removed',
-      caption: 'Morphological fill of bright spots enclosed by darker pixels, so corneal reflections do not break the pupil edge.',
-      image: () => greyscale(removeHighlights(red)),
+      id: 'highlights', title: '3 · Highlights removed',
+      caption: 'Inside the yellow square (just inside the iris, as the paper crops before the pupil search), bright spots enclosed by darker pixels are filled so reflections do not break the pupil edge.',
+      image: () => greyscale(highlightsRemovedInBox(red, view.iris)),
+      overlay: pupilBox,
     },
     {
-      id: 'circles',
-      title: '4 · Iris and pupil circles',
-      caption: `Blue: iris (r ${eye.iris.r.toFixed(0)} px). Red: pupil (r ${eye.pupil.r.toFixed(0)} px, edge contrast ${eye.pupilContrast.toFixed(0)}/255).`,
-      image: () => photo(eye.roi),
-      overlay: circles,
+      id: 'circles', title: '4 · Iris and pupil circles',
+      caption: `Blue: iris. Red: pupil (edge contrast ${eye.pupilContrast.toFixed(0)}/255). Pupil / iris ratio ${eye.features.pupilIrisRatio.toFixed(3)}.`,
+      image: () => photo(roi), overlay: circles,
     },
     {
-      id: 'lids',
-      title: '5 · Eyelids',
+      id: 'lids', title: '5 · Eyelids',
       caption: LID_SOURCE_TEXT[eye.source],
-      image: () => photo(eye.roi),
-      overlay: lidOverlay(eye),
+      image: () => photo(roi), overlay: lidOverlay(view),
     },
     {
-      id: 'sclera-mask',
-      title: '6 · Sclera mask',
+      id: 'sclera-mask', title: '6 · Sclera mask',
       caption: 'Opening minus iris, minus 10% of the eye length at each corner (pink caruncle) and specular glare.',
-      image: (): RgbaImage => regionOverlay(eye.roi, scleraOnly, 0.5),
-      overlay: circles,
+      image: () => regionOverlay(roi, scleraOnly, 0.5), overlay: circles,
     },
     {
-      id: 'redness',
-      title: '7 · Redness (MRL)',
+      id: 'redness', title: '7 · Redness (MRL)',
       caption: `Per-pixel (3R - G - B) / (3·255); stronger red = redder. Its mean over the sclera is the MRL: ${eye.features.mrl.toFixed(3)}.`,
-      image: () => rednessHeatmap(eye.roi, eye.scleraMask),
+      image: () => rednessHeatmap(roi, view.scleraMask),
     },
     {
-      id: 'active-contour',
-      title: '8 · Active contour',
+      id: 'active-contour', title: '8 · Active contour',
       caption: 'Orange: sclera mask boundary. Green: Chan-Vese region seeded from it; area and height ratios are the contour features.',
       image: () => {
-        const img = photo(eye.roi);
-        paint(img, thickBoundary(eye.scleraMask, width, height), REGION_COLOURS.sclera);
-        return paint(img, thickBoundary(eye.contourMask, width, height), [0x22, 0xc5, 0x5e]);
+        const img = photo(roi);
+        paint(img, thickBoundary(view.scleraMask, width, height, line), REGION_COLOURS.sclera);
+        return paint(img, thickBoundary(view.contourMask, width, height, line), [0x22, 0xc5, 0x5e]);
       },
     },
   ];

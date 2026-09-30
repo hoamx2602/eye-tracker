@@ -25,7 +25,7 @@ const GLARE_MIN_VALUE = 245;
 const CANTHUS_TRIM = 0.1;
 
 /** Erosion of the lid outline, in ROI pixels, to keep lashes and lid margin out. */
-const LID_EROSION = 2;
+export const LID_EROSION = 2;
 
 /** Normalised crops larger than this mean the geometry is implausible (e.g. an iris click on its own centre). */
 const MAX_ROI_SIDE = 1200;
@@ -75,16 +75,21 @@ function refineIris(red: GrayImage, initial: Circle): { circle: Circle; ok: bool
   return found.contrast > 8 ? { circle: found.circle, ok: true } : { circle: initial, ok: false };
 }
 
-interface ScleraMasks {
+export interface ScleraMasks {
   eye: Uint8Array;
   sclera: Uint8Array;
   /** Share of the would-be sclera (opening minus iris minus canthi) dropped as specular glare. */
   glareFraction: number;
 }
 
-function scleraMask(roi: RgbImage, eyelid: Point[], iris: Circle): ScleraMasks {
+/**
+ * Sclera = eye opening (lid outline eroded by `lidErosion` px) minus the
+ * iris, the canthal wedges and specular glare. Exported so the
+ * visualisations can rebuild it at display resolution with the same rules.
+ */
+export function scleraMask(roi: RgbImage, eyelid: Point[], iris: Circle, lidErosion = LID_EROSION): ScleraMasks {
   const { width: w, height: h, data } = roi;
-  const eye = erode(polygonMask(eyelid, w, h), w, h, LID_EROSION);
+  const eye = erode(polygonMask(eyelid, w, h), w, h, Math.round(lidErosion));
   const cornerA = eyelid.reduce((a, p) => (p.x < a.x ? p : a));
   const cornerB = eyelid.reduce((a, p) => (p.x > a.x ? p : a));
   const axisX = cornerB.x - cornerA.x;

@@ -5,6 +5,9 @@
 import { erode, polygonMask } from '../imageOps';
 import type { EyeAnalysis, Point } from '../types';
 
+/** What region masks are built from; both EyeAnalysis and DisplayEye have it. */
+export type EyeLayers = Pick<EyeAnalysis, 'roi' | 'eyelid' | 'iris' | 'pupil' | 'scleraMask'>;
+
 export interface RegionMasks {
   width: number;
   height: number;
@@ -20,7 +23,7 @@ function disc(cx: number, cy: number, r: number, x: number, y: number): boolean 
   return Math.hypot(x + 0.5 - cx, y + 0.5 - cy) <= r;
 }
 
-export function regionMasks(eye: EyeAnalysis): RegionMasks {
+export function regionMasks(eye: EyeLayers): RegionMasks {
   const { width, height } = eye.roi;
   const opening = polygonMask(eye.eyelid, width, height);
   const pupil = new Uint8Array(width * height);
@@ -82,12 +85,41 @@ export function boundary(mask: Uint8Array, width: number, height: number): Uint8
   return edge;
 }
 
-/** A 2 px boundary (outer ring plus the ring just inside it), legible at tile size. */
-export function thickBoundary(mask: Uint8Array, width: number, height: number): Uint8Array {
-  const outer = boundary(mask, width, height);
-  const inner = boundary(erode(mask, width, height, 1), width, height);
-  for (let i = 0; i < outer.length; i++) outer[i] |= inner[i];
-  return outer;
+/** A boundary `thickness` px wide (the outer ring and the rings just inside it), legible at tile size. */
+export function thickBoundary(mask: Uint8Array, width: number, height: number, thickness = 2): Uint8Array {
+  const out = boundary(mask, width, height);
+  let inner = mask;
+  for (let k = 1; k < thickness; k++) {
+    inner = erode(inner, width, height, 1);
+    const ring = boundary(inner, width, height);
+    for (let i = 0; i < out.length; i++) out[i] |= ring[i];
+  }
+  return out;
+}
+
+/**
+ * Resizes a binary mask with bilinear interpolation and a 0.5 threshold, so
+ * upsampled edges come out smooth instead of blocky.
+ */
+export function resizeMask(mask: Uint8Array, w: number, h: number, outW: number, outH: number): Uint8Array {
+  const out = new Uint8Array(outW * outH);
+  const sx = w / outW;
+  const sy = h / outH;
+  const at = (x: number, y: number) => mask[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))];
+  for (let y = 0; y < outH; y++) {
+    const fy = (y + 0.5) * sy - 0.5;
+    const y0 = Math.floor(fy);
+    const ty = fy - y0;
+    for (let x = 0; x < outW; x++) {
+      const fx = (x + 0.5) * sx - 0.5;
+      const x0 = Math.floor(fx);
+      const tx = fx - x0;
+      const top = at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx;
+      const bottom = at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx;
+      out[y * outW + x] = top * (1 - ty) + bottom * ty >= 0.5 ? 1 : 0;
+    }
+  }
+  return out;
 }
 
 export function countOnes(mask: Uint8Array): number {

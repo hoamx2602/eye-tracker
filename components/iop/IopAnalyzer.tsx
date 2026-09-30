@@ -79,7 +79,7 @@ export default function IopAnalyzer() {
         </button>
       )}
 
-      {status === 'done' && eyes.map((eye) => <IopEyeResultCard key={`${image?.url}-${eye.side}`} eye={eye} imageName={image?.name ?? 'image'} model={model} onAddRow={addRow} />)}
+      {status === 'done' && image && eyes.map((eye) => <IopEyeResultCard key={`${image?.url}-${eye.side}`} eye={eye} source={image.rgb} imageName={image.name} model={model} onAddRow={addRow} />)}
 
       <IopDatasetPanel rows={rows} persisted={persisted} onClear={() => updateRows([])} />
     </div>

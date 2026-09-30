@@ -1,8 +1,16 @@
 import type { VizTile } from '@/lib/iop/viz/draw';
 import type { RgbaImage } from '@/lib/iop/viz/raster';
 
-/** Display magnification: tiles are drawn at 2x so overlay lines stay sharp. */
-export const TILE_SCALE = 2;
+/**
+ * Tiles are drawn so their canvas is about this wide; the browser then
+ * scales it down to the card, which keeps overlay lines and text sharp.
+ */
+const TARGET_TILE_WIDTH = 720;
+
+/** Magnification for an image, never below 1 (tiles are never drawn smaller than the raster). */
+export function tileScale(image: { width: number }): number {
+  return Math.max(1, TARGET_TILE_WIDTH / image.width);
+}
 
 function rasterCanvas(image: RgbaImage): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
@@ -26,8 +34,9 @@ export function drawTile(ctx: CanvasRenderingContext2D, tile: VizTile, x: number
 }
 
 /** Renders one tile into its own canvas element. */
-export function renderTile(canvas: HTMLCanvasElement, tile: VizTile, scale = TILE_SCALE) {
+export function renderTile(canvas: HTMLCanvasElement, tile: VizTile) {
   const image = tile.image();
+  const scale = tileScale(image);
   canvas.width = image.width * scale;
   canvas.height = image.height * scale;
   const context = canvas.getContext('2d');
@@ -50,8 +59,9 @@ const TITLE_HEIGHT = 30;
  */
 export function downloadFigure(tiles: VizTile[], heading: string, filename: string, columns = 4) {
   const sizes = tiles.map((tile) => tile.image());
-  const cellWidth = Math.max(...sizes.map((s) => s.width)) * TILE_SCALE;
-  const cellHeight = Math.max(...sizes.map((s) => s.height)) * TILE_SCALE + TITLE_HEIGHT;
+  const scales = sizes.map(tileScale);
+  const cellWidth = Math.max(...sizes.map((s, k) => s.width * scales[k]));
+  const cellHeight = Math.max(...sizes.map((s, k) => s.height * scales[k])) + TITLE_HEIGHT;
   const rows = Math.ceil(tiles.length / columns);
   const canvas = document.createElement('canvas');
   canvas.width = FIGURE_PADDING * (columns + 1) + cellWidth * columns;
@@ -70,7 +80,7 @@ export function downloadFigure(tiles: VizTile[], heading: string, filename: stri
     ctx.fillStyle = '#cbd5e1';
     ctx.font = '600 16px Inter, system-ui, sans-serif';
     ctx.fillText(`(${String.fromCharCode(97 + k)}) ${tile.title}`, x, y);
-    drawTile(ctx, tile, x, y + TITLE_HEIGHT, TILE_SCALE);
+    drawTile(ctx, tile, x, y + TITLE_HEIGHT, scales[k]);
   });
   downloadCanvas(canvas, filename);
 }

@@ -1,88 +1,114 @@
 /**
- * The notebook's figure set, rebuilt from our pipeline's masks: labelled
- * regions, each region on black, the sclera contour, the reddish pixels and
- * their binary mask, and the combined label map.
+ * The notebook's figure set, rebuilt from our pipeline's masks at display
+ * resolution: regions, the sclera and its contour, reddish pixels, the vessel
+ * network, iris, pupil, what was excluded, and the redness map.
  */
-import type { EyeAnalysis } from '../types';
+import type { Point } from '../types';
+import type { DisplayEye } from './display';
 import { drawCircle, drawLabel, type Overlay, type VizTile } from './draw';
-import { OUTLINE, REGION_COLOURS } from './palette';
-import { binary, labelMap, maskedPhoto, paint, regionOverlay } from './raster';
+import { OUTLINE, REDNESS, REGION_COLOURS, type Rgb } from './palette';
+import { binary, highlightedPhoto, labelMap, maskedPhoto, paint, photo, rednessHeatmap, regionOverlay, tint } from './raster';
 import { countOnes, labelAnchor, regionMasks, thickBoundary, type RegionMasks } from './regions';
+import { vesselMap } from './vessels';
 
 const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
+const GREEN: Rgb = [0x22, 0xc5, 0x5e];
+const AMBER: Rgb = [0xfa, 0xcc, 0x15];
+const SLATE: Rgb = [0x64, 0x74, 0x8b];
 
-/** Region names at their centroids, so identity never rests on colour alone. */
-function regionLabels(regions: RegionMasks): Overlay {
+/** Region names at their deepest points, so identity never rests on colour alone. */
+function regionLabels(regions: RegionMasks, factor: number): Overlay {
+  const entries: [string, Uint8Array][] = [['Pupil', regions.pupil], ['Iris', regions.iris], ['Sclera', regions.sclera]];
+  let anchors: { name: string; at: Point }[] | null = null;
   return (ctx, scale) => {
-    const entries: [string, Uint8Array][] = [['Pupil', regions.pupil], ['Iris', regions.iris], ['Sclera', regions.sclera]];
-    for (const [name, mask] of entries) {
+    // Found once, on first draw: repeated erosion is the slow part at display resolution.
+    anchors ??= entries.flatMap(([name, mask]) => {
       const at = labelAnchor(mask, regions.width, regions.height);
-      if (at) drawLabel(ctx, scale, name, at);
-    }
+      return at ? [{ name, at }] : [];
+    });
+    for (const { name, at } of anchors) drawLabel(ctx, scale, name, at, 9 * factor);
   };
 }
 
-export function segmentationTiles(eye: EyeAnalysis): VizTile[] {
-  const regions = regionMasks(eye);
-  const { width, height } = eye.roi;
-  const scleraCount = countOnes(regions.sclera);
-  const redCount = countOnes(eye.redMask);
+/** a AND NOT b. */
+const without = (a: Uint8Array, b: Uint8Array) => a.map((v, i) => (v && !b[i] ? 1 : 0));
+
+export function segmentationTiles(view: DisplayEye): VizTile[] {
+  const { eye, roi, factor } = view;
+  const { width, height } = roi;
+  const line = Math.max(2, Math.round(2 * factor));
+  const regions = regionMasks(view);
+  const vessels = vesselMap(roi, view.scleraMask, factor);
+  const excluded = without(view.openingOutsideIris, view.scleraMask);
+  const labels = regionLabels(regions, factor);
   return [
     {
-      id: 'regions',
-      title: 'Labelled regions',
-      caption: 'Pupil, visible iris and sclera over the normalised crop; everything outside the eye opening is grey.',
-      image: () => regionOverlay(eye.roi, regions),
-      overlay: regionLabels(regions),
+      id: 'regions', title: 'Labelled regions',
+      caption: 'Pupil, visible iris and sclera over the eye; everything outside the eye opening is grey.',
+      image: () => regionOverlay(roi, regions), overlay: labels,
     },
     {
-      id: 'sclera',
-      title: 'Segmented sclera',
-      caption: `Eye opening minus iris, canthal wedges and glare: ${scleraCount.toLocaleString()} px. MRL and RAP are measured here.`,
-      image: () => maskedPhoto(eye.roi, regions.sclera),
+      id: 'sclera', title: 'Segmented sclera',
+      caption: `Eye opening minus iris, canthal wedges and glare. MRL and RAP are measured on this region (${eye.scleraPixelCount.toLocaleString()} px at the measurement scale).`,
+      image: () => maskedPhoto(roi, view.scleraMask),
     },
     {
-      id: 'sclera-contour',
-      title: 'Sclera with active contour',
+      id: 'sclera-contour', title: 'Sclera with active contour',
       caption: `Green: boundary of the Chan-Vese region. Contour area ${eye.features.contourArea.toFixed(3)}, height ${eye.features.contourHeight.toFixed(3)} of the sclera mask.`,
-      image: () => paint(maskedPhoto(eye.roi, regions.sclera), thickBoundary(eye.contourMask, width, height), [0x22, 0xc5, 0x5e]),
+      image: () => paint(maskedPhoto(roi, view.scleraMask), thickBoundary(view.contourMask, width, height, line), GREEN),
     },
     {
-      id: 'red-pixels',
-      title: 'Reddish pixels',
-      caption: `Sclera pixels where red leads green and blue by >12%: ${redCount.toLocaleString()} px, RAP ${pct(eye.features.rap)}.`,
-      image: () => maskedPhoto(eye.roi, eye.redMask),
-    },
-    {
-      id: 'red-mask',
-      title: 'Reddish-pixel mask',
-      caption: 'The same pixels as a binary mask (P in Eq. 7); RAP = white pixels / sclera pixels.',
-      image: () => binary(eye.redMask, width, height),
-    },
-    {
-      id: 'iris',
-      title: 'Segmented iris',
-      caption: `Iris ring between the lids, pupil excluded. Iris radius ${eye.iris.r.toFixed(0)} px in the crop.`,
-      image: () => maskedPhoto(eye.roi, regions.iris),
-    },
-    {
-      id: 'pupil',
-      title: 'Segmented pupil',
-      caption: `Pupil radius ${eye.pupil.r.toFixed(0)} px; pupil / iris ratio ${eye.features.pupilIrisRatio.toFixed(3)}. Red ring marks the pupil, which is dark against the black background.`,
-      image: () => maskedPhoto(eye.roi, regions.pupil),
-      overlay: (ctx, scale) => drawCircle(ctx, scale, { ...eye.pupil, r: eye.pupil.r + 1.5 }, OUTLINE.pupil, 1.2),
-    },
-    {
-      id: 'label-map',
-      title: 'Label map',
+      id: 'label-map', title: 'Label map',
       caption: 'All three regions as flat colours - the mask set every feature is computed from.',
-      image: () => labelMap(regions),
-      overlay: regionLabels(regions),
+      image: () => labelMap(regions), overlay: labels,
+    },
+    {
+      id: 'red-pixels', title: 'Reddish pixels',
+      caption: `Full colour: sclera pixels where red leads green and blue by >12% (the RAP rule); the rest of the sclera is dimmed. RAP ${pct(eye.features.rap)}.`,
+      image: () => highlightedPhoto(roi, view.redMask, view.scleraMask),
+    },
+    {
+      id: 'red-mask', title: 'Reddish-pixel mask',
+      caption: `The same pixels as a binary mask (P in Eq. 7), sclera outlined in grey. RAP = white / sclera pixels = ${pct(eye.features.rap)}.`,
+      image: () => paint(binary(view.redMask, width, height), without(thickBoundary(view.scleraMask, width, height, line), view.redMask), SLATE),
+    },
+    {
+      id: 'vessels', title: 'Vessel network',
+      caption: `Conjunctival vessels (black top-hat on the green channel) in red over the sclera: ${pct(vessels.coverage)} of it. Reference view, not a paper feature.`,
+      image: () => tint(maskedPhoto(roi, view.scleraMask), vessels.mask, REDNESS, 0.9),
+    },
+    {
+      id: 'vessel-mask', title: 'Sclera minus vessels',
+      caption: 'Binary: sclera white, vessels black. It resembles the notebook\'s "red pixel" mask, which in fact kept bright pixels and dropped the vessels.',
+      image: () => binary(without(view.scleraMask, vessels.mask), width, height),
+    },
+    {
+      id: 'iris', title: 'Segmented iris',
+      caption: `Iris ring between the lids, pupil excluded. Iris radius ${eye.iris.r.toFixed(0)} px at the measurement scale.`,
+      image: () => maskedPhoto(roi, regions.iris),
+    },
+    {
+      id: 'pupil', title: 'Segmented pupil',
+      caption: `Pupil / iris ratio ${eye.features.pupilIrisRatio.toFixed(3)}. The red ring marks the pupil, which is dark on the black background.`,
+      image: () => maskedPhoto(roi, regions.pupil),
+      overlay: (ctx, scale) => drawCircle(ctx, scale, { ...view.pupil, r: view.pupil.r + 1.5 * factor }, OUTLINE.pupil, 1.2 * factor),
+    },
+    {
+      id: 'excluded', title: 'Excluded from the sclera',
+      caption: countOnes(excluded)
+        ? 'Amber: parts of the opening left out - the canthal wedges (pink caruncle, lid margin) and specular glare. Orange: the sclera kept.'
+        : 'Nothing in the opening was excluded. Orange: the sclera kept.',
+      image: () => tint(tint(photo(roi), view.scleraMask, REGION_COLOURS.sclera, 0.25), excluded, AMBER, 0.6),
+    },
+    {
+      id: 'redness-map', title: 'Redness map',
+      caption: `Per-pixel (3R - G - B) / (3·255) over the sclera; stronger red = redder. Its mean is the MRL: ${eye.features.mrl.toFixed(3)}.`,
+      image: () => rednessHeatmap(roi, view.scleraMask),
     },
   ];
 }
 
-export const REGION_LEGEND: { name: string; colour: [number, number, number] }[] = [
+export const REGION_LEGEND: { name: string; colour: Rgb }[] = [
   { name: 'Pupil', colour: REGION_COLOURS.pupil },
   { name: 'Iris', colour: REGION_COLOURS.iris },
   { name: 'Sclera', colour: REGION_COLOURS.sclera },

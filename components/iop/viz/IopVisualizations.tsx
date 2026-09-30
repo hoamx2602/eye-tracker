@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import type { EyeAnalysis } from '@/lib/iop/types';
+import type { EyeAnalysis, RgbImage } from '@/lib/iop/types';
+import { displayEye } from '@/lib/iop/viz/display';
 import { pipelineTiles } from '@/lib/iop/viz/pipelineTiles';
 import { segmentationTiles } from '@/lib/iop/viz/segmentationTiles';
 import FeatureDistributionChart from './FeatureDistributionChart';
@@ -20,15 +21,18 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
 
 interface IopVisualizationsProps {
   eye: EyeAnalysis;
+  /** The uploaded photo, so tiles can be drawn at its resolution. */
+  source: RgbImage;
   /** Used in download file names, e.g. the uploaded image's name. */
   imageName: string;
 }
 
 /** Visual evidence for one analysed eye: segmentation, pipeline steps and measurement charts. */
-export default function IopVisualizations({ eye, imageName }: IopVisualizationsProps) {
+export default function IopVisualizations({ eye, source, imageName }: IopVisualizationsProps) {
   const [tab, setTab] = useState<Tab>('segmentation');
-  const segmentation = useMemo(() => segmentationTiles(eye), [eye]);
-  const pipeline = useMemo(() => pipelineTiles(eye), [eye]);
+  const view = useMemo(() => displayEye(source, eye), [source, eye]);
+  const segmentation = useMemo(() => segmentationTiles(view), [view]);
+  const pipeline = useMemo(() => pipelineTiles(view), [view]);
   const filePrefix = `iop-${imageName.replace(/\.[^.]+$/, '').replace(/[^a-z0-9-]+/gi, '_')}-${eye.side}`;
   const figureTiles = tab === 'pipeline' ? pipeline : segmentation;
 
