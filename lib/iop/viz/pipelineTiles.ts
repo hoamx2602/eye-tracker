@@ -1,5 +1,5 @@
 /**
- * The pipeline as a strip of steps, for showing how each number was reached:
+ * The processing steps as figures, for showing how each number was reached:
  * crop, red layer, highlight removal, circles, eyelids, sclera, redness and
  * the active contour. Drawn at display resolution (see display.ts).
  */
@@ -13,7 +13,7 @@ import { greyscale, paint, photo, rednessHeatmap, regionOverlay } from './raster
 import { regionMasks, thickBoundary } from './regions';
 
 const LID_SOURCE_TEXT: Record<EyeAnalysis['source'], string> = {
-  auto: 'Close-up detector: faint dots are lid-edge candidates from column walks, bright dots the ones the circle fit kept; the two circles are the eyelids (paper Fig. 6).',
+  auto: 'Close-up detector: faint dots are lid-edge candidates from column walks, bright dots the ones the circle fit kept; the two circles are the eyelids.',
   mediapipe: 'MediaPipe face landmarks: the 16 lid landmarks of this eye define the opening.',
   manual: 'Hand-marked: two eyelid circles through the clicked corners and lid extremes.',
 };
@@ -74,43 +74,43 @@ export function pipelineTiles(view: DisplayEye): VizTile[] {
   const scleraOnly = { ...regions, pupil: new Uint8Array(regions.pupil.length), iris: new Uint8Array(regions.iris.length) };
   return [
     {
-      id: 'crop', title: '1 · Normalised crop',
-      caption: `Features are measured with the iris rescaled to 50 px (x${eye.roiScale.toFixed(2)} of the photo), the paper's fixed crop size. Shown here at x${f.toFixed(1)} that scale for detail.`,
+      id: 'crop', title: 'Normalised crop',
+      caption: `Features are measured with the iris rescaled to 50 px (x${eye.roiScale.toFixed(2)} of the photo), so every eye is measured at the same scale. Shown here at x${f.toFixed(1)} that scale for detail.`,
       image: () => photo(roi),
     },
     {
-      id: 'red-layer', title: '2 · Red layer',
-      caption: 'The paper detects pupil and iris on the red channel, where the pupil is darkest against the iris.',
+      id: 'red-layer', title: 'Red layer',
+      caption: 'Pupil and iris are detected on the red channel, where the pupil is darkest against the iris.',
       image: () => greyscale(red),
     },
     {
-      id: 'highlights', title: '3 · Highlights removed',
-      caption: 'Inside the yellow square (just inside the iris, as the paper crops before the pupil search), bright spots enclosed by darker pixels are filled so reflections do not break the pupil edge.',
+      id: 'highlights', title: 'Highlights removed',
+      caption: 'Inside the yellow square (just inside the iris, where the pupil is searched), bright spots enclosed by darker pixels are filled so reflections do not break the pupil edge.',
       image: () => greyscale(highlightsRemovedInBox(red, view.iris)),
       overlay: pupilBox,
     },
     {
-      id: 'circles', title: '4 · Iris and pupil circles',
+      id: 'circles', title: 'Iris and pupil circles',
       caption: `Blue: iris. Red: pupil (edge contrast ${eye.pupilContrast.toFixed(0)}/255). Pupil / iris ratio ${eye.features.pupilIrisRatio.toFixed(3)}.`,
       image: () => photo(roi), overlay: circles,
     },
     {
-      id: 'lids', title: '5 · Eyelids',
+      id: 'lids', title: 'Eyelids',
       caption: LID_SOURCE_TEXT[eye.source],
       image: () => photo(roi), overlay: lidOverlay(view),
     },
     {
-      id: 'sclera-mask', title: '6 · Sclera mask',
+      id: 'sclera-mask', title: 'Sclera mask',
       caption: 'Opening minus iris, minus 10% of the eye length at each corner (pink caruncle) and specular glare.',
       image: () => regionOverlay(roi, scleraOnly, 0.5), overlay: circles,
     },
     {
-      id: 'redness', title: '7 · Redness (MRL)',
+      id: 'redness', title: 'Redness (MRL)',
       caption: `Per-pixel (3R - G - B) / (3·255); stronger red = redder. Its mean over the sclera is the MRL: ${eye.features.mrl.toFixed(3)}.`,
       image: () => rednessHeatmap(roi, view.scleraMask),
     },
     {
-      id: 'active-contour', title: '8 · Active contour',
+      id: 'active-contour', title: 'Active contour',
       caption: 'Orange: sclera mask boundary. Green: Chan-Vese region seeded from it; area and height ratios are the contour features.',
       image: () => {
         const img = photo(roi);

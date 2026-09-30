@@ -2,7 +2,7 @@
  * The paper's classifier: a 5-10-1 multilayer perceptron with sigmoid units,
  * output >= 0.5 meaning high IOP (Section 4.4). The paper publishes neither
  * data nor weights, so weights come from training on our own labelled
- * exports (iop_estimation/train_iop_mlp.py writes this JSON format).
+ * features (iop_estimation/train_iop_mlp.py writes this JSON format).
  */
 import { FEATURE_ORDER, type IopFeatures } from './types';
 

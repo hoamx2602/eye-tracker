@@ -1,83 +1,85 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import type { EyeAnalysis, RgbImage } from '@/lib/iop/types';
+import { deriveViz } from '@/lib/iop/viz/derived';
 import { displayEye } from '@/lib/iop/viz/display';
+import { rgbCss } from '@/lib/iop/viz/palette';
 import { pipelineTiles } from '@/lib/iop/viz/pipelineTiles';
-import { segmentationTiles } from '@/lib/iop/viz/segmentationTiles';
+import { reportBlocks, type BlockExtra } from '@/lib/iop/viz/reportBlocks';
+import { REGION_LEGEND, segmentationTiles } from '@/lib/iop/viz/segmentationTiles';
 import FeatureDistributionChart from './FeatureDistributionChart';
+import NotebookBlock from './NotebookBlock';
+import { FormulaCell } from './NotebookCells';
 import RadialProfileChart from './RadialProfileChart';
 import RedLeadHistogram from './RedLeadHistogram';
-import { downloadFigure } from './renderTile';
-import VizTileGrid from './VizTileGrid';
-
-type Tab = 'segmentation' | 'pipeline' | 'measurements';
-
-const TABS: { id: Tab; label: string; hint: string }[] = [
-  { id: 'segmentation', label: 'Segmentation', hint: 'Each region the features are measured on, as in the analysis notebook.' },
-  { id: 'pipeline', label: 'Pipeline', hint: 'Every processing step from the crop to the active contour, in order.' },
-  { id: 'measurements', label: 'Measurements', hint: 'How the numbers arise, and where they sit against the paper.' },
-];
+import { downloadReport } from './renderTile';
 
 interface IopVisualizationsProps {
   eye: EyeAnalysis;
-  /** The uploaded photo, so tiles can be drawn at its resolution. */
+  /** The uploaded photo, so figures can be drawn at its resolution. */
   source: RgbImage;
   /** Used in download file names, e.g. the uploaded image's name. */
   imageName: string;
 }
 
-/** Visual evidence for one analysed eye: segmentation, pipeline steps and measurement charts. */
+function RegionLegend() {
+  return (
+    <ul className="flex flex-wrap gap-4 text-xs text-slate-300" aria-label="Region colours">
+      {REGION_LEGEND.map(({ name, colour }) => (
+        <li key={name} className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 rounded-sm" style={{ background: rgbCss(colour) }} />
+          {name}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Extra({ kind, eye }: { kind: BlockExtra; eye: EyeAnalysis }) {
+  switch (kind) {
+    case 'formulas': return <FormulaCell />;
+    case 'red-lead-chart': return <RedLeadHistogram eye={eye} />;
+    case 'radial-chart': return <RadialProfileChart eye={eye} />;
+    case 'classes-chart': return <FeatureDistributionChart features={eye.features} />;
+    case 'region-legend': return <RegionLegend />;
+  }
+}
+
+/**
+ * The analysis of one eye as a notebook: numbered blocks, in the order the
+ * analysis notebook runs, each with its figures and printed values.
+ */
 export default function IopVisualizations({ eye, source, imageName }: IopVisualizationsProps) {
-  const [tab, setTab] = useState<Tab>('segmentation');
-  const view = useMemo(() => displayEye(source, eye), [source, eye]);
-  const segmentation = useMemo(() => segmentationTiles(view), [view]);
-  const pipeline = useMemo(() => pipelineTiles(view), [view]);
+  const blocks = useMemo(() => {
+    const view = displayEye(source, eye);
+    const derived = deriveViz(view);
+    const tiles = new Map([...segmentationTiles(view, derived), ...pipelineTiles(view)].map((tile) => [tile.id, tile]));
+    return reportBlocks(view, derived, tiles);
+  }, [source, eye]);
   const filePrefix = `iop-${imageName.replace(/\.[^.]+$/, '').replace(/[^a-z0-9-]+/gi, '_')}-${eye.side}`;
-  const figureTiles = tab === 'pipeline' ? pipeline : segmentation;
 
   return (
-    <section className="space-y-4" aria-label="Visualisations">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div role="tablist" className="inline-flex rounded-lg border border-slate-700 bg-slate-900/60 p-1">
-          {TABS.map(({ id, label }) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={tab === id}
-              onClick={() => setTab(id)}
-              className={`px-3 py-1.5 text-sm rounded-md transition duration-150 ease-out ${
-                tab === id ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              {label}
-            </button>
+    <section className="space-y-6" aria-label="Visualisations">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <nav aria-label="Blocks" className="flex flex-1 flex-wrap gap-2">
+          {blocks.map((block, k) => (
+            <a key={block.id} href={`#iop-block-${block.id}`}
+              className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 transition duration-150 ease-out hover:border-blue-500 hover:text-white">
+              <span className="font-mono text-blue-400">{k + 1}</span> {block.title}
+            </a>
           ))}
-        </div>
-        {tab !== 'measurements' && (
-          <button
-            type="button"
-            onClick={() => downloadFigure(figureTiles, `${TABS.find((t) => t.id === tab)?.label} · ${imageName}`, `${filePrefix}-${tab}-figure.png`)}
-            className="px-3 py-1.5 rounded bg-slate-700 text-sm text-slate-100 hover:bg-slate-600 transition duration-150 ease-out"
-          >
-            Download figure (PNG)
-          </button>
-        )}
+        </nav>
+        <button type="button" onClick={() => downloadReport(blocks, `IOP analysis · ${imageName}`, `${filePrefix}-report.png`)}
+          className="shrink-0 rounded bg-slate-700 px-3 py-1.5 text-sm text-slate-100 transition duration-150 ease-out hover:bg-slate-600">
+          Download report (PNG)
+        </button>
       </div>
-      <p className="text-xs text-slate-400">{TABS.find((t) => t.id === tab)?.hint}</p>
-
-      {tab === 'segmentation' && <VizTileGrid tiles={segmentation} filePrefix={filePrefix} showRegionLegend />}
-      {tab === 'pipeline' && <VizTileGrid tiles={pipeline} filePrefix={filePrefix} />}
-      {tab === 'measurements' && (
-        <div className="space-y-4">
-          <FeatureDistributionChart features={eye.features} />
-          <div className="grid gap-4 lg:grid-cols-2">
-            <RadialProfileChart eye={eye} />
-            <RedLeadHistogram eye={eye} />
-          </div>
-        </div>
-      )}
+      {blocks.map((block, k) => (
+        <NotebookBlock key={block.id} block={block} number={k + 1} filePrefix={filePrefix}>
+          {block.extras?.map((kind) => <Extra key={kind} kind={kind} eye={eye} />)}
+        </NotebookBlock>
+      ))}
     </section>
   );
 }

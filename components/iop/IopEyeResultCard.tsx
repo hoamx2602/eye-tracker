@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { predictHighIop, type IopModel } from '@/lib/iop/classifier';
 import type { EyeAnalysis, RgbImage } from '@/lib/iop/types';
 import IopFeatureTable from './IopFeatureTable';
-import IopLabelForm, { type IopLabelInput } from './IopLabelForm';
 import IopRoiCanvas, { type RoiLayers } from './IopRoiCanvas';
 import IopVisualizations from './viz/IopVisualizations';
 
@@ -13,7 +12,6 @@ interface IopEyeResultCardProps {
   source: RgbImage;
   imageName: string;
   model: IopModel | null;
-  onAddRow: (eye: EyeAnalysis, input: IopLabelInput) => void;
 }
 
 const SIDE_TITLES: Record<EyeAnalysis['side'], string> = {
@@ -39,8 +37,8 @@ function ModelVerdict({ eye, model }: { eye: EyeAnalysis; model: IopModel | null
   if (!model) {
     return (
       <p className="text-sm text-slate-400">
-        No trained model deployed (<code className="text-slate-300">public/iop/model.json</code>), so there is no normal/high verdict.
-        Collect labelled rows below and train one with <code className="text-slate-300">train_iop_mlp.py</code>.
+        No trained model is deployed (<code className="text-slate-300">public/iop/model.json</code>), so there is no normal/high
+        verdict - only the measured features.
       </p>
     );
   }
@@ -54,10 +52,9 @@ function ModelVerdict({ eye, model }: { eye: EyeAnalysis; model: IopModel | null
   );
 }
 
-/** Result for one eye: overlay, features, flags, verdict, labelling. */
-export default function IopEyeResultCard({ eye, source, imageName, model, onAddRow }: IopEyeResultCardProps) {
+/** Result for one eye: overlay, features, flags, verdict and visualisations. */
+export default function IopEyeResultCard({ eye, source, imageName, model }: IopEyeResultCardProps) {
   const [layers, setLayers] = useState<RoiLayers>({ circles: true, sclera: false, red: true, contour: false });
-  const [added, setAdded] = useState(false);
 
   return (
     <section className="rounded-xl bg-slate-800/60 border border-slate-700/80 p-6 space-y-4">
@@ -89,13 +86,6 @@ export default function IopEyeResultCard({ eye, source, imageName, model, onAddR
       </div>
       <div className="border-t border-slate-700 pt-4">
         <IopVisualizations eye={eye} source={source} imageName={imageName} />
-      </div>
-      <div className="border-t border-slate-700 pt-4">
-        {added ? (
-          <p className="text-sm text-emerald-400">Added to the dataset.</p>
-        ) : (
-          <IopLabelForm onAdd={(input) => { onAddRow(eye, input); setAdded(true); }} />
-        )}
       </div>
     </section>
   );

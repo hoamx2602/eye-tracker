@@ -43,7 +43,7 @@ export default function IopUploadPanel({ busy, onFile }: IopUploadPanelProps) {
         />
       </label>
       <ul className="text-slate-400 text-sm list-disc pl-5 space-y-1">
-        <li>Paper protocol: camera about 20 cm from the eye, same indoor lighting for everyone, no flash, high resolution.</li>
+        <li>Best results: camera about 20 cm from the eye, even indoor lighting, no flash, high resolution.</li>
         <li>Eyes wide open, looking straight at the camera, no glasses or coloured lenses.</li>
         <li>Iris should be at least ~60 px across in the photo; a phone&apos;s rear camera works well.</li>
       </ul>

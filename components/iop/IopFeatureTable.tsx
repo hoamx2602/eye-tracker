@@ -24,8 +24,8 @@ export default function IopFeatureTable({ features }: IopFeatureTableProps) {
         <tr className="border-b border-slate-700 text-xs text-slate-400 uppercase tracking-wider">
           <th className="py-2 pr-2 font-medium">Feature</th>
           <th className="py-2 pr-2 font-medium">Value</th>
-          <th className="py-2 pr-2 font-medium">Paper normal</th>
-          <th className="py-2 pr-2 font-medium">Paper high</th>
+          <th className="py-2 pr-2 font-medium">Reference normal</th>
+          <th className="py-2 pr-2 font-medium">Reference high IOP</th>
           <th className="py-2 font-medium">Nearer</th>
         </tr>
       </thead>

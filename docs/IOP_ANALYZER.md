@@ -3,8 +3,7 @@
 `/iop` measures the five frontal-eye features of Al-Oudat et al.,
 *A smart intraocular pressure risk assessment framework using frontal eye image
 analysis*, EURASIP JIVP 2018:90, from an uploaded photo. It runs entirely in the
-browser on the CPU. The photo is never uploaded; only the numbers leave, and
-only when a researcher exports them.
+browser on the CPU, and the photo is never uploaded.
 
 It is a research instrument, not a diagnostic. The paper's accuracy (96%) comes
 from one private dataset of 400 images and has not been independently
@@ -87,54 +86,37 @@ the radius, and the lid points are within 45%.
 
 ## Visualisations
 
-Every analysed eye has a Visualisations panel with three tabs. Image
-tiles are drawn from the original photo, at up to 3× the normalised scale
-(`lib/iop/viz/display.ts`). The geometry is scaled exactly, and the sclera
-and reddish-pixel masks are rebuilt per pixel with the same rules, so thin
-vessels stay visible. The numbers in the captions are still the ones
-measured at the normalised scale (iris radius 50 px). Every image
-tile has a caption with its numbers and a PNG download. **Download figure**
-lays out the tab's tiles as one lettered figure (a)–(h) for slides and
-papers. All of it runs in the browser (`lib/iop/viz/*`,
-`components/iop/viz/*`).
+Every analysed eye is followed by its analysis, laid out like
+the analysis notebook: numbered blocks, each with a short explanation, its
+figures drawn large, and an **Out** cell of printed values. A block index at
+the top jumps to each step. Every figure has a PNG download, and
+**Download report (PNG)** exports all blocks as one tall image; the charts
+are interactive SVG and appear only on the page.
 
-- **Segmentation.** The analysis notebook's figure set and more, in 12
-  tiles:
-  - labelled regions;
-  - segmented sclera;
-  - sclera with the active-contour boundary;
-  - label map;
-  - reddish pixels (full colour over the dimmed sclera) and their binary
-    mask (P in Eq. 7);
-  - vessel network and sclera-minus-vessels (black top-hat on the green
-    channel; a reference view, not a paper feature). This is the look of the
-    notebook's "red pixel" mask, which in fact kept bright pixels;
-  - segmented iris;
-  - segmented pupil;
-  - what was excluded from the sclera (canthi, glare);
-  - redness map.
-- **Pipeline.** Each step in order:
-  1. normalised crop;
-  2. red layer;
-  3. highlights removed, inside the pupil-search square only;
-  4. iris and pupil circles;
-  5. eyelids, where close-ups show the lid-edge candidates, the points the
-     RANSAC fit kept and the two lid circles;
-  6. sclera mask;
-  7. per-pixel redness heatmap, whose mean is the MRL;
-  8. active contour against the sclera mask.
-- **Measurements.**
-  - *The paper's two classes.* Where this eye's five features fall against
-    the Table 4 normal-IOP and high-IOP distributions.
-  - *Radial brightness profile.* The profile the circle search
-    differentiates, with the pupil and iris edges marked.
-  - *RAP histogram.* The sclera's red-lead distribution with the RAP
-    threshold marked.
+The figures are drawn from the original photo, at up to 3× the normalised
+scale (`lib/iop/viz/display.ts`). The geometry is scaled exactly, and the
+sclera and reddish-pixel masks are rebuilt per pixel with the same rules.
+The printed values are the ones measured at the normalised scale (iris
+radius 50 px).
+
+| # | Block | Figures | Out |
+|---|---|---|---|
+| 1 | Input: normalised eye crop | crop | how the eye was located, iris radius in the photo, rescale factor |
+| 2 | Segmentation masks | labelled regions, label map (+ colour key) | pupil / iris / sclera area shares (notebook cell 36) and pixel areas |
+| 3 | Sclera segmentation | segmented sclera, what was excluded | sclera pixels, share excluded (canthi + glare) |
+| 4 | Sclera contour | sclera with Chan-Vese boundary, contour against mask | Contour Area, Contour Height |
+| 5 | Red pixels: RAP and MRL | reddish pixels, their mask (P in Eq. 7), redness map; Eq. 6 and Eq. 7; red-lead histogram with the RAP threshold | RAP, MRL |
+| 6 | Inverted red pixel mask | non-reddish sclera, as photo and mask (the notebook's cell 26) | 1 − RAP |
+| 7 | Vessel network (reference) | vessels (black top-hat, green channel), sclera minus vessels | vessel coverage |
+| 8 | Iris (segmented) | iris and pupil circles, iris ring | iris radius |
+| 9 | Pupil and pupil / iris ratio | red layer, highlights removed in the pupil-search square, pupil; radial brightness profile | pupil radius, edge contrast, ratio |
+| 10 | Eyelid localisation | lid edges and fitted lid circles (close-ups) or landmarks, sclera mask | outline source |
+| 11 | Summary | this eye against the paper's Table 4 class distributions | all five features (notebook cell 37) |
 
 Region colours are the first three slots of the reference categorical
 palette. They were validated on the page's dark surface (all-pairs CVD
 ΔE 9.4, normal-vision ΔE 20.9, ≥ 3:1 contrast), and every region is also
-labelled in text.
+named in text.
 
 ## Quality flags (`quality.ts`)
 
@@ -146,22 +128,25 @@ labelled in text.
 - **glare**: more than 10% of the would-be sclera (after the canthal trim) is glare.
 - **small_sclera**
 
-Flags are exported with each row. The training script can drop flagged rows.
+The training script can drop rows that carry a quality flag.
 
 ## Training a model
 
-1. Collect labelled eyes in `/iop`. For each eye, record the
-   participant ID, the tonometer IOP in mmHg (above 20 counts as high, as in
-   the paper), and whether the participant uses eye drops.
-2. Click **Export CSV**. The rows live in this browser's `localStorage` until
-   exported.
-3. Run
-   `python3 train_iop_mlp.py iop-features.csv --out model.json [--drop-flagged]`.
+The page measures features only; it does not collect labels. To enable the
+normal/high verdict:
+
+1. Assemble a CSV of labelled eyes. It needs one row per eye with the five
+   feature columns (`pupilIrisRatio`, `rap`, `mrl`, `contourArea`,
+   `contourHeight`) and `label` (`normal`/`high`; above 20 mmHg counts as
+   high, as in the paper). Optional columns: `participant_id` (keeps both
+   eyes of a person in the same fold), `on_eye_drops`, `quality_flags`.
+2. Run
+   `python3 train_iop_mlp.py features.csv --out model.json [--drop-flagged]`.
    The script lives in the separate `iop_estimation` folder. It reports
    participant-grouped, repeated cross-validated accuracy, sensitivity,
-   specificity and AUC. When enough rows exist, it also splits these by
-   eye-drop use.
-4. Copy the output to `public/iop/model.json` and deploy. The page then shows
+   specificity and AUC. When eye-drop use is recorded, it also splits these
+   by it.
+3. Copy the output to `public/iop/model.json` and deploy. The page then shows
    a normal/high output per eye.
 
 The TypeScript forward pass reproduces sklearn's `predict_proba` to 6 decimal

@@ -1,5 +1,6 @@
 import type { VizTile } from '@/lib/iop/viz/draw';
 import type { RgbaImage } from '@/lib/iop/viz/raster';
+import type { ReportBlock } from '@/lib/iop/viz/reportBlocks';
 
 /**
  * Tiles are drawn so their canvas is about this wide; the browser then
@@ -26,6 +27,10 @@ export function drawTile(ctx: CanvasRenderingContext2D, tile: VizTile, x: number
   const image = tile.image();
   ctx.save();
   ctx.translate(x, y);
+  // Overlays (e.g. the fitted lid circles) may reach past the image; keep them inside it.
+  ctx.beginPath();
+  ctx.rect(0, 0, image.width * scale, image.height * scale);
+  ctx.clip();
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(rasterCanvas(image), 0, 0, image.width * scale, image.height * scale);
   tile.overlay?.(ctx, scale);
@@ -50,37 +55,66 @@ export function downloadCanvas(canvas: HTMLCanvasElement, filename: string) {
   link.click();
 }
 
-const FIGURE_PADDING = 24;
-const TITLE_HEIGHT = 30;
+const REPORT_WIDTH = 1800;
+const PAD = 28;
+const FIGURE_GAP = 20;
+/** One figure alone is capped at this width, so it does not fill the page. */
+const SINGLE_FIGURE_WIDTH = 900;
+const LINE = 26;
 
 /**
- * Lays the tiles out as one paper-style figure - panels (a), (b), ... with
- * their titles - and downloads it as PNG.
+ * Lays the notebook blocks out as one tall PNG: each block's heading, its
+ * figures in a row, and its printed values. Charts are left out (they are
+ * interactive SVG on the page).
  */
-export function downloadFigure(tiles: VizTile[], heading: string, filename: string, columns = 4) {
-  const sizes = tiles.map((tile) => tile.image());
-  const scales = sizes.map(tileScale);
-  const cellWidth = Math.max(...sizes.map((s, k) => s.width * scales[k]));
-  const cellHeight = Math.max(...sizes.map((s, k) => s.height * scales[k])) + TITLE_HEIGHT;
-  const rows = Math.ceil(tiles.length / columns);
+export function downloadReport(blocks: ReportBlock[], heading: string, filename: string) {
+  const layout = blocks.map((block) => {
+    const count = block.figures.length;
+    const cellWidth = count === 1 ? SINGLE_FIGURE_WIDTH : (REPORT_WIDTH - 2 * PAD - FIGURE_GAP * (count - 1)) / Math.max(1, count);
+    const images = block.figures.map((tile) => tile.image());
+    const figureHeight = count ? Math.max(...images.map((img) => (img.height * cellWidth) / img.width)) : 0;
+    const height = 44 + (count ? figureHeight + 36 : 0) + block.outputs.length * LINE + 24;
+    return { block, cellWidth, figureHeight, height };
+  });
   const canvas = document.createElement('canvas');
-  canvas.width = FIGURE_PADDING * (columns + 1) + cellWidth * columns;
-  canvas.height = FIGURE_PADDING * (rows + 2) + cellHeight * rows + TITLE_HEIGHT;
+  canvas.width = REPORT_WIDTH;
+  canvas.height = PAD * 2 + 50 + layout.reduce((sum, item) => sum + item.height + PAD, 0);
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   ctx.fillStyle = '#0f172a';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = '700 22px Inter, system-ui, sans-serif';
   ctx.textBaseline = 'top';
-  ctx.fillText(heading, FIGURE_PADDING, FIGURE_PADDING);
-  tiles.forEach((tile, k) => {
-    const x = FIGURE_PADDING + (k % columns) * (cellWidth + FIGURE_PADDING);
-    const y = FIGURE_PADDING * 2 + TITLE_HEIGHT + Math.floor(k / columns) * (cellHeight + FIGURE_PADDING);
-    ctx.fillStyle = '#cbd5e1';
-    ctx.font = '600 16px Inter, system-ui, sans-serif';
-    ctx.fillText(`(${String.fromCharCode(97 + k)}) ${tile.title}`, x, y);
-    drawTile(ctx, tile, x, y + TITLE_HEIGHT, scales[k]);
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = '700 30px Inter, system-ui, sans-serif';
+  ctx.fillText(heading, PAD, PAD);
+  let y = PAD + 50;
+  layout.forEach(({ block, cellWidth, figureHeight, height }, index) => {
+    ctx.fillStyle = '#60a5fa';
+    ctx.font = '600 22px ui-monospace, monospace';
+    ctx.fillText(`[${index + 1}]`, PAD, y);
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '700 24px Inter, system-ui, sans-serif';
+    ctx.fillText(block.title, PAD + 60, y);
+    let cursor = y + 44;
+    block.figures.forEach((tile, k) => {
+      const image = tile.image();
+      const scale = cellWidth / image.width;
+      const x = PAD + k * (cellWidth + FIGURE_GAP);
+      drawTile(ctx, tile, x, cursor, scale);
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '500 16px Inter, system-ui, sans-serif';
+      const label = block.figures.length > 1 ? `${index + 1}${String.fromCharCode(97 + k)}` : `${index + 1}`;
+      ctx.fillText(`Fig. ${label} · ${tile.title}`, x, cursor + figureHeight + 8);
+    });
+    if (block.figures.length) cursor += figureHeight + 36;
+    ctx.font = '500 18px ui-monospace, monospace';
+    block.outputs.forEach((line, k) => {
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(`${line.label}:`, PAD, cursor + k * LINE);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillText(line.value, PAD + ctx.measureText(`${line.label}: `).width, cursor + k * LINE);
+    });
+    y += height + PAD;
   });
   downloadCanvas(canvas, filename);
 }

@@ -1,15 +1,16 @@
 /**
  * The notebook's figure set, rebuilt from our pipeline's masks at display
- * resolution: regions, the sclera and its contour, reddish pixels, the vessel
- * network, iris, pupil, what was excluded, and the redness map.
+ * resolution, in rows: regions and sclera; reddish pixels and their inverse
+ * (the notebook's "inverted red pixel mask"); vessels, exclusions and
+ * redness; iris and pupil.
  */
 import type { Point } from '../types';
+import { without as withoutMask, type DerivedViz } from './derived';
 import type { DisplayEye } from './display';
 import { drawCircle, drawLabel, type Overlay, type VizTile } from './draw';
 import { OUTLINE, REDNESS, REGION_COLOURS, type Rgb } from './palette';
 import { binary, highlightedPhoto, labelMap, maskedPhoto, paint, photo, rednessHeatmap, regionOverlay, tint } from './raster';
-import { countOnes, labelAnchor, regionMasks, thickBoundary, type RegionMasks } from './regions';
-import { vesselMap } from './vessels';
+import { labelAnchor, thickBoundary, type RegionMasks } from './regions';
 
 const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
 const GREEN: Rgb = [0x22, 0xc5, 0x5e];
@@ -30,16 +31,11 @@ function regionLabels(regions: RegionMasks, factor: number): Overlay {
   };
 }
 
-/** a AND NOT b. */
-const without = (a: Uint8Array, b: Uint8Array) => a.map((v, i) => (v && !b[i] ? 1 : 0));
-
-export function segmentationTiles(view: DisplayEye): VizTile[] {
+export function segmentationTiles(view: DisplayEye, derived: DerivedViz): VizTile[] {
   const { eye, roi, factor } = view;
   const { width, height } = roi;
   const line = Math.max(2, Math.round(2 * factor));
-  const regions = regionMasks(view);
-  const vessels = vesselMap(roi, view.scleraMask, factor);
-  const excluded = without(view.openingOutsideIris, view.scleraMask);
+  const { regions, vessels, excluded, inverted } = derived;
   const labels = regionLabels(regions, factor);
   return [
     {
@@ -69,18 +65,40 @@ export function segmentationTiles(view: DisplayEye): VizTile[] {
     },
     {
       id: 'red-mask', title: 'Reddish-pixel mask',
-      caption: `The same pixels as a binary mask (P in Eq. 7), sclera outlined in grey. RAP = white / sclera pixels = ${pct(eye.features.rap)}.`,
-      image: () => paint(binary(view.redMask, width, height), without(thickBoundary(view.scleraMask, width, height, line), view.redMask), SLATE),
+      caption: `The same pixels as a binary mask, sclera outlined in grey. RAP = white / sclera pixels = ${pct(eye.features.rap)}.`,
+      image: () => paint(binary(view.redMask, width, height), withoutMask(thickBoundary(view.scleraMask, width, height, line), view.redMask), SLATE),
+    },
+    {
+      id: 'inverted-pixels', title: 'Inverted reddish pixels',
+      caption: `The inverted red pixel mask: the sclera pixels NOT counted as reddish, in full colour. Their share is 1 - RAP = ${pct(1 - eye.features.rap)}.`,
+      image: () => maskedPhoto(roi, inverted),
+    },
+    {
+      id: 'inverted-mask', title: 'Inverted reddish-pixel mask',
+      caption: `The same pixels as a binary mask: white = sclera that is not reddish. Together with the reddish-pixel mask it covers the whole sclera.`,
+      image: () => binary(inverted, width, height),
     },
     {
       id: 'vessels', title: 'Vessel network',
-      caption: `Conjunctival vessels (black top-hat on the green channel) in red over the sclera: ${pct(vessels.coverage)} of it. Reference view, not a paper feature.`,
+      caption: `Conjunctival vessels (black top-hat on the green channel) in red over the sclera: ${pct(vessels.coverage)} of it. Reference view, not one of the five features.`,
       image: () => tint(maskedPhoto(roi, view.scleraMask), vessels.mask, REDNESS, 0.9),
     },
     {
       id: 'vessel-mask', title: 'Sclera minus vessels',
-      caption: 'Binary: sclera white, vessels black. It resembles the notebook\'s "red pixel" mask, which in fact kept bright pixels and dropped the vessels.',
-      image: () => binary(without(view.scleraMask, vessels.mask), width, height),
+      caption: 'Binary: sclera white, vessels black.',
+      image: () => binary(withoutMask(view.scleraMask, vessels.mask), width, height),
+    },
+    {
+      id: 'excluded', title: 'Excluded from the sclera',
+      caption: derived.excludedShare > 0
+        ? 'Amber: parts of the opening left out - the canthal wedges (pink caruncle, lid margin) and specular glare. Orange: the sclera kept.'
+        : 'Nothing in the opening was excluded. Orange: the sclera kept.',
+      image: () => tint(tint(photo(roi), view.scleraMask, REGION_COLOURS.sclera, 0.25), excluded, AMBER, 0.6),
+    },
+    {
+      id: 'redness-map', title: 'Redness map',
+      caption: `Per-pixel (3R - G - B) / (3·255) over the sclera; stronger red = redder. Its mean is the MRL: ${eye.features.mrl.toFixed(3)}.`,
+      image: () => rednessHeatmap(roi, view.scleraMask),
     },
     {
       id: 'iris', title: 'Segmented iris',
@@ -92,18 +110,6 @@ export function segmentationTiles(view: DisplayEye): VizTile[] {
       caption: `Pupil / iris ratio ${eye.features.pupilIrisRatio.toFixed(3)}. The red ring marks the pupil, which is dark on the black background.`,
       image: () => maskedPhoto(roi, regions.pupil),
       overlay: (ctx, scale) => drawCircle(ctx, scale, { ...view.pupil, r: view.pupil.r + 1.5 * factor }, OUTLINE.pupil, 1.2 * factor),
-    },
-    {
-      id: 'excluded', title: 'Excluded from the sclera',
-      caption: countOnes(excluded)
-        ? 'Amber: parts of the opening left out - the canthal wedges (pink caruncle, lid margin) and specular glare. Orange: the sclera kept.'
-        : 'Nothing in the opening was excluded. Orange: the sclera kept.',
-      image: () => tint(tint(photo(roi), view.scleraMask, REGION_COLOURS.sclera, 0.25), excluded, AMBER, 0.6),
-    },
-    {
-      id: 'redness-map', title: 'Redness map',
-      caption: `Per-pixel (3R - G - B) / (3·255) over the sclera; stronger red = redder. Its mean is the MRL: ${eye.features.mrl.toFixed(3)}.`,
-      image: () => rednessHeatmap(roi, view.scleraMask),
     },
   ];
 }

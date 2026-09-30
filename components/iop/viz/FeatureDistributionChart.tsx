@@ -43,7 +43,7 @@ function FeaturePanel({ featureKey, value }: { featureKey: keyof IopFeatures; va
             <Tooltip
               contentStyle={{ background: '#0f172a', border: `1px solid ${CHART.grid}`, fontSize: 12, color: CHART.text }}
               labelFormatter={(x) => `Value ${Number(x).toFixed(3)}`}
-              formatter={(density, name) => [Number(density).toFixed(2), name === 'normal' ? 'Paper normal (density)' : 'Paper high (density)']}
+              formatter={(density, name) => [Number(density).toFixed(2), name === 'normal' ? 'Reference normal (density)' : 'Reference high IOP (density)']}
             />
             <Area type="monotone" dataKey="normal" stroke={CHART.normal} strokeWidth={2} fill={CHART.normal} fillOpacity={0.1} dot={false} isAnimationActive={false} />
             <Area type="monotone" dataKey="high" stroke={CHART.high} strokeWidth={2} fill={CHART.high} fillOpacity={0.1} dot={false} isAnimationActive={false} />
@@ -64,12 +64,12 @@ export default function FeatureDistributionChart({ features }: FeatureDistributi
   const finite = FEATURE_ORDER.filter((key) => Number.isFinite(features[key]));
   return (
     <ChartCard
-      title="This eye against the paper's two classes"
-      subtitle="Curves: normal distributions from the paper's Table 4 (mean, STD) for normal-IOP and high-IOP eyes. White line: this eye. Orientation only - the paper's RAP threshold and active-contour settings are unpublished, so RAP and the contour features are not on its exact scale."
+      title="This eye against the reference distributions"
+      subtitle="Curves: reference distributions (mean and standard deviation) for eyes with normal IOP and with high IOP. White line: this eye. Indicative only - RAP and the contour features depend on the measurement settings."
     >
       <div className="flex flex-wrap gap-4">
-        <LegendKey colour={CHART.normal} label="Paper: normal IOP" />
-        <LegendKey colour={CHART.high} label="Paper: high IOP" />
+        <LegendKey colour={CHART.normal} label="Reference: normal IOP" />
+        <LegendKey colour={CHART.high} label="Reference: high IOP" />
         <LegendKey colour={CHART.value} label="This eye" />
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

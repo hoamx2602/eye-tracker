@@ -6,13 +6,13 @@ import { downloadCanvas, renderTile } from './renderTile';
 
 interface VizTileCardProps {
   tile: VizTile;
-  /** Panel letter, e.g. "a". */
-  letter: string;
+  /** Figure label, e.g. "Fig. 5a". */
+  label: string;
   filePrefix: string;
 }
 
 /** One visualisation panel with its caption and a PNG download. */
-export default function VizTileCard({ tile, letter, filePrefix }: VizTileCardProps) {
+export default function VizTileCard({ tile, label, filePrefix }: VizTileCardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -25,7 +25,7 @@ export default function VizTileCard({ tile, letter, filePrefix }: VizTileCardPro
       <figcaption className="flex-1 space-y-1">
         <div className="flex items-start justify-between gap-2">
           <span className="text-sm font-semibold text-slate-100">
-            ({letter}) {tile.title}
+            <span className="text-slate-400">{label}</span> · {tile.title}
           </span>
           <button
             type="button"
