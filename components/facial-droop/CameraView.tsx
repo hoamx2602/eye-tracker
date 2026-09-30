@@ -12,10 +12,10 @@ interface CameraViewProps {
 /**
  * The live camera, as large as the viewport allows at 16:9, centred.
  *
- * Deliberately NOT mirrored. A selfie-style mirror is what people expect, but
- * the recording is the raw stream and the analysis names facial sides from
- * the subject's anatomy; a mirrored preview would make the subject and the
- * reviewer see opposite sides. Left on screen is the subject's right.
+ * Mirrored like a selfie camera, which is what people expect to see. The
+ * mirror is CSS on this element only: MediaRecorder records the raw stream,
+ * so the saved video - and the analysis, which names facial sides from the
+ * subject's anatomy - is unaffected.
  */
 export default function CameraView({ stream, reserve, children }: CameraViewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -39,8 +39,8 @@ export default function CameraView({ stream, reserve, children }: CameraViewProp
         muted
         playsInline
         className="h-full w-full object-cover"
-        style={{ transform: 'none' }}
-        aria-label="Camera preview (not mirrored)"
+        style={{ transform: 'scaleX(-1)' }}
+        aria-label="Camera preview"
       />
       {children}
     </div>
