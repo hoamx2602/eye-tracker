@@ -2,22 +2,25 @@
 
 import React, { useState } from 'react';
 import { MANUAL_POINT_ORDER, type ManualEyePoints } from '@/lib/iop/eyeGeometry';
-import type { EyeSide, Point } from '@/lib/iop/types';
+import type { EyeSideLabel, Point } from '@/lib/iop/types';
 
 interface IopManualPickerProps {
   imageUrl: string;
   imageWidth: number;
   imageHeight: number;
-  onSubmit: (points: ManualEyePoints, side: EyeSide) => void;
+  onSubmit: (points: ManualEyePoints, side: EyeSideLabel) => void;
+  /** Why automatic detection failed, if it was tried. */
+  autoFailure?: string | null;
 }
 
 /**
- * Six clicks on an eye close-up when no face is detectable. The lid points
- * define the two eyelid circles of the paper's Fig. 6.
+ * Six clicks, for when neither face landmarks nor the close-up detector find
+ * the eye, or their outline is wrong. The lid points define the two eyelid
+ * circles of the paper's Fig. 6.
  */
-export default function IopManualPicker({ imageUrl, imageWidth, imageHeight, onSubmit }: IopManualPickerProps) {
+export default function IopManualPicker({ imageUrl, imageWidth, imageHeight, onSubmit, autoFailure }: IopManualPickerProps) {
   const [points, setPoints] = useState<Point[]>([]);
-  const [side, setSide] = useState<EyeSide>('right');
+  const [side, setSide] = useState<EyeSideLabel>('unknown');
   const complete = points.length === MANUAL_POINT_ORDER.length;
   const nextLabel = complete ? 'All points placed' : MANUAL_POINT_ORDER[points.length].label;
 
@@ -38,7 +41,10 @@ export default function IopManualPicker({ imageUrl, imageWidth, imageHeight, onS
     <div className="rounded-xl bg-slate-800/60 border border-slate-700/80 p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-white font-semibold">No face found: mark the eye by hand</h2>
+          <h2 className="text-white font-semibold">Mark the eye by hand</h2>
+          {autoFailure && (
+            <p className="text-amber-300 text-sm">Automatic detection was not confident: {autoFailure}</p>
+          )}
           <p className="text-slate-400 text-sm">
             Step {Math.min(points.length + 1, MANUAL_POINT_ORDER.length)}/{MANUAL_POINT_ORDER.length}:{' '}
             <span className="text-blue-400">{nextLabel}</span>
@@ -47,10 +53,11 @@ export default function IopManualPicker({ imageUrl, imageWidth, imageHeight, onS
         <div className="flex items-center gap-2">
           <select
             value={side}
-            onChange={(event) => setSide(event.target.value as EyeSide)}
+            onChange={(event) => setSide(event.target.value as EyeSideLabel)}
             className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200"
             aria-label="Which eye"
           >
+            <option value="unknown">Eye side not recorded</option>
             <option value="right">Right eye (subject)</option>
             <option value="left">Left eye (subject)</option>
           </select>

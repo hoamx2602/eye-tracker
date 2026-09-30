@@ -5,7 +5,7 @@
  *   contour -> contour ratios.
  */
 import { chanVese } from './chanVese';
-import { findDarkCircle, removeHighlights } from './circleSearch';
+import { findDarkCircle, findPupil } from './circleSearch';
 import { contourRatios, measureRedness } from './features';
 import { channel, cropResample, erode, gaussianBlur, largestComponent, polygonMask, toGray } from './imageOps';
 import { assessQuality } from './quality';
@@ -57,6 +57,11 @@ function toRoi(p: Point, roi: Roi): Point {
   return { x: (p.x - roi.origin.x) * roi.scale, y: (p.y - roi.origin.y) * roi.scale };
 }
 
+function circleToRoi(c: Circle, roi: Roi): Circle {
+  const centre = toRoi({ x: c.cx, y: c.cy }, roi);
+  return { cx: centre.x, cy: centre.y, r: c.r * roi.scale };
+}
+
 /** Refines the landmark iris circle on the red layer, using only the lateral arcs the lids rarely cover. */
 function refineIris(red: GrayImage, initial: Circle): { circle: Circle; ok: boolean } {
   const found = findDarkCircle(red, {
@@ -70,21 +75,14 @@ function refineIris(red: GrayImage, initial: Circle): { circle: Circle; ok: bool
   return found.contrast > 8 ? { circle: found.circle, ok: true } : { circle: initial, ok: false };
 }
 
-/** Pupil: darkest concentric-ish disc inside the iris after highlight removal (Fig. 3). */
-function findPupil(red: GrayImage, iris: Circle): { circle: Circle; contrast: number } {
-  const found = findDarkCircle(removeHighlights(red), {
-    cx: iris.cx,
-    cy: iris.cy,
-    centreRadius: iris.r * 0.2,
-    rMin: iris.r * 0.12,
-    rMax: iris.r * 0.8,
-    arcs: [[0, 360]],
-    samplesPerArc: 48,
-  });
-  return { circle: found.circle, contrast: found.contrast };
+interface ScleraMasks {
+  eye: Uint8Array;
+  sclera: Uint8Array;
+  /** Share of the would-be sclera (opening minus iris minus canthi) dropped as specular glare. */
+  glareFraction: number;
 }
 
-function scleraMask(roi: RgbImage, eyelid: Point[], iris: Circle): { eye: Uint8Array; sclera: Uint8Array } {
+function scleraMask(roi: RgbImage, eyelid: Point[], iris: Circle): ScleraMasks {
   const { width: w, height: h, data } = roi;
   const eye = erode(polygonMask(eyelid, w, h), w, h, LID_EROSION);
   const cornerA = eyelid.reduce((a, p) => (p.x < a.x ? p : a));
@@ -93,17 +91,20 @@ function scleraMask(roi: RgbImage, eyelid: Point[], iris: Circle): { eye: Uint8A
   const axisY = cornerB.y - cornerA.y;
   const axisLengthSq = axisX * axisX + axisY * axisY || 1;
   const sclera = new Uint8Array(w * h);
+  let candidates = 0;
+  let glare = 0;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
       if (!eye[i] || Math.hypot(x + 0.5 - iris.cx, y + 0.5 - iris.cy) <= iris.r + 1) continue;
       const along = ((x + 0.5 - cornerA.x) * axisX + (y + 0.5 - cornerA.y) * axisY) / axisLengthSq;
       if (along < CANTHUS_TRIM || along > 1 - CANTHUS_TRIM) continue;
-      const glare = Math.min(data[i * 3], data[i * 3 + 1], data[i * 3 + 2]) >= GLARE_MIN_VALUE;
-      if (!glare) sclera[i] = 1;
+      candidates++;
+      if (Math.min(data[i * 3], data[i * 3 + 1], data[i * 3 + 2]) >= GLARE_MIN_VALUE) glare++;
+      else sclera[i] = 1;
     }
   }
-  return { eye, sclera };
+  return { eye, sclera, glareFraction: candidates ? glare / candidates : 0 };
 }
 
 /**
@@ -121,9 +122,14 @@ export function analyzeEye(src: RgbImage, geometry: EyeGeometry): EyeAnalysis {
   const iris = refined.circle;
   const pupil = findPupil(red, iris);
 
-  const { eye, sclera } = scleraMask(roi.image, eyelid, iris);
+  const { eye, sclera, glareFraction } = scleraMask(roi.image, eyelid, iris);
   const redness = measureRedness(roi.image, sclera);
-  const contour = largestComponent(chanVese(toGray(roi.image), sclera, eye), w, roi.image.height);
+  // The contour features are ratios to the sclera mask, so the evolved
+  // region is kept within it; otherwise it can spill into the canthi and
+  // glare the mask left out and exceed 1.
+  const evolved = chanVese(toGray(roi.image), sclera, eye);
+  for (let i = 0; i < evolved.length; i++) evolved[i] &= sclera[i];
+  const contour = largestComponent(evolved, w, roi.image.height);
   const ratios = contourRatios(contour, sclera, w);
 
   return {
@@ -141,6 +147,12 @@ export function analyzeEye(src: RgbImage, geometry: EyeGeometry): EyeAnalysis {
     contourMask: contour,
     pupilContrast: pupil.contrast,
     scleraPixelCount: redness.scleraPixelCount,
-    flags: assessQuality({ geometry, iris, eyelid, eye, sclera, pupilContrast: pupil.contrast, irisRefined: refined.ok, width: w }),
+    flags: assessQuality({ geometry, iris, eyelid, sclera, glareFraction, pupilContrast: pupil.contrast, irisRefined: refined.ok }),
+    lidEvidence: geometry.lidEvidence && {
+      edges: geometry.lidEvidence.edges.map((p) => toRoi(p, roi)),
+      inliers: geometry.lidEvidence.inliers.map((p) => toRoi(p, roi)),
+      upperLid: circleToRoi(geometry.lidEvidence.upperLid, roi),
+      lowerLid: circleToRoi(geometry.lidEvidence.lowerLid, roi),
+    },
   };
 }

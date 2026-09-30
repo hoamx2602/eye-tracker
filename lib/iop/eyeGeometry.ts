@@ -1,8 +1,9 @@
 /**
- * Builds EyeGeometry either from MediaPipe Face Landmarker output or from six
- * points a researcher clicks on an eye close-up (where no face is detectable).
+ * Builds EyeGeometry from MediaPipe Face Landmarker output, or from six points
+ * a researcher clicks when neither the face nor the close-up detector
+ * (closeUpDetector.ts) finds the eye.
  */
-import type { Circle, EyeGeometry, EyeSide, Point } from './types';
+import type { Circle, EyeGeometry, EyeSide, EyeSideLabel, Point } from './types';
 
 /** MediaPipe face-mesh eye outlines, upper lid then lower lid, subject's right then left. */
 const EYE_OUTLINES: Record<EyeSide, number[]> = {
@@ -108,7 +109,7 @@ function lerp(a: Point, b: Point, t: number): Point {
  * The paper models each eyelid as a circle (Fig. 6); with three clicked
  * points per lid (two corners plus the lid's extreme) that circle is exact.
  */
-export function geometryFromManualPoints(points: ManualEyePoints, side: EyeSide): EyeGeometry {
+export function geometryFromManualPoints(points: ManualEyePoints, side: EyeSideLabel): EyeGeometry {
   const { irisCentre, irisEdge, cornerA, cornerB, upperLid, lowerLid } = points;
   const [left, right] = cornerA.x <= cornerB.x ? [cornerA, cornerB] : [cornerB, cornerA];
   const upper = arc(left, upperLid, right, 24);

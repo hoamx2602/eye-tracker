@@ -3,7 +3,7 @@
  * exported as CSV for iop_estimation/train_iop_mlp.py. No image leaves the
  * browser; only these numbers and labels do, when the researcher exports.
  */
-import { FEATURE_ORDER, type EyeSide, type IopFeatures } from './types';
+import { FEATURE_ORDER, type EyeSideLabel, type IopFeatures } from './types';
 
 /** Paper Section 3: IOP <= 20 mmHg is normal, above is high. */
 export const HIGH_IOP_CUTOFF_MMHG = 20;
@@ -16,8 +16,8 @@ export interface IopDatasetRow {
   createdAt: string;
   participantId: string;
   imageName: string;
-  eye: EyeSide;
-  geometrySource: 'mediapipe' | 'manual';
+  eye: EyeSideLabel;
+  geometrySource: 'mediapipe' | 'auto' | 'manual';
   features: IopFeatures;
   iopMmHg: number | null;
   label: IopLabel;

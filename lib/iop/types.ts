@@ -31,15 +31,29 @@ export interface Circle {
 
 export type EyeSide = 'left' | 'right';
 
+/** A close-up of one eye does not show which eye it is. */
+export type EyeSideLabel = EyeSide | 'unknown';
+
 /**
  * Where the eye is in the source image, in source pixels. `eyelid` is the
  * closed outline of the palpebral opening (upper lid then lower lid).
  */
 export interface EyeGeometry {
-  side: EyeSide;
+  side: EyeSideLabel;
   iris: Circle;
   eyelid: Point[];
-  source: 'mediapipe' | 'manual';
+  /** mediapipe = face landmarks; auto = close-up detector; manual = clicked points. */
+  source: 'mediapipe' | 'auto' | 'manual';
+  /** How the close-up detector found the lids, for the visualisations. */
+  lidEvidence?: LidEvidence;
+}
+
+/** Lid edge candidates, the ones the circle fit accepted, and the fitted lid circles. */
+export interface LidEvidence {
+  edges: Point[];
+  inliers: Point[];
+  upperLid: Circle;
+  lowerLid: Circle;
 }
 
 /** The five features of the paper, in the order of its feature matrix (Fig. 11). */
@@ -71,7 +85,7 @@ export interface QualityFlag {
 
 /** Everything the UI needs to draw and report one analysed eye. */
 export interface EyeAnalysis {
-  side: EyeSide;
+  side: EyeSideLabel;
   source: EyeGeometry['source'];
   features: IopFeatures;
   /** Normalised crop the features were measured on. */
@@ -90,4 +104,6 @@ export interface EyeAnalysis {
   pupilContrast: number;
   scleraPixelCount: number;
   flags: QualityFlag[];
+  /** Close-up detector evidence, in ROI pixels (auto source only). */
+  lidEvidence?: LidEvidence;
 }

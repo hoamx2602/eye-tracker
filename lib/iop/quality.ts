@@ -18,16 +18,15 @@ export interface QualityInput {
   geometry: EyeGeometry;
   iris: Circle;
   eyelid: Point[];
-  eye: Uint8Array;
   sclera: Uint8Array;
+  /** Share of the would-be sclera excluded as specular glare. */
+  glareFraction: number;
   pupilContrast: number;
   irisRefined: boolean;
-  /** ROI width, to locate mask pixels. */
-  width: number;
 }
 
 export function assessQuality(input: QualityInput): QualityFlag[] {
-  const { geometry, iris, eyelid, eye, sclera, pupilContrast, irisRefined, width } = input;
+  const { geometry, iris, eyelid, sclera, glareFraction, pupilContrast, irisRefined } = input;
   const flags: QualityFlag[] = [];
   if (geometry.iris.r < MIN_SOURCE_IRIS_RADIUS) {
     flags.push({
@@ -49,7 +48,6 @@ export function assessQuality(input: QualityInput): QualityFlag[] {
       message: `Pupil edge is faint (contrast ${pupilContrast.toFixed(0)}); the pupil/iris ratio is unreliable. Common with dark irises in visible light.`,
     });
   }
-  const glareFraction = glareShare(eye, sclera, iris, width);
   if (glareFraction > MAX_GLARE_FRACTION) {
     flags.push({ code: 'glare', message: `${(glareFraction * 100).toFixed(0)}% of the sclera is specular glare and was excluded.` });
   }
@@ -58,19 +56,4 @@ export function assessQuality(input: QualityInput): QualityFlag[] {
     flags.push({ code: 'small_sclera', message: `Only ${scleraCount} sclera pixels after normalisation; redness features are noisy.` });
   }
   return flags;
-}
-
-/** Share of the eye opening outside the iris that was dropped from the sclera as glare. */
-function glareShare(eye: Uint8Array, sclera: Uint8Array, iris: Circle, width: number): number {
-  let candidates = 0;
-  let kept = 0;
-  for (let i = 0; i < eye.length; i++) {
-    if (!eye[i]) continue;
-    const x = (i % width) + 0.5;
-    const y = Math.floor(i / width) + 0.5;
-    if (Math.hypot(x - iris.cx, y - iris.cy) <= iris.r + 1) continue;
-    candidates++;
-    kept += sclera[i];
-  }
-  return candidates === 0 ? 0 : 1 - kept / candidates;
 }

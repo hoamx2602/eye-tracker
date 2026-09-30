@@ -108,3 +108,41 @@ function relax(marker: Float32Array, inv: Float32Array, w: number, x: number, y:
   }
   return false;
 }
+
+/** Copy of the square [cx - half, cx + half] x [cy - half, cy + half], edges clamped. */
+function squareAround(img: GrayImage, cx: number, cy: number, half: number): { image: GrayImage; x0: number; y0: number } {
+  const x0 = Math.round(cx - half);
+  const y0 = Math.round(cy - half);
+  const size = Math.max(3, Math.round(half * 2));
+  const data = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const sx = Math.min(img.width - 1, Math.max(0, x0 + x));
+      const sy = Math.min(img.height - 1, Math.max(0, y0 + y));
+      data[y * size + x] = img.data[sy * img.width + sx];
+    }
+  }
+  return { image: { width: size, height: size, data }, x0, y0 };
+}
+
+/**
+ * Pupil: the darkest near-concentric disc inside the iris (paper Fig. 3).
+ * As in the paper, the search runs on a square around the iris centre with
+ * sides just under the iris diameter, and highlights are removed there only.
+ * On a larger crop the fill would flatten everything the lashes enclose -
+ * sclera, iris and pupil alike. `contrast` is the pupil's edge jump, 0..255.
+ */
+export function findPupil(red: GrayImage, iris: Circle): CircleSearchResult {
+  const box = squareAround(red, iris.cx, iris.cy, iris.r * 0.95);
+  const local = box.image;
+  const found = findDarkCircle(removeHighlights(local), {
+    cx: iris.cx - box.x0,
+    cy: iris.cy - box.y0,
+    centreRadius: iris.r * 0.2,
+    rMin: iris.r * 0.12,
+    rMax: iris.r * 0.8,
+    arcs: [[0, 360]],
+    samplesPerArc: 48,
+  });
+  return { ...found, circle: { ...found.circle, cx: found.circle.cx + box.x0, cy: found.circle.cy + box.y0 } };
+}

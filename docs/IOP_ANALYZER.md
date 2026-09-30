@@ -15,7 +15,7 @@ eye drops, and those drops change sclera redness and pupil size.
 
 | Step | Paper (MATLAB) | Here |
 |---|---|---|
-| Find the eye | Haar face + eye cascade | MediaPipe Face Landmarker, IMAGE mode, CPU (`landmarker.ts`). For eye close-ups with no face, the researcher clicks six points instead (`eyeGeometry.ts`) |
+| Find the eye | Haar face + eye cascade | 1) MediaPipe Face Landmarker, IMAGE mode, CPU (`landmarker.ts`) for face photos. 2) No face (an eye close-up, the paper's own capture): the close-up detector (`closeUpDetector.ts`, see below). 3) Only if both fail, six clicked points (`eyeGeometry.ts`) |
 | Normalise | Crop to height:width 1:1.8, resize | Crop around the eye, rescale so the iris radius is 50 px (`pipeline.ts`) |
 | Iris, pupil | Red layer → morphological reconstruction (removes glare) → adaptive threshold → Canny → circular Hough | Red layer → the same reconstruction (`removeHighlights`) → Daugman integro-differential circle search (`circleSearch.ts`). The iris fit uses only the lateral arcs, so the eyelids do not bias it |
 | Eyelids | Two circles found with Hough on edge images | MediaPipe's 16-point lid outline, or circles through the clicked points |
@@ -37,6 +37,54 @@ named constants:
 Because of these choices, RAP and the contour features are on a different
 scale from the paper's Table 4. The UI shows Table 4 for orientation only.
 
+## Close-up detector
+
+Used for photos of one eye, where there is no face for MediaPipe to find. It
+runs only on the CPU, in about 0.1–0.3 s. It follows the paper's order,
+iris first and then the eyelids:
+
+1. **Iris** (`irisSearch.ts`): search the whole image for a dark disc whose
+   left and right edges are measured separately. The score is the weaker
+   edge plus half the stronger one. The search image is the min channel
+   after white balance: an iris of any colour is dark in at least one
+   channel (blue in R, brown in B), while the sclera is bright in all three.
+   If a concentric circle 1.6–5× larger scores nearly as well, the first
+   disc was the pupil.
+2. **Lid edges** (`lidEdges.ts`): per column beside the iris, walk from the
+   sclera up and down while pixels stay close to that column's sclera in
+   brightness and in whiteness. Everything is relative to the same
+   white-balanced crop, because under warm light a sclera can read more
+   orange than the skin.
+3. **Eyelids** (`lidFit.ts`): one circle per lid, as in the paper's Fig. 6.
+   Each is seeded by RANSAC near the iris and extended outward while the
+   points stay on the curve. The corners are where the two circles meet,
+   within 3.5 iris radii.
+
+The detector would rather refuse than measure the wrong thing. It gives up,
+and the page asks for six clicks with the reason shown, when:
+
+- there is no dark pupil inside the iris candidate (edge contrast under
+  12/255; true eyes in the set score 24–38, and a striped flag behind a
+  portrait that passed every other check scored 5);
+
+- no side of the iris shows sclera;
+- the sclera is not the brightest thing around the iris (the signature of a
+  pupil mistaken for the iris);
+- the lids cannot be fitted;
+- the opening is narrower than 3 iris radii.
+
+Evaluation set: 10 open-licence eye photos from Wikimedia Commons plus 5
+size, flip and padding variants of a user photo, with hand-marked iris and
+eyelid points. A pass means the iris centre and radius are within 15% of
+the radius, and the lid points are within 45%.
+
+- 4 of the 5 frontal eyes, and all 5 variants, are located; one variant
+  (padded) is off at one corner.
+- The 4 side-gaze or macro photos are all refused.
+- No photo gets a confident wrong outline.
+- The failures are a hooded red eye and a warm-lit eye with a wet, bright
+  lower lid margin. Both are refused and fall back to manual points.
+
 ## Quality flags (`quality.ts`)
 
 - **low_resolution**: the iris radius in the photo is under 30 px. A face
@@ -44,7 +92,7 @@ scale from the paper's Table 4. The UI shows Table 4 for orientation only.
 - **eye_not_open**
 - **iris_refine_failed**
 - **pupil_low_contrast**: common with dark irises under visible light.
-- **glare**: more than 10% of the sclera is glare.
+- **glare**: more than 10% of the would-be sclera (after the canthal trim) is glare.
 - **small_sclera**
 
 Flags are exported with each row. The training script can drop flagged rows.

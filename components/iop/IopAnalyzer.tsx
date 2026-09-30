@@ -12,7 +12,7 @@ import { useIopAnalysis, type IopStatus } from './useIopAnalysis';
 
 const STATUS_TEXT: Partial<Record<IopStatus, string>> = {
   'loading-image': 'Reading image…',
-  detecting: 'Finding the face and eyes (first run downloads the landmark model)…',
+  detecting: 'Finding the eye (first run downloads the landmark model)…',
   analyzing: 'Measuring pupil, iris and sclera…',
 };
 
@@ -21,7 +21,7 @@ const STATUS_TEXT: Partial<Record<IopStatus, string>> = {
  * features per eye, label, export. Research use only.
  */
 export default function IopAnalyzer() {
-  const { status, error, image, eyes, model, loadFile, analyzeManual, startManual } = useIopAnalysis();
+  const { status, error, image, eyes, model, autoFailure, loadFile, analyzeManual, startManual } = useIopAnalysis();
   const [rows, setRows] = useState<IopDatasetRow[]>([]);
   const [persisted, setPersisted] = useState(true);
   const busy = status in STATUS_TEXT;
@@ -70,12 +70,12 @@ export default function IopAnalyzer() {
       {error && <p className="text-sm text-red-400" role="alert">{error}</p>}
 
       {(status === 'needs-manual' || (status === 'error' && eyes.length === 0)) && image && (
-        <IopManualPicker key={image.url} imageUrl={image.url} imageWidth={image.width} imageHeight={image.height} onSubmit={analyzeManual} />
+        <IopManualPicker key={image.url} imageUrl={image.url} imageWidth={image.width} imageHeight={image.height} onSubmit={analyzeManual} autoFailure={autoFailure} />
       )}
 
       {status === 'done' && image && (
         <button type="button" onClick={startManual} className="text-sm text-slate-400 hover:text-white underline transition">
-          Landmarks look wrong? Mark the eye by hand instead
+          Outline looks wrong? Mark the eye by hand instead
         </button>
       )}
 

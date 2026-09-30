@@ -13,6 +13,18 @@ interface IopEyeResultCardProps {
   onAddRow: (eye: EyeAnalysis, input: IopLabelInput) => void;
 }
 
+const SIDE_TITLES: Record<EyeAnalysis['side'], string> = {
+  right: "Right eye (subject's side)",
+  left: "Left eye (subject's side)",
+  unknown: 'Eye',
+};
+
+const SOURCE_NOTES: Record<EyeAnalysis['source'], string> = {
+  mediapipe: 'located from face landmarks',
+  auto: 'located automatically in the close-up',
+  manual: 'marked by hand',
+};
+
 const LAYER_NAMES: { key: keyof RoiLayers; label: string }[] = [
   { key: 'circles', label: 'Iris / pupil / lids' },
   { key: 'sclera', label: 'Sclera mask' },
@@ -47,7 +59,8 @@ export default function IopEyeResultCard({ eye, model, onAddRow }: IopEyeResultC
   return (
     <section className="rounded-xl bg-slate-800/60 border border-slate-700/80 p-6 space-y-4">
       <h2 className="text-lg font-bold tracking-tight text-white">
-        {eye.side === 'right' ? 'Right' : 'Left'} eye <span className="text-slate-400 text-sm font-normal">(subject&apos;s side)</span>
+        {SIDE_TITLES[eye.side]}{' '}
+        <span className="text-slate-400 text-sm font-normal">{SOURCE_NOTES[eye.source]}</span>
       </h2>
       <div className="grid md:grid-cols-2 gap-6">
         <div className="space-y-2">
