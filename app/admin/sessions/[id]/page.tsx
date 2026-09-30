@@ -29,7 +29,7 @@ type SessionDetail = {
   validationErrors?: number[];
   config?: unknown;
   participantEmail?: string | null;
-  demographics?: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[] } | null;
+  demographics?: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[]; notes?: string } | null;
   /** From TestRun table (or legacy: config.testTrajectories) */
   testTrajectories?: TestTrajectorySegment[] | null;
 };
@@ -255,7 +255,7 @@ export default function AdminSessionDetailPage() {
     );
   }
 
-  const demographics = session.demographics ?? (session.config && typeof session.config === 'object' ? (session.config as Record<string, unknown>).demographics as { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[] } | undefined : undefined);
+  const demographics = session.demographics ?? (session.config && typeof session.config === 'object' ? (session.config as Record<string, unknown>).demographics as { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[]; notes?: string } | undefined : undefined);
 
   return (
     <div className="space-y-8">
@@ -368,6 +368,12 @@ export default function AdminSessionDetailPage() {
                 <dd className="text-sm text-slate-200 mt-0.5">
                   {demographics.eyeConditions.filter((c) => c !== 'none').join(', ') || 'None'}
                 </dd>
+              </div>
+            )}
+            {demographics.notes != null && demographics.notes !== '' && (
+              <div className="sm:col-span-4">
+                <dt className="text-xs text-slate-500 uppercase">Notes</dt>
+                <dd className="text-sm text-slate-200 mt-0.5 whitespace-pre-wrap">{demographics.notes}</dd>
               </div>
             )}
           </dl>

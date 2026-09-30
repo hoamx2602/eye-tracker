@@ -16,6 +16,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { isOfflineMetaExportEnabled, withOfflineMetaExportFlag } from '@/lib/offlineExportMeta';
+import { PATHS } from '@/lib/paths';
 import { VoiceButton } from '@/components/ui/VoiceButton';
 import { overviewVoiceKey, type VoiceKey } from '@/lib/voice/scripts';
 
@@ -408,9 +409,9 @@ export default function HomePage() {
                     Click any step to preview it, then start when ready.
                   </p>
                 </div>
-                {/* Phase 2: router.push('/setup') */}
+                {/* Phase 2: router.push(PATHS.SETUP) */}
                 <button
-                  onClick={() => router.push(withOfflineMetaExportFlag('/consent'))}
+                  onClick={() => router.push(withOfflineMetaExportFlag(PATHS.CONSENT))}
                   className="
                     flex items-center gap-2 px-5 py-2.5 rounded-xl flex-shrink-0
                     bg-blue-600 hover:bg-blue-500 active:scale-[0.97]

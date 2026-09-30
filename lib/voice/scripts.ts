@@ -19,6 +19,7 @@
 
 import { stepSpokenText } from '../assessmentSteps';
 import { consentSpokenText } from '../consentText';
+import { FACIAL_CONSENT_POINTS, facialTaskById, facialTaskSpokenText } from '../facialSpeechProtocol';
 
 export type VoiceScript = {
   /** Full guidance, spoken on entry and on replay. */
@@ -391,6 +392,41 @@ export const VOICE_SCRIPTS = {
   'overview.fixation_stability': { text: stepSpokenText('fixation_stability') },
   'overview.peripheral_vision': { text: stepSpokenText('peripheral_vision') },
 
+  // --------------------------------------------------------- facial droop
+  // /facial-droop. None of these may play while a task is recording: the
+  // voice would be captured in the audio track and contaminate the speech
+  // and noise-floor measurements. The page stops speech before each task.
+  'facial.consent': {
+    text:
+      'Before we start, please read this notice. Here it is aloud. ' +
+      FACIAL_CONSENT_POINTS.join(' ') +
+      ' If you agree, tick the box and select I agree.',
+  },
+  'facial.camera': {
+    text:
+      'Let us check your camera and microphone. ' +
+      'Sit about an arm\'s length from the screen and centre your face inside the oval. ' +
+      'Make sure your face is evenly lit and the room is quiet. ' +
+      'Say a few words to see the microphone level move. ' +
+      'The picture is not mirrored: when you raise your right hand, it appears on the left of the screen. ' +
+      'When everything looks right, select Start recording.',
+  },
+  'facial.task.face_rest': { text: facialTaskSpokenText(facialTaskById('face_rest')) },
+  'facial.task.face_brow_raise': { text: facialTaskSpokenText(facialTaskById('face_brow_raise')) },
+  'facial.task.face_eye_closure': { text: facialTaskSpokenText(facialTaskById('face_eye_closure')) },
+  'facial.task.face_smile_show_teeth': { text: facialTaskSpokenText(facialTaskById('face_smile_show_teeth')) },
+  'facial.task.face_lip_pucker': { text: facialTaskSpokenText(facialTaskById('face_lip_pucker')) },
+  'facial.task.capture_noise_floor': { text: facialTaskSpokenText(facialTaskById('capture_noise_floor')) },
+  'facial.task.speech_sustained_a': { text: facialTaskSpokenText(facialTaskById('speech_sustained_a')) },
+  'facial.task.speech_ddk_patka': { text: facialTaskSpokenText(facialTaskById('speech_ddk_patka')) },
+  'facial.task.speech_reading': { text: facialTaskSpokenText(facialTaskById('speech_reading')) },
+  'facial.task.speech_counting': { text: facialTaskSpokenText(facialTaskById('speech_counting')) },
+  'facial.done': {
+    text:
+      'That is everything. Thank you. ' +
+      'Please keep this page open while your recording is saved.',
+  },
+
 } as const satisfies Record<string, VoiceScript>;
 
 export type VoiceKey = keyof typeof VOICE_SCRIPTS;
@@ -449,5 +485,11 @@ export function exerciseVoiceKey(kind: string): VoiceKey | null {
 /** Voice key for a neurological test, e.g. 'saccadic' → 'neuro.saccadic'. */
 export function neuroTestVoiceKey(testId: string): VoiceKey | null {
   const key = `neuro.${testId}`;
+  return key in VOICE_SCRIPTS ? (key as VoiceKey) : null;
+}
+
+/** Voice key for a facial-droop task guide, e.g. 'face_rest' → 'facial.task.face_rest'. */
+export function facialTaskVoiceKey(taskId: string): VoiceKey | null {
+  const key = `facial.task.${taskId}`;
   return key in VOICE_SCRIPTS ? (key as VoiceKey) : null;
 }
