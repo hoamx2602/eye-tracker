@@ -6,9 +6,11 @@ import type { EyeAnalysis } from '@/lib/iop/types';
 import IopFeatureTable from './IopFeatureTable';
 import IopLabelForm, { type IopLabelInput } from './IopLabelForm';
 import IopRoiCanvas, { type RoiLayers } from './IopRoiCanvas';
+import IopVisualizations from './viz/IopVisualizations';
 
 interface IopEyeResultCardProps {
   eye: EyeAnalysis;
+  imageName: string;
   model: IopModel | null;
   onAddRow: (eye: EyeAnalysis, input: IopLabelInput) => void;
 }
@@ -52,7 +54,7 @@ function ModelVerdict({ eye, model }: { eye: EyeAnalysis; model: IopModel | null
 }
 
 /** Result for one eye: overlay, features, flags, verdict, labelling. */
-export default function IopEyeResultCard({ eye, model, onAddRow }: IopEyeResultCardProps) {
+export default function IopEyeResultCard({ eye, imageName, model, onAddRow }: IopEyeResultCardProps) {
   const [layers, setLayers] = useState<RoiLayers>({ circles: true, sclera: false, red: true, contour: false });
   const [added, setAdded] = useState(false);
 
@@ -83,6 +85,9 @@ export default function IopEyeResultCard({ eye, model, onAddRow }: IopEyeResultC
             </ul>
           )}
         </div>
+      </div>
+      <div className="border-t border-slate-700 pt-4">
+        <IopVisualizations eye={eye} imageName={imageName} />
       </div>
       <div className="border-t border-slate-700 pt-4">
         {added ? (

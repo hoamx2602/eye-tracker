@@ -85,6 +85,47 @@ the radius, and the lid points are within 45%.
 - The failures are a hooded red eye and a warm-lit eye with a wet, bright
   lower lid margin. Both are refused and fall back to manual points.
 
+## Visualisations
+
+Every analysed eye has a Visualisations panel with three tabs. Every image
+tile has a caption with its numbers and a PNG download. **Download figure**
+lays out the tab's tiles as one lettered figure (a)–(h) for slides and
+papers. All of it runs in the browser (`lib/iop/viz/*`,
+`components/iop/viz/*`).
+
+- **Segmentation.** The analysis notebook's figure set, rebuilt from this
+  pipeline's masks:
+  1. labelled regions over the crop;
+  2. segmented sclera;
+  3. sclera with the active-contour boundary;
+  4. reddish pixels;
+  5. their binary mask (P in Eq. 7);
+  6. segmented iris;
+  7. segmented pupil;
+  8. label map.
+- **Pipeline.** Each step in order:
+  1. normalised crop;
+  2. red layer;
+  3. highlights removed;
+  4. iris and pupil circles;
+  5. eyelids, where close-ups show the lid-edge candidates, the points the
+     RANSAC fit kept and the two lid circles;
+  6. sclera mask;
+  7. per-pixel redness heatmap, whose mean is the MRL;
+  8. active contour against the sclera mask.
+- **Measurements.**
+  - *The paper's two classes.* Where this eye's five features fall against
+    the Table 4 normal-IOP and high-IOP distributions.
+  - *Radial brightness profile.* The profile the circle search
+    differentiates, with the pupil and iris edges marked.
+  - *RAP histogram.* The sclera's red-lead distribution with the RAP
+    threshold marked.
+
+Region colours are the first three slots of the reference categorical
+palette. They were validated on the page's dark surface (all-pairs CVD
+ΔE 9.4, normal-vision ΔE 20.9, ≥ 3:1 contrast), and every region is also
+labelled in text.
+
 ## Quality flags (`quality.ts`)
 
 - **low_resolution**: the iris radius in the photo is under 30 px. A face
