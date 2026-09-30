@@ -54,12 +54,11 @@ The flow has four stages:
    The notice is read aloud. Agreeing enters fullscreen and asks for camera
    and microphone.
 2. **Camera check.** A live preview with a face oval and a microphone level
-   meter. Recording cannot start until the participant answers "raise your
-   right hand: where is it on screen?" with *left*. The browser never mirrors
-   the recorded stream, and the preview is not mirrored either. Some webcams
-   and virtual cameras flip the image themselves, which would make the report
-   name the wrong side; answering *right* blocks recording and explains how
-   to turn the mirror off.
+   meter. The preview is mirrored like a selfie camera, via CSS on the
+   `<video>` element only. MediaRecorder records the raw stream, so the saved
+   video keeps the camera's orientation, and the analysis names sides from
+   the subject's anatomy correctly. The manifest records `media.mirrored:
+   false` and `previewMirrored: true`.
 3. **Tasks, in fullscreen.** Each task opens with a centred guide over the
    camera, spoken aloud, followed by a 3 s countdown and the recorded window.
    The spoken guides never play inside a window: the page stops speech

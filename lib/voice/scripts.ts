@@ -408,7 +408,6 @@ export const VOICE_SCRIPTS = {
       'Sit about an arm\'s length from the screen and centre your face inside the oval. ' +
       'Make sure your face is evenly lit and the room is quiet. ' +
       'Say a few words to see the microphone level move. ' +
-      'The picture is not mirrored: when you raise your right hand, it appears on the left of the screen. ' +
       'When everything looks right, select Start recording.',
   },
   'facial.task.face_rest': { text: facialTaskSpokenText(facialTaskById('face_rest')) },

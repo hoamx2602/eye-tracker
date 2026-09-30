@@ -54,9 +54,10 @@ export function buildCaptureManifest(input: ManifestInput): Record<string, unkno
       container: input.video.type || 'video/webm',
       video: trackSettings(input.stream?.getVideoTracks()[0]),
       audio: trackSettings(input.stream?.getAudioTracks()[0]),
-      // The raw camera stream is recorded; the on-screen preview is never
-      // mirrored either, so left and right in the video are the camera's.
+      // The raw camera stream is recorded, so left and right in the video are
+      // the camera's. The on-screen preview is mirrored with CSS only.
       mirrored: false,
+      previewMirrored: true,
     },
     segmentation: {
       source: 'single-continuous-video',
