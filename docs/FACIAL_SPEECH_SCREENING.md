@@ -44,6 +44,39 @@ Primary sources:
 
 The capture route is `/facial-droop`.
 
+### Participant flow
+
+Every screen is centred in a viewport-sized frame and the page never scrolls
+(`components/facial-droop/*`, orchestrated by `app/facial-droop/page.tsx`).
+The flow has four stages:
+
+1. **Consent.** The notice points (`FACIAL_CONSENT_POINTS`) and a checkbox.
+   The notice is read aloud. Agreeing enters fullscreen and asks for camera
+   and microphone.
+2. **Camera check.** A live preview with a face oval and a microphone level
+   meter. Recording cannot start until the participant answers "raise your
+   right hand: where is it on screen?" with *left*. The browser never mirrors
+   the recorded stream, and the preview is not mirrored either. Some webcams
+   and virtual cameras flip the image themselves, which would make the report
+   name the wrong side; answering *right* blocks recording and explains how
+   to turn the mirror off.
+3. **Tasks, in fullscreen.** Each task opens with a centred guide over the
+   camera, spoken aloud, followed by a 3 s countdown and the recorded window.
+   The spoken guides never play inside a window: the page stops speech
+   before the countdown. A voice in the audio track would contaminate the
+   speech and noise-floor measurements. Leaving fullscreen shows the shared
+   `FullscreenGuard` (the same one the eye-tracking flow uses). **Exit**
+   asks for confirmation and discards the recording.
+4. **Result.** Fullscreen is left. The screen shows saving or analysis
+   progress, then the outcome: retry, download, and the report, which may
+   scroll inside its card.
+
+Spoken guidance lives in `lib/voice/scripts.ts` as the `facial.*` keys. Task
+guides are built from each task's on-screen instruction
+(`facialTaskSpokenText`). Clips are generated with Deepgram Aura-2
+(`npm run voice:generate`, voice `aura-2-pandora-en`, the same as the
+eye-tracking flow). The browser's own speech synthesis is the fallback.
+
 It records **one continuous webcam+microphone WebM** and emits two paired files:
 
 ```

@@ -191,3 +191,37 @@ export const FACIAL_SPEECH_ROADMAP_METRICS: MetricDefinition[] = [
 ];
 
 export const FACIAL_SPEECH_PROTOCOL_VERSION = '1.0.0';
+
+/**
+ * The consent notice, point by point. The consent screen renders these and
+ * the voice script reads them, so what is heard is what is on screen. Bump
+ * FACIAL_CONSENT_NOTICE_VERSION when the meaning of any point changes.
+ */
+export const FACIAL_CONSENT_NOTICE_VERSION = '1.0.0';
+
+export const FACIAL_CONSENT_POINTS: string[] = [
+  'This records your face and your voice. Both identify you personally, and in the EU they are special-category biometric data.',
+  'The recording is sent to the analysis backend configured for this deployment. In local development that is your own machine; confirm where it points before using real subject data.',
+  'The video is deleted as soon as analysis finishes. The derived measurements are discarded after the backend retention window, and you can discard them sooner.',
+  'This is a measurement tool for clinician review. It does not diagnose anything, and it is not a NIHSS score.',
+  'Sudden facial droop or new speech difficulty is an emergency. Seek urgent medical help now rather than completing this assessment.',
+];
+
+/** Total timed recording across the battery, in seconds (guides and countdowns excluded). */
+export const FACIAL_SPEECH_TOTAL_SECONDS = FACIAL_SPEECH_TASKS.reduce((sum, task) => sum + task.durationSec, 0);
+
+/**
+ * What the spoken guide says before a task. Built from the on-screen
+ * instruction so the two cannot drift apart; the title is left out because
+ * some titles are notation ("Sustained vowel /a/") that reads badly aloud.
+ */
+export function facialTaskSpokenText(task: FacialSpeechTask): string {
+  const where = task.nearLensPrompt ? 'The words are shown at the top of the screen, next to the camera. ' : '';
+  return `${where}${task.instruction} When you are ready, select Start this task. Recording begins after a three-second countdown.`;
+}
+
+export function facialTaskById(id: string): FacialSpeechTask {
+  const task = FACIAL_SPEECH_TASKS.find((candidate) => candidate.id === id);
+  if (!task) throw new Error(`Unknown facial-speech task: ${id}`);
+  return task;
+}

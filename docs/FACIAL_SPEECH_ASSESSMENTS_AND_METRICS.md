@@ -343,7 +343,8 @@ to demonstrate them, and the reporting standards
 | Concern | File |
 | --- | --- |
 | Task battery, durations, minimums, metric catalogue | `lib/facialSpeechProtocol.ts` |
-| Capture UI, timers, consent, manifest | `app/facial-droop/page.tsx` |
+| Capture UI, timers, consent | `app/facial-droop/page.tsx`, `components/facial-droop/` |
+| Capture manifest | `lib/facialSpeechManifest.ts` |
 | Feature extraction, gates, all metrics | `backend/app/facial_speech.py` |
 | Job endpoints, retention TTL | `backend/app/main.py` |
 | Report rendering and charts | `components/facial-speech/` |
