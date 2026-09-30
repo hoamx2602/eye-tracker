@@ -6,6 +6,7 @@
  * report and a screen end up disagreeing about the same run.
  */
 import type { PrismaClient } from '@prisma/client';
+import { removeOutliers } from '../../lib/smoothing';
 import {
   angularErrorDeg,
   calibrationQualityShort,
@@ -57,7 +58,13 @@ export function spread(errors: number[]) {
 export type GazePoint = { t: number; x: number; y: number };
 
 /** One sample of a Test-mode exercise: where the dot was, where the gaze went. Percent of viewport. */
-export type TrajectoryPoint = { t: number; targetX: number; targetY: number; gazeX: number; gazeY: number };
+export type TrajectoryPoint = { t: number; targetX: number; targetY: number; gazeX: number | null; gazeY: number | null };
+
+/** Same outlier removal as the charts (lib/smoothing): off-screen samples and spikes become null. */
+function cleanTrajectoryPoints(points: TrajectoryPoint[]): TrajectoryPoint[] {
+  const { xs, ys } = removeOutliers(points.map((p) => p.gazeX), points.map((p) => p.gazeY));
+  return points.map((p, i) => ({ ...p, gazeX: xs[i] ?? null, gazeY: ys[i] ?? null }));
+}
 
 /**
  * How far the gaze trailed the dot over one exercise, as RMS percent of screen.
@@ -68,15 +75,17 @@ export type TrajectoryPoint = { t: number; targetX: number; targetY: number; gaz
  * and the mean would call them equal.
  */
 function trackingError(points: TrajectoryPoint[]) {
-  if (points.length === 0) return { rmsXPct: null, rmsYPct: null, rmsPct: null };
+  // Removed outliers (null) are left out: they are not measurements of gaze.
+  const kept = points.filter((p): p is TrajectoryPoint & { gazeX: number; gazeY: number } => p.gazeX != null && p.gazeY != null);
+  if (kept.length === 0) return { rmsXPct: null, rmsYPct: null, rmsPct: null };
   let sx = 0, sy = 0;
-  for (const p of points) {
+  for (const p of kept) {
     sx += (p.gazeX - p.targetX) ** 2;
     sy += (p.gazeY - p.targetY) ** 2;
   }
-  const rmsXPct = Math.sqrt(sx / points.length);
-  const rmsYPct = Math.sqrt(sy / points.length);
-  return { rmsXPct, rmsYPct, rmsPct: Math.sqrt((sx + sy) / points.length) };
+  const rmsXPct = Math.sqrt(sx / kept.length);
+  const rmsYPct = Math.sqrt(sy / kept.length);
+  return { rmsXPct, rmsYPct, rmsPct: Math.sqrt((sx + sy) / kept.length) };
 }
 
 export type RunRecord = ReturnType<typeof shapeRun>;
@@ -199,10 +208,12 @@ function shapeRun(r: RunRow, opts: SelectOptions) {
     }),
 
     trajectories: readTrajectories(r).map((seg) => {
-      const points = Array.isArray(seg.points) ? (seg.points as TrajectoryPoint[]) : [];
+      const raw = Array.isArray(seg.points) ? (seg.points as TrajectoryPoint[]) : [];
+      const points = cleanTrajectoryPoints(raw);
       return {
         patternName: String(seg.patternName ?? 'Unnamed'),
         pointCount: points.length,
+        outliersRemoved: points.filter((p) => p.gazeX == null).length,
         durationS: points.length ? points[points.length - 1].t - points[0].t : 0,
         ...trackingError(points),
         ...(opts.includeGazePaths ? { points } : {}),

@@ -20,6 +20,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { REALTIME_TRACKING_LINK_ENABLED } from '@/lib/featureFlags';
+import { PATHS } from '@/lib/paths';
 
 interface RunData {
   id: string;
@@ -55,7 +56,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
           </Link>
           {REALTIME_TRACKING_LINK_ENABLED && (
             <Link
-              href={`/tracking?sessionId=${runData.session.id}`}
+              href={`${PATHS.TRACKING}?sessionId=${runData.session.id}`}
               className="ml-auto px-4 py-1.5 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 text-[10px] sm:text-xs font-semibold hover:bg-blue-600/20 hover:border-blue-500/40 transition-all flex items-center gap-2"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
@@ -109,7 +110,7 @@ export default function ResultsPageClient({ runData }: { runData: RunData }) {
               this gesture's activation window has likely already closed.
             */}
             <Link
-              href={`/setup?redoFrom=${runData.session.id}`}
+              href={`${PATHS.SETUP}?redoFrom=${runData.session.id}`}
               onClick={() => {
                 document.documentElement.requestFullscreen().catch(() => {});
               }}

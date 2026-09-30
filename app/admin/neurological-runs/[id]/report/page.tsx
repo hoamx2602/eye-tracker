@@ -68,6 +68,7 @@ const TEST_LABELS: Record<string, string> = {
   saccadic:           'Saccadic Eye Movement',
   fixation_stability: 'Fixation Stability',
   peripheral_vision:  'Peripheral Vision',
+  smooth_pursuit:     'Smooth Pursuit',
 };
 
 // ── Metric extraction helpers ──────────────────────────────────────────────────

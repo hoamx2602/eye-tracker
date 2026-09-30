@@ -22,23 +22,33 @@ import json
 import logging
 import os
 import tempfile
+import threading
+import time
+import uuid
+from typing import TYPE_CHECKING
 
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .calibration import CalibrationDot, fit_mapper
+from .calibration import CalibrationDot, fit_mapper, settle_frac_for
 from .events import ScreenGeometry, detect_events
-from .gaze_model import GazeModel, _WEIGHTS_DIR as WEIGHTS_DIR
 from .head_comp import build_compensator
 from .schemas import BiomarkersOut, GazeSampleOut, ProcessRequest, ProcessResponse, ValidationOut
 from .validation import evaluate_mapper
 from .video import process_video
+from .facial_speech import analyze_facial_speech, parse_payload
+
+if TYPE_CHECKING:
+    from .gaze_model import GazeModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # WEIGHTS_DIR resolved in gaze_model (env → docker mount → local models/openface).
+# That module pulls in torch and OpenFace, which only exist in the CUDA image.
+# The facial-speech route needs neither, so the import is deferred to first use:
+# a machine without a GPU can still run this service for /facial-speech.
 
 # Frames below this eye-region quality are dropped from the scored trace (glasses
 # glare). Conservative: only clearly-glared frames (heavy specular coverage).
@@ -55,20 +65,127 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
-_model: GazeModel | None = None
+_model: "GazeModel | None" = None
+_facial_speech_jobs: dict[str, dict] = {}
+_facial_speech_jobs_lock = threading.Lock()
 
 
-def get_model() -> GazeModel:
+def get_model() -> "GazeModel":
     global _model
     if _model is None:
-        _model = GazeModel(weights_dir=WEIGHTS_DIR)
+        from .gaze_model import GazeModel, _WEIGHTS_DIR
+
+        _model = GazeModel(weights_dir=_WEIGHTS_DIR)
     return _model
 
 
 @app.get("/health")
 def health() -> dict:
-    import torch
-    return {"status": "ok", "cuda": torch.cuda.is_available(), "weights_dir": WEIGHTS_DIR}
+    # Reported rather than asserted: on a CPU-only host the gaze stack is
+    # absent and /process is unavailable, while /facial-speech still works.
+    try:
+        import torch
+
+        from .gaze_model import _WEIGHTS_DIR
+
+        return {"status": "ok", "cuda": torch.cuda.is_available(), "weights_dir": _WEIGHTS_DIR, "gaze_available": True}
+    except Exception as exc:
+        return {"status": "ok", "cuda": False, "gaze_available": False, "gaze_unavailable_reason": str(exc)}
+
+
+def _facial_speech_job_view(job: dict) -> dict:
+    return {key: value for key, value in job.items() if key not in {"tmp_path", "created_at"}}
+
+
+# A completed job holds derived measurements of a face and a voice, which is
+# biometric data. Keeping it in memory until the process restarts is an
+# unbounded retention window; expire it instead. The upload itself is already
+# deleted as soon as analysis finishes.
+FACIAL_SPEECH_JOB_TTL_S = float(os.environ.get("FACIAL_SPEECH_JOB_TTL_SECONDS", "3600"))
+
+
+def _purge_expired_facial_speech_jobs() -> None:
+    cutoff = time.monotonic() - FACIAL_SPEECH_JOB_TTL_S
+    with _facial_speech_jobs_lock:
+        for job_id in [
+            job_id for job_id, job in _facial_speech_jobs.items() if job.get("created_at", 0) < cutoff
+        ]:
+            _facial_speech_jobs.pop(job_id, None)
+
+
+def _run_facial_speech_job(job_id: str, tmp_path: str, payload: dict) -> None:
+    def update(phase: str, progress: int, message: str) -> None:
+        with _facial_speech_jobs_lock:
+            _facial_speech_jobs[job_id].update({"status": "processing", "phase": phase, "progress": progress, "message": message})
+
+    try:
+        update("queued", 5, "Capture uploaded; starting offline analysis")
+        report = analyze_facial_speech(tmp_path, payload, update)
+        with _facial_speech_jobs_lock:
+            _facial_speech_jobs[job_id].update({"status": "complete", "phase": "complete", "progress": 100, "message": "Analysis complete", "report": report})
+    except Exception as exc:  # Return a visible job error rather than leaving the UI waiting forever.
+        logger.exception("facial-speech job %s failed", job_id)
+        with _facial_speech_jobs_lock:
+            _facial_speech_jobs[job_id].update({"status": "failed", "phase": "failed", "message": str(exc), "error": str(exc)})
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+@app.post("/facial-speech/process")
+async def start_facial_speech_process(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    payload: str = Form(...),
+) -> dict:
+    try:
+        meta = parse_payload(payload)
+        if not meta.get("tasks"):
+            raise ValueError("No completed task windows were supplied.")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    _purge_expired_facial_speech_jobs()
+    suffix = os.path.splitext(file.filename or "")[1] or ".webm"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+    job_id = uuid.uuid4().hex
+    with _facial_speech_jobs_lock:
+        _facial_speech_jobs[job_id] = {
+            "id": job_id,
+            "status": "queued",
+            "phase": "queued",
+            "progress": 0,
+            "message": "Waiting for the analysis worker",
+            "created_at": time.monotonic(),
+        }
+    background_tasks.add_task(_run_facial_speech_job, job_id, tmp_path, meta)
+    return _facial_speech_job_view(_facial_speech_jobs[job_id])
+
+
+@app.get("/facial-speech/jobs/{job_id}")
+def get_facial_speech_job(job_id: str) -> dict:
+    _purge_expired_facial_speech_jobs()
+    with _facial_speech_jobs_lock:
+        job = _facial_speech_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Facial-speech analysis job not found. Results are discarded after "
+                       f"{FACIAL_SPEECH_JOB_TTL_S / 3600:.0f} h; re-run the capture if it has expired.",
+            )
+        return _facial_speech_job_view(job)
+
+
+@app.delete("/facial-speech/jobs/{job_id}")
+def delete_facial_speech_job(job_id: str) -> dict:
+    """Let the subject discard their results before the TTL expires."""
+    with _facial_speech_jobs_lock:
+        removed = _facial_speech_jobs.pop(job_id, None)
+    return {"deleted": removed is not None}
 
 
 @app.post("/process", response_model=ProcessResponse)
@@ -97,11 +214,13 @@ async def process(
         for d in req.calibration_dots
     ]
     quality = frames.get("quality")
+    settle = settle_frac_for(req.settled_windows)
     try:
         mapper = fit_mapper(
             dots, frames["t_ms"], frames["yaw"], frames["pitch"],
             frame_quality=quality,
             outlier_sigma=req.calibration_outlier_sigma,
+            settle_frac=settle,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -160,6 +279,7 @@ async def process(
             frame_quality=quality,
             compensator=compensator,
             frame_head=head if compensator is not None else None,
+            settle_frac=settle,
         )
         validation = ValidationOut(
             n_points=rep.n_points,

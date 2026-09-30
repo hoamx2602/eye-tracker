@@ -2,9 +2,12 @@
 import React from 'react';
 import { CalibrationPoint, CalibrationPhase, CalibrationMethod } from '../types';
 import { useVoiceRepeat } from '@/lib/voice/VoiceProvider';
+import { calibDotStyle } from '@/lib/calibrationDot';
 
 /** How often the short spoken reminder repeats while dots are being shown. */
 const VOICE_CUE_INTERVAL_MS = 25000;
+
+/** Timer-mode dot: appears large and shrinks to a point — see lib/calibrationDot. */
 
 interface CalibrationLayerProps {
   points: CalibrationPoint[];
@@ -82,27 +85,38 @@ const CalibrationLayer: React.FC<CalibrationLayerProps> = ({
         if (idx !== currentPointIndex) return null;
 
         // Visual State Logic
-        let scale = 'scale-100';
         let bgColor = 'bg-red-500';
         let shadow = 'shadow-[0_0_10px_rgba(255,0,0,0.5)]';
 
         if (method === CalibrationMethod.TIMER) {
+            // No expanding ring while capturing: it pulled attention outwards
+            // exactly when the gaze has to stay on the centre.
             if (isCapturing) {
-                scale = 'scale-125';
                 bgColor = 'bg-red-600';
-                shadow = 'shadow-[0_0_25px_rgba(255,0,0,1)]';
+                shadow = 'shadow-[0_0_12px_rgba(255,0,0,0.9)]';
             }
-        } else {
-             // Click & Hold Visuals
-             bgColor = 'bg-red-500'; // Default base
-             if (progress > 0) {
-                 scale = `scale-${100 + (progress * 25)}`; // Grow slightly
-                 shadow = `shadow-[0_0_25px_${getProgressColor()}]`;
-             }
+            return (
+              <div
+                // Keyed on the presentation, so a re-queued dot shrinks again.
+                key={`${point.id}-${currentPointIndex}`}
+                className={`absolute rounded-full flex items-center justify-center pointer-events-none ${bgColor} ${shadow}`}
+                style={{
+                  left: `${point.x}%`,
+                  top: `${point.y}%`,
+                  ...calibDotStyle(),
+                }}
+              >
+                {/* Inner pupil dot — the point the eye should end on (≈2.4 px at the end) */}
+                <div className="w-3 h-3 bg-black rounded-full"></div>
+              </div>
+            );
         }
 
-        const dynamicStyle = method === CalibrationMethod.CLICK_HOLD && progress > 0
-            ? { backgroundColor: getProgressColor() } 
+        // Click & Hold: grows slightly and turns green as the hold completes.
+        // (Scale is inline: a Tailwind class built at runtime is never generated.)
+        const holdScale = 1 + progress * 0.25;
+        const dynamicStyle = progress > 0
+            ? { backgroundColor: getProgressColor(), boxShadow: `0 0 25px ${getProgressColor()}` }
             : {};
 
         return (
@@ -112,23 +126,18 @@ const CalibrationLayer: React.FC<CalibrationLayerProps> = ({
             onMouseUp={onPointMouseUp}
             onMouseLeave={onPointMouseUp} // Handle dragging out
             className={`absolute w-8 h-8 rounded-full flex items-center justify-center transition-all duration-75 ease-linear
-              ${scale} ${bgColor} ${shadow}
+              ${bgColor} ${shadow}
             `}
             style={{
               left: `${point.x}%`,
               top: `${point.y}%`,
-              transform: 'translate(-50%, -50%)',
+              transform: `translate(-50%, -50%) scale(${holdScale})`,
               border: '4px solid white',
               ...dynamicStyle
             }}
           >
             {/* Inner pupil dot */}
             <div className="w-1.5 h-1.5 bg-black rounded-full pointer-events-none"></div>
-            
-            {/* Timer Loading Ring */}
-            {method === CalibrationMethod.TIMER && isCapturing && (
-              <div className="absolute inset-0 border-2 border-white rounded-full animate-ping opacity-75 pointer-events-none"></div>
-            )}
           </div>
         );
       })}

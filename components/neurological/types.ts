@@ -1,3 +1,5 @@
+import type { GazeFrameColumns } from '@/lib/gazeFrameStream';
+import type { DriftCheck } from '@/lib/driftCorrection';
 /**
  * Shared types for the Guide + Practice + Test framework (ticket 04).
  * Each test (05–11) defines its own result payload shape; this is the common contract.
@@ -32,6 +34,10 @@ export interface TestResultPayload {
   endTime: number;
   events?: TestEvent[];
   gazeSamples?: GazeSample[];
+  /** Every camera frame of gaze during the test (lib/gazeFrameStream). Added by TestRunnerProvider. */
+  gazeFrames?: GazeFrameColumns;
+  /** Centre check in the countdown before this test (lib/driftCorrection). Added by TestRunnerProvider. */
+  driftCheck?: DriftCheck;
   metrics?: Record<string, unknown>;
   [key: string]: unknown;
 }

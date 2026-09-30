@@ -14,12 +14,21 @@ function shuffle<T>(arr: T[]): T[] {
 /**
  * Generate trial order: each trial has primary direction (random), dim is opposite.
  */
-export function generateTrialDirections(count: number): AntiSaccadeDirection[] {
+export function generateTrialDirections(count: number, horizontalOnly = false): AntiSaccadeDirection[] {
+  // Horizontal only for the step paradigm: the tracker's vertical axis carries
+  // a fraction of the horizontal signal, so up/down trials are decided far
+  // less reliably, and the clinical anti-saccade task is horizontal anyway.
+  const set: AntiSaccadeDirection[] = horizontalOnly ? ['left', 'right'] : [...DIRECTIONS];
   const pool: AntiSaccadeDirection[] = [];
   while (pool.length < count) {
-    pool.push(...shuffle([...DIRECTIONS]));
+    pool.push(...shuffle(set));
   }
   return pool.slice(0, count);
+}
+
+/** Uniform random duration in [minMs, maxMs]. */
+export function randomDurationMs(minMs: number, maxMs: number): number {
+  return Math.round(minMs + Math.random() * Math.max(0, maxMs - minMs));
 }
 
 /**

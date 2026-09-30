@@ -56,6 +56,16 @@ _ALPHA_GRID = (1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0)
 
 # Within-window aggregation defaults.
 _SETTLE_FRAC = 0.40   # fraction of a dot window treated as approach transient (dropped)
+# The browser now sends gaze-contingent windows that already start at a settled
+# fixation (meta "settled_windows": true, lib/fixationSampling.ts). Dropping 40%
+# of those would throw away good fixation; a small margin only absorbs the
+# processing-vs-capture clock offset described in lib/calibrationMeta.ts.
+SETTLED_WINDOW_SETTLE_FRAC = 0.10
+
+
+def settle_frac_for(settled_windows: bool) -> float:
+    """Approach-transient fraction to drop, given how the dot windows were cut."""
+    return SETTLED_WINDOW_SETTLE_FRAC if settled_windows else _SETTLE_FRAC
 _MAD_K = 3.0          # keep frames within k · MAD of the window median (per axis)
 _MIN_DOT_FRAMES = 3   # need at least this many clean frames to use a dot
 _MIN_DOTS = 6         # minimum usable dots to attempt a fit
@@ -258,6 +268,7 @@ def fit_mapper(
     alpha: float = 1.0,
     outlier_sigma: float = 2.5,
     cv_tune: bool = True,
+    settle_frac: float = _SETTLE_FRAC,
 ) -> GazeMapper:
     """
     Fit a (yaw, pitch) → (screen_x, screen_y) mapper from calibration dot windows.
@@ -277,6 +288,10 @@ def fit_mapper(
     cv_tune:
         Auto-select polynomial degree and alpha by leave-one-dot-out CV. Strongly
         recommended; set False only for debugging a fixed model.
+    settle_frac:
+        Leading fraction of each dot window dropped as approach transient. Use
+        settle_frac_for(settled_windows) — small when the windows already start
+        at a settled fixation.
     """
     # ── Per-dot robust aggregation ───────────────────────────────────────────
     xs: list[float] = []        # yaw center
@@ -296,7 +311,7 @@ def fit_mapper(
             yaw_w[bad] = np.nan
             pitch_w[bad] = np.nan
 
-        agg = _aggregate_dot(yaw_w, pitch_w)
+        agg = _aggregate_dot(yaw_w, pitch_w, settle_frac=settle_frac)
         if agg is None:
             continue
         yaw_c, pitch_c, n_i, spread = agg

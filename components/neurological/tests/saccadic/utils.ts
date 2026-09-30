@@ -25,3 +25,20 @@ export function getTargetPosition(
   const y = Math.max(pad, Math.min(viewportHeight - pad, rawY));
   return { x, y };
 }
+
+/** `count` sides, half left and half right (the odd one random), shuffled. */
+export function balancedSides(count: number): SaccadicTargetSide[] {
+  const sides: SaccadicTargetSide[] = [];
+  for (let i = 0; i < count; i++) sides.push(i % 2 === 0 ? 'left' : 'right');
+  if (count % 2 === 1 && Math.random() < 0.5) sides[count - 1] = 'right';
+  for (let i = sides.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [sides[i], sides[j]] = [sides[j]!, sides[i]!];
+  }
+  return sides;
+}
+
+/** Uniform random fixation duration in [minMs, maxMs]. */
+export function randomFixationMs(minMs: number, maxMs: number): number {
+  return Math.round(minMs + Math.random() * Math.max(0, maxMs - minMs));
+}

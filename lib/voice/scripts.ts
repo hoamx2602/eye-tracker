@@ -19,6 +19,7 @@
 
 import { stepSpokenText } from '../assessmentSteps';
 import { consentSpokenText } from '../consentText';
+import { FACIAL_CONSENT_POINTS, facialTaskById, facialTaskSpokenText } from '../facialSpeechProtocol';
 
 export type VoiceScript = {
   /** Full guidance, spoken on entry and on replay. */
@@ -279,13 +280,42 @@ export const VOICE_SCRIPTS = {
     // of just being longer than it needed to be.
     cue: 'Look in the opposite direction from the red square.',
   },
+  // The step paradigm (antiSaccade/constants.ts resolveParadigm, the default):
+  // the shape jumps to a side instead of gliding there. No recorded clips yet —
+  // the browser voice reads these until `npm run voice:generate` is run.
+  'neuro.anti_saccade.step': {
+    text:
+      'Anti-saccade. Look at the shape in the centre of the screen. ' +
+      'After a moment, a bright shape will jump to one side and a dim shape to the other. ' +
+      'Your task is to resist looking at the bright one, and look at the dim shape instead, as quickly as you can. ' +
+      'This feels unnatural — that is exactly what we are measuring. ' +
+      'Keep your head still and move only your eyes.',
+    cue: 'Look at the dim shape.',
+  },
+  'neuro.anti_saccade.step_no_dim': {
+    text:
+      'Anti-saccade. Look at the red square in the centre of the screen. ' +
+      'After a moment, it will jump to one side. ' +
+      'Your task is to look at the opposite side — away from the square, not towards it — as quickly as you can. ' +
+      'This feels unnatural — that is exactly what we are measuring. ' +
+      'Keep your head still and move only your eyes.',
+    cue: 'Look in the opposite direction from the red square.',
+  },
   'neuro.saccadic': {
     text:
-      'Saccadic eye movement. A target will appear on the left or the right of the screen, ' +
-      'and will switch sides about once a second. ' +
+      'Saccadic eye movement. Look at the small dot in the centre of the screen. ' +
+      'After a moment, a target will appear on the left or the right. ' +
       'As soon as it appears, look straight at it as quickly and accurately as you can, ' +
-      'then wait for it to move again. Move your eyes only, not your head.',
+      'then back to the centre dot. The side and the timing are random, so just react. ' +
+      'Move your eyes only, not your head.',
     cue: 'Look at each target as soon as it appears.',
+  },
+  'neuro.smooth_pursuit': {
+    text:
+      'Smooth pursuit. A dot will appear in the centre of the screen and then move smoothly from side to side. ' +
+      'Follow it with your eyes as closely as you can, the whole time. ' +
+      'Keep your head still and move only your eyes.',
+    cue: 'Follow the dot with your eyes.',
   },
   'neuro.fixation_stability': {
     text:
@@ -358,8 +388,43 @@ export const VOICE_SCRIPTS = {
   'overview.memory_cards': { text: stepSpokenText('memory_cards') },
   'overview.anti_saccade': { text: stepSpokenText('anti_saccade') },
   'overview.saccadic': { text: stepSpokenText('saccadic') },
+  'overview.smooth_pursuit': { text: stepSpokenText('smooth_pursuit') },
   'overview.fixation_stability': { text: stepSpokenText('fixation_stability') },
   'overview.peripheral_vision': { text: stepSpokenText('peripheral_vision') },
+
+  // --------------------------------------------------------- facial droop
+  // /facial-droop. None of these may play while a task is recording: the
+  // voice would be captured in the audio track and contaminate the speech
+  // and noise-floor measurements. The page stops speech before each task.
+  'facial.consent': {
+    text:
+      'Before we start, please read this notice. Here it is aloud. ' +
+      FACIAL_CONSENT_POINTS.join(' ') +
+      ' If you agree, tick the box and select I agree.',
+  },
+  'facial.camera': {
+    text:
+      'Let us check your camera and microphone. ' +
+      'Sit about an arm\'s length from the screen and centre your face inside the oval. ' +
+      'Make sure your face is evenly lit and the room is quiet. ' +
+      'Say a few words to see the microphone level move. ' +
+      'When everything looks right, select Start recording.',
+  },
+  'facial.task.face_rest': { text: facialTaskSpokenText(facialTaskById('face_rest')) },
+  'facial.task.face_brow_raise': { text: facialTaskSpokenText(facialTaskById('face_brow_raise')) },
+  'facial.task.face_eye_closure': { text: facialTaskSpokenText(facialTaskById('face_eye_closure')) },
+  'facial.task.face_smile_show_teeth': { text: facialTaskSpokenText(facialTaskById('face_smile_show_teeth')) },
+  'facial.task.face_lip_pucker': { text: facialTaskSpokenText(facialTaskById('face_lip_pucker')) },
+  'facial.task.capture_noise_floor': { text: facialTaskSpokenText(facialTaskById('capture_noise_floor')) },
+  'facial.task.speech_sustained_a': { text: facialTaskSpokenText(facialTaskById('speech_sustained_a')) },
+  'facial.task.speech_ddk_patka': { text: facialTaskSpokenText(facialTaskById('speech_ddk_patka')) },
+  'facial.task.speech_reading': { text: facialTaskSpokenText(facialTaskById('speech_reading')) },
+  'facial.task.speech_counting': { text: facialTaskSpokenText(facialTaskById('speech_counting')) },
+  'facial.done': {
+    text:
+      'That is everything. Thank you. ' +
+      'Please keep this page open while your recording is saved.',
+  },
 
 } as const satisfies Record<string, VoiceScript>;
 
@@ -419,5 +484,11 @@ export function exerciseVoiceKey(kind: string): VoiceKey | null {
 /** Voice key for a neurological test, e.g. 'saccadic' → 'neuro.saccadic'. */
 export function neuroTestVoiceKey(testId: string): VoiceKey | null {
   const key = `neuro.${testId}`;
+  return key in VOICE_SCRIPTS ? (key as VoiceKey) : null;
+}
+
+/** Voice key for a facial-droop task guide, e.g. 'face_rest' → 'facial.task.face_rest'. */
+export function facialTaskVoiceKey(taskId: string): VoiceKey | null {
+  const key = `facial.task.${taskId}`;
   return key in VOICE_SCRIPTS ? (key as VoiceKey) : null;
 }

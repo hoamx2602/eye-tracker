@@ -38,7 +38,7 @@ from dataclasses import asdict
 
 import numpy as np
 
-from .calibration import CalibrationDot, fit_mapper
+from .calibration import CalibrationDot, fit_mapper, settle_frac_for
 from .events import ScreenGeometry, detect_events
 from .head_comp import DEFAULT_HFOV_DEG, build_compensator
 from .validation import evaluate_mapper
@@ -168,11 +168,13 @@ def _analyze(frames: dict, meta: dict, geo: ScreenGeometry, cal_dots: list[Calib
     Reused for the baseline and (when personalizing) the fine-tuned pass.
     """
     quality = frames.get("quality")
+    settle = settle_frac_for(bool(meta.get("settled_windows", False)))
     mapper = fit_mapper(
         cal_dots,
         frames["t_ms"], frames["yaw"], frames["pitch"],
         frame_quality=quality,
         outlier_sigma=meta.get("calibration_outlier_sigma", 2.5),
+        settle_frac=settle,
     )
 
     # Head-translation (parallax) compensation: reference = head position during
@@ -200,6 +202,7 @@ def _analyze(frames: dict, meta: dict, geo: ScreenGeometry, cal_dots: list[Calib
             frame_quality=quality,
             compensator=compensator,
             frame_head=head if compensator is not None else None,
+            settle_frac=settle,
         )
         logger.info("\n%s", rep.summary())
         validation = {
@@ -266,6 +269,7 @@ def _try_personalize(
         screen_width_px=geo.width_px, screen_width_cm=geo.width_cm,
         viewing_distance_cm=geo.viewing_distance_cm,
         hfov_deg=meta.get("camera_hfov_deg", DEFAULT_HFOV_DEG),
+        settle_frac=settle_frac_for(bool(meta.get("settled_windows", False))),
     )
     out.update(res.to_dict())
     if not res.applied:

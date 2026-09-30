@@ -8,7 +8,7 @@ import StepBreak from '@/components/StepBreak';
 import { TestRunnerProvider } from './TestRunnerContext';
 import { useVoiceRepeat } from '@/lib/voice/VoiceProvider';
 import { neuroTestVoiceKey, type VoiceKey } from '@/lib/voice/scripts';
-import { isDimRectInstructable } from './tests/antiSaccade/constants';
+import { isDimRectInstructable, resolveParadigm as resolveAntiSaccadeParadigm } from './tests/antiSaccade/constants';
 import { resolveVisualSearchConfirmMode } from './tests/visualSearch/constants';
 import type { GuideStep } from './types';
 import type { TestResultPayload } from './types';
@@ -281,7 +281,9 @@ export default function GuidePracticeTestFlow({
   //    matches what the clip should tell someone to do. See
   //    tests/visualSearch/constants.ts.
   const voiceKey: VoiceKey | null =
-    testId === 'anti_saccade' && !isDimRectInstructable(config)
+    testId === 'anti_saccade' && resolveAntiSaccadeParadigm(config) === 'step'
+      ? (isDimRectInstructable(config) ? 'neuro.anti_saccade.step' : 'neuro.anti_saccade.step_no_dim')
+      : testId === 'anti_saccade' && !isDimRectInstructable(config)
       ? 'neuro.anti_saccade.no_dim'
       : testId === 'visual_search' && resolveVisualSearchConfirmMode(config) === 'click'
         ? 'neuro.visual_search.click'

@@ -5,17 +5,18 @@ import App from '@/App';
 import HomePage from '@/components/HomePage';
 
 /**
- * Catch-all for the main application flow.
+ * Catch-all for the eye-tracking module.
  *
  * Route split:
- *   /                    → new user-facing HomePage (assessment flow entry)
- *   /choice              → legacy App flow (post-calibration choice screen)
- *   /tracking            → legacy App flow (real-time tracking)
- *   /neuro/*             → legacy App flow (neurological test suite)
- *   /experiments/*       → handled by app/experiments/[[...path]]/page.tsx
+ *   /eye-tracking            → user-facing HomePage (assessment flow entry)
+ *   /eye-tracking/consent …  → App flow (consent, demographics, setup, calibration)
+ *   /eye-tracking/choice     → App flow (post-calibration choice screen)
+ *   /eye-tracking/tracking   → App flow (real-time tracking)
+ *   /eye-tracking/neuro/*    → App flow (neurological test suite)
+ *   /experiments/*           → handled by app/experiments/[[...path]]/page.tsx
  *
- * Next.js passes params.path = undefined when the URL is exactly "/".
- * For any other segment it passes an array, e.g. ["neuro", "pre"].
+ * Next.js passes params.path = undefined when the URL is exactly /eye-tracking.
+ * For any deeper segment it passes an array, e.g. ["neuro", "pre"].
  */
 interface Props {
   params: Promise<{ path?: string[] }>;

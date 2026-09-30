@@ -41,16 +41,42 @@ export interface TrainingSample {
   head?: HeadSnapshot;
   /** Filled after upload when saving session. */
   imageUrl?: string;
-  /** In-memory only: blob to upload for this sample (exercise). Omitted when sending to API. */
+  /** In-memory only: face frame to upload for this sample. Omitted when sending to API. */
   blobForUpload?: Blob;
   /** Pattern name for display (e.g. "Grid point 1", "horizontal", "h_pattern"). */
   patternName?: string;
   /**
-   * Raw averaged EyeFeatures at capture time.
+   * Robust (per-field median) EyeFeatures of the frames the sample was built from.
    * Stored so feature flags can be toggled and LOOCV re-evaluated without re-calibrating.
-   * Only populated for grid calibration points (not exercise data).
    */
   rawEyeFeatures?: EyeFeatures;
+  /** How the sample was selected and how clean it was (see lib/fixationSampling). */
+  quality?: SampleQuality;
+}
+
+/** Per-sample provenance and quality, saved with the calibration samples. */
+export interface SampleQuality {
+  /**
+   * fixation          — gaze-contingent stable run on a dot
+   * fixation_fallback — no complete stable run; best run found before timeout
+   * pause             — endpoint pause of an eye-movement exercise
+   * pursuit           — latency-compensated bin of a moving exercise target
+   */
+  method: 'fixation' | 'fixation_fallback' | 'pause' | 'pursuit';
+  nFrames: number;
+  spanMs: number;
+  /** Dot onset → first frame used: a latency-to-stable-fixation proxy. */
+  settleMs?: number;
+  /** RMS spread of the used frames around their median, in iris-offset units. */
+  dispersion?: number;
+  /** How many times this dot was presented before this sample was kept. */
+  attempts?: number;
+  /** Target→feature delay applied to pursuit labels. */
+  lagMs?: number;
+  /** Validation dots: RMS sample-to-sample distance of the mapped frames (px). */
+  precisionRmsS2SPx?: number;
+  /** Validation dots: SD of the mapped frames around their mean (px). */
+  precisionSdPx?: number;
 }
 
 /** Serializable head validation snapshot for calibration samples. */
@@ -135,6 +161,8 @@ export enum CalibrationMethod {
 
 export enum ChartSmoothingMethod {
   NONE = 'NONE',
+  /** Drop off-screen samples and spikes, leaving gaps; no smoothing (lib/smoothing.ts). */
+  REMOVE_OUTLIERS = 'REMOVE_OUTLIERS',
   MOVING_AVERAGE = 'MOVING_AVERAGE',
   GAUSSIAN = 'GAUSSIAN',
 }
@@ -252,7 +280,10 @@ export interface AppConfig {
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
-  regressionMethod: RegressionMethod.TPS, // Default to TPS now
+  // Replayed over 69 stored sessions (scripts/check-gaze-mapping.ts): TPS beat the
+  // ridge on 52% of them — a coin toss — while the standardised ridge beats the old
+  // unstandardised one on 67%. The extra machinery bought nothing, so ridge is the default.
+  regressionMethod: RegressionMethod.RIDGE,
   smoothingMethod: SmoothingMethod.ONE_EURO,
   
   // Smoothing Defaults — tuned for clinical assessment (low lag + fast saccade response).
@@ -269,7 +300,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   // Calibration Defaults
   calibrationMethod: CalibrationMethod.TIMER,
   calibrationSpeed: 'NORMAL',
-  calibrationPointsCount: 9, // Default to 9 points
+  // 24 dots = 6 x 4, a full rectangle at roughly equal angular spacing both ways.
+  // Replaying the stored sessions, validation error falls steadily with dot count
+  // (6: 277 px, 9: 226, 12: 199, 16: 195, 20: 181), and the outer ring is what
+  // holds the edges together. At ~2.5 s a dot this is about a minute of grid.
+  calibrationPointsCount: 24,
   clickDuration: 1.5, // 1.5 seconds hold
 
   // Outlier Defaults — 10% trim keeps the middle 80% of each capture window,
@@ -298,8 +333,10 @@ export const DEFAULT_CONFIG: AppConfig = {
   faceCaptureInterval: 5, // Capture face every 5 seconds
 
   // Chart Display Defaults
-  chartSmoothingMethod: ChartSmoothingMethod.MOVING_AVERAGE,
-  chartSmoothingWindow: 7,
+  // Outliers are dropped for every method except NONE; this one adds no smoothing
+  // on top, so what is plotted is measured data (scripts/check-gaze-postprocess.ts).
+  chartSmoothingMethod: ChartSmoothingMethod.REMOVE_OUTLIERS,
+  chartSmoothingWindow: 5,
 
   // Glasses Optimization Defaults
   glassesOptimization: true,

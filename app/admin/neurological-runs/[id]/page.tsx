@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import SmoothPursuitResultsPreview from '@/components/neurological/results/SmoothPursuitResultsPreview';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { createPortal } from 'react-dom';
@@ -98,6 +99,7 @@ const TEST_LABELS: Record<string, string> = {
   saccadic:           'Saccadic',
   fixation_stability: 'Fixation Stability',
   peripheral_vision:  'Peripheral Vision',
+  smooth_pursuit:     'Smooth Pursuit',
 };
 
 // ── Shared layout ──────────────────────────────────────────────────────────────
@@ -411,6 +413,15 @@ function TestVisualization({ testId, raw }: { testId: string; raw: Record<string
         />
       );
     }
+    case 'smooth_pursuit':
+      return (
+        <SmoothPursuitResultsPreview
+          gazeSamples={raw.gazeSamples as Array<{ t: number; x: number; y: number; targetX: number }> | undefined}
+          metrics={raw.metrics as Record<string, number | null> | undefined}
+          viewportWidth={raw.viewportWidth as number | undefined}
+          visualOnly
+        />
+      );
     default:
       return <p className="text-slate-500 text-sm p-4">No visualization available for this test type.</p>;
   }
