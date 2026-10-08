@@ -1,5 +1,7 @@
 import Link from 'next/link';
+import type { PointerEvent } from 'react';
 import { MODULE_PATHS } from '@/lib/paths';
+import { ASSESSMENTS_ENABLED } from '@/lib/featureFlags';
 import { Arrow } from './LandingIcons';
 import styles from './Landing.module.css';
 
@@ -35,11 +37,31 @@ function ModuleArt({ kind }: { kind: typeof modules[number]['kind'] }) {
   </svg>;
 }
 
+function followPointer(event: PointerEvent<HTMLElement>) {
+  if (event.pointerType === 'touch') return;
+  const card = event.currentTarget;
+  const rect = card.getBoundingClientRect();
+  card.style.setProperty('--spot-x', `${event.clientX - rect.left}px`);
+  card.style.setProperty('--spot-y', `${event.clientY - rect.top}px`);
+}
+
 export default function AssessmentCards() {
   return <div className={styles.cards}>
-    {modules.map((module) => <Link href={module.href} key={module.href} className={styles.card} data-kind={module.kind} data-reveal>
-      <div className={styles.cardVisual}><ModuleArt kind={module.kind} /></div>
-      <div className={styles.cardContent}><p className={styles.cardCategory}>{module.category}</p><h3>{module.title}</h3><p className={styles.cardDescription}>{module.description}</p><div className={styles.cardFoot}><span>{module.device}</span><span className={styles.cardArrow}><Arrow /></span></div></div>
-    </Link>)}
+    {modules.map((module) => {
+      const cardProps = {
+        className: styles.card,
+        'data-kind': module.kind,
+        'data-reveal': true,
+        onPointerMove: followPointer,
+      };
+      const content = <>
+        <div className={styles.cardVisual}><ModuleArt kind={module.kind} /></div>
+        <div className={styles.cardContent}><p className={styles.cardCategory}>{module.category}</p><h3>{module.title}</h3><p className={styles.cardDescription}>{module.description}</p><div className={styles.cardFoot}><span>{module.device}</span><span className={styles.cardArrow}><Arrow /></span></div></div>
+      </>;
+
+      return ASSESSMENTS_ENABLED
+        ? <Link key={module.href} href={module.href} {...cardProps}>{content}</Link>
+        : <div key={module.href} role="link" aria-disabled="true" tabIndex={0} {...cardProps}>{content}</div>;
+    })}
   </div>;
 }

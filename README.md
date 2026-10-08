@@ -15,6 +15,16 @@
 
 Old root URLs (`/consent`, `/tracking`, `/neuro/*`, `/facial-speech`) redirect to the new ones.
 
+### Landing page assessment switch
+
+Set `NEXT_PUBLIC_ASSESSMENTS_ENABLED` in `.env.local` or the deployment environment:
+
+- `false` (also the default when unset): all three cards remain visible; clicking or pressing Enter does nothing.
+- `true`: all three cards link to their assessment modules as usual.
+
+This controls navigation from the home page; direct module URLs are unchanged.
+Restart the development server after changing it. For production, rebuild/redeploy because `NEXT_PUBLIC_` values are included in the client bundle.
+
 ## Related assessment modules
 
 - [Facial drooping & speech screening protocol](docs/FACIAL_SPEECH_SCREENING.md) — capture route: `/facial-droop`. Design rationale, validation plan and release gates.
