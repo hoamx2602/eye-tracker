@@ -1,7 +1,7 @@
 /**
- * Switches for things participants should not normally see.
+ * Public UI feature switches.
  *
- * Both default to off: during data collection the flow should show a
+ * All default to off: during data collection the flow should show a
  * participant only what the session asks of them. Turn them on locally while
  * tuning or debugging.
  *
@@ -13,6 +13,10 @@
 function envFlag(raw: string | undefined): boolean {
   return ['1', 'true', 'yes', 'on'].includes((raw ?? '').trim().toLowerCase());
 }
+
+/** Enable navigation from all three assessment cards on the landing page. */
+export const ASSESSMENTS_ENABLED =
+  typeof process !== 'undefined' && envFlag(process.env.NEXT_PUBLIC_ASSESSMENTS_ENABLED);
 
 /**
  * The diagnostics overlay on the calibration and tracking screens: face width,

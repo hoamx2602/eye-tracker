@@ -11,6 +11,7 @@ import styles from './landing/Landing.module.css';
 export default function ModuleHub() {
   const root = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
+  const [neural, setNeural] = useState(true);
 
   useEffect(() => {
     const container = root.current;
@@ -31,10 +32,13 @@ export default function ModuleHub() {
   }, []);
 
   return (
-    <div ref={root} className={styles.landing} data-paused={paused}>
+    <div ref={root} className={styles.landing} data-paused={paused} data-landing-scroll>
       <a className={styles.skipLink} href="#assessments">Skip to assessments</a>
       <main>
         <section id="landing-top" className={styles.hero} aria-labelledby="hero-title">
+          <div className={styles.heroStage}>
+          <div className={styles.ambientLight} aria-hidden="true" />
+          <div className={styles.heroWordmark} aria-hidden="true">neurotree</div>
           <header className={styles.header}>
             <Link href={MODULE_PATHS.HUB} className={styles.brand} aria-label="neurotree home"><EyeMark /><span>neurotree<span className={styles.brandDot}>.</span></span></Link>
             <nav className={styles.navigation} aria-label="Main navigation">
@@ -45,8 +49,16 @@ export default function ModuleHub() {
             </nav>
           </header>
           <h1 id="hero-title" className={styles.srOnly}>neurotree — neurological assessments</h1>
-          <EyeVisual paused={paused} />
-          <div className={styles.heroAction}><a href="#assessments" className={styles.primaryButton}>Explore assessments <Arrow /></a></div>
+          <EyeVisual paused={paused} neural={neural} />
+          <div className={styles.heroAction}>
+            <div className={styles.sceneModes} role="group" aria-label="Eye visualization">
+              <button type="button" aria-pressed={!neural} onClick={() => setNeural(false)}><span aria-hidden="true">◎</span> Iris</button>
+              <button type="button" aria-pressed={neural} onClick={() => setNeural(true)}><span aria-hidden="true">⠿</span> Neural</button>
+            </div>
+            <a href="#assessments" className={styles.primaryButton}>Explore assessments <Arrow /></a>
+          </div>
+          <span className={styles.interactionHint} aria-hidden="true">Move to connect. Click to illuminate.</span>
+          </div>
         </section>
         <section id="assessments" tabIndex={-1} className={styles.assessments} aria-labelledby="assessments-title">
           <div className={styles.sectionHeading} data-reveal><h2 id="assessments-title">Choose your assessment<span>.</span></h2><p>Three ways to explore. One place to begin.</p></div>
