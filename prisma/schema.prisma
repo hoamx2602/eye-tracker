@@ -32,11 +32,23 @@ model Session {
   demographics           Json?
   /// Participant-supplied email. Indexed so the same person can be found across runs.
   participantEmail       String?
+  /// Assessment module that produced this row. Kept as a string so new
+  /// modules can be added without a PostgreSQL enum migration.
+  assessmentType         String?          @default("EYE_TRACKING")
+  doctorId               String?
+  patientId              String?
+  invitationId           String?
+  doctor                 User?            @relation("DoctorSessions", fields: [doctorId], references: [id], onDelete: SetNull)
+  patient                User?            @relation("PatientSessions", fields: [patientId], references: [id], onDelete: SetNull)
+  invitation             TestInvitation?  @relation(fields: [invitationId], references: [id], onDelete: SetNull)
   neurologicalRun        NeurologicalRun?
   testRun                TestRun?
 
   @@index([participantEmail])
   @@index([status])
+  @@index([doctorId, createdAt])
+  @@index([patientId, createdAt])
+  @@index([invitationId])
 }
 
 model TestRun {
@@ -93,4 +105,42 @@ model Admin {
   updatedAt    DateTime @updatedAt
 
   @@map("admins")
+}
+
+/// Non-admin accounts used by clinicians and participants. Admins deliberately
+/// remain in their existing table/cookie so portal roles can never acquire
+/// system configuration permissions by accident.
+model User {
+  id              String           @id @default(cuid())
+  email           String           @unique
+  passwordHash    String           @map("password_hash")
+  name            String
+  role            String           @default("PATIENT")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  invitations     TestInvitation[]
+  doctorSessions  Session[]        @relation("DoctorSessions")
+  patientSessions Session[]        @relation("PatientSessions")
+
+  @@index([role])
+  @@map("users")
+}
+
+model TestInvitation {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  assessmentType String
+  doctorId       String
+  expiresAt      DateTime?
+  maxUses        Int       @default(1)
+  usedCount      Int       @default(0)
+  active         Boolean   @default(true)
+  note           String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  doctor         User      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  sessions       Session[]
+
+  @@index([doctorId, createdAt])
+  @@index([active, expiresAt])
 }

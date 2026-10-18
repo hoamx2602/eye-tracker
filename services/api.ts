@@ -35,9 +35,11 @@ export interface RawEyeFeaturesPayload {
 }
 
 export interface CreateSessionPayload {
+  /** Assessment module that creates the row. Defaults to EYE_TRACKING. */
+  assessmentType?: 'EYE_TRACKING' | 'FACIAL_DROOP' | 'IOP';
   config?: Record<string, unknown>;
   /** Demographics at calibration time (age, gender, country, eyeConditions) */
-  demographics?: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[]; wearsGlasses?: boolean; notes?: string };
+  demographics?: { name?: string; age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[]; wearsGlasses?: boolean; notes?: string };
   /** Participant email, also stored in its own indexed column for lookup. */
   participantEmail?: string;
   validationErrors?: number[];
@@ -66,8 +68,9 @@ export interface Session {
   createdAt: string;
   updatedAt: string;
   config: Record<string, unknown> | null;
-  demographics: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[]; wearsGlasses?: boolean; device?: string; notes?: string } | null;
+  demographics: { name?: string; age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[]; wearsGlasses?: boolean; device?: string; notes?: string } | null;
   participantEmail?: string | null;
+  assessmentType?: 'EYE_TRACKING' | 'FACIAL_DROOP' | 'IOP' | null;
   validationErrors: number[];
   meanErrorPx: number | null;
   status: string | null;

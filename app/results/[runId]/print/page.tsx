@@ -2,9 +2,12 @@ import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { viewingDistanceCmFrom } from '@/lib/resultScoring';
 import ResultsPrintLayout from './ResultsPrintLayout';
+import { currentAssessmentSession, currentPortalUser } from '@/lib/current-user';
 
 export default async function PrintPage({ params }: { params: Promise<{ runId: string }> }) {
   const { runId } = await params;
+  const portalUser = await currentPortalUser();
+  const assessmentSession = await currentAssessmentSession();
 
   const run = await prisma.neurologicalRun.findUnique({
     where: { id: runId },
@@ -20,12 +23,17 @@ export default async function PrintPage({ params }: { params: Promise<{ runId: s
           },
           demographics: true,
           createdAt: true,
+          doctorId: true,
+          patientId: true,
         },
       },
     },
   });
 
-  if (!run || !run.session) return notFound();
+  if (!run || !run.session || (
+    (!portalUser || (run.session.doctorId !== portalUser.sub && run.session.patientId !== portalUser.sub)) &&
+    assessmentSession?.sessionId !== run.session.id
+  )) return notFound();
 
   // Build trajectories from multiple possible sources (same logic as /results/[runId])
   const rawTrajectories = run.session.testRun?.trajectories

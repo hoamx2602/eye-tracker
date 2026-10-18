@@ -2125,6 +2125,7 @@ function App() {
         }
         const d = prior.demographics;
         demographicsRef.current = {
+          name: typeof d.name === 'string' ? d.name : '',
           age: typeof d.age === 'number' ? d.age : '',
           gender: d.gender ?? '',
           email: d.email || prior.participantEmail || '',

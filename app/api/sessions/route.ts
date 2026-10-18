@@ -6,9 +6,12 @@
  * POST /api/sessions — create session (participant-facing, stays public)
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getAdminCookieName, verifyAdminToken } from '@/lib/admin-auth';
 import { FACIAL_SPEECH_STATUSES } from '@/lib/facialSpeechArchive';
+import { invitationAccessFromRequest, userFromRequest } from '@/lib/request-auth';
+import { getSessionCookieName, getSessionCookieOptions, signSessionAccessToken } from '@/lib/user-auth';
 
 async function requireAdmin(request: NextRequest) {
   const cookieName = getAdminCookieName();
@@ -54,7 +57,11 @@ export async function GET(request: NextRequest) {
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: { createdAt: 'desc' },
       where,
-      include: { testRun: testOnly },
+      include: {
+        testRun: testOnly,
+        doctor: { select: { id: true, name: true, email: true } },
+        patient: { select: { id: true, name: true, email: true } },
+      },
     });
     const hasMore = sessions.length > limit;
     const list = hasMore ? sessions.slice(0, limit) : sessions;
@@ -75,6 +82,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const portalUser = await userFromRequest(request);
+    const inviteAccess = await invitationAccessFromRequest(request);
+    if (!portalUser && !inviteAccess) {
+      return NextResponse.json({ error: 'Authentication or a valid invitation is required' }, { status: 401 });
+    }
     const body = await request.json();
     let {
       config,
@@ -87,6 +99,7 @@ export async function POST(request: NextRequest) {
       calibrationGazeSamples,
       calibrationMeta,
       participantEmail,
+      assessmentType,
     } = body;
 
     // Store test trajectories in TestRun table, not in config
@@ -101,15 +114,42 @@ export async function POST(request: NextRequest) {
       console.log('[api/sessions POST] Received:', { sampleCount, imageUrlCount, hasVideo: Boolean(videoUrl), hasTestRun: Boolean(testTrajectories?.length) });
     }
 
-    const session = await prisma.session.create({
-      data: {
-        config: config ?? undefined,
-        demographics: demographics != null && typeof demographics === 'object' ? demographics : undefined,
+    const normalizedAssessment = ['EYE_TRACKING', 'FACIAL_DROOP', 'IOP'].includes(assessmentType)
+      ? assessmentType
+      : 'EYE_TRACKING';
+    const inviteCode = inviteAccess?.code;
+    const storedDemographics = demographics != null && typeof demographics === 'object'
+      ? demographics as Prisma.InputJsonObject
+      : undefined;
+    const demographicsEmail = typeof storedDemographics?.email === 'string'
+      ? storedDemographics.email.trim().toLowerCase()
+      : '';
+
+    const session = await prisma.$transaction(async (tx) => {
+      let invitation: { id: string; doctorId: string } | null = null;
+      if (inviteCode) {
+        const candidate = await tx.testInvitation.findUnique({ where: { code: inviteCode } });
+        const valid = candidate && candidate.active && candidate.assessmentType === normalizedAssessment &&
+          candidate.usedCount < candidate.maxUses && (!candidate.expiresAt || candidate.expiresAt > new Date());
+        if (valid) invitation = { id: candidate.id, doctorId: candidate.doctorId };
+      }
+      if (!portalUser && !invitation) throw new Error('INVITATION_UNAVAILABLE');
+
+      const created = await tx.session.create({
+        data: {
+          config: config ?? undefined,
+          demographics: storedDemographics,
         // Normalised so the same participant is one value across sessions.
         participantEmail:
-          typeof participantEmail === 'string' && participantEmail.trim()
-            ? participantEmail.trim().toLowerCase()
-            : null,
+          portalUser?.role === 'PATIENT'
+            ? portalUser.email
+            : typeof participantEmail === 'string' && participantEmail.trim()
+              ? participantEmail.trim().toLowerCase()
+              : demographicsEmail || null,
+        assessmentType: normalizedAssessment,
+        patientId: portalUser?.role === 'PATIENT' ? portalUser.sub : null,
+        doctorId: invitation?.doctorId ?? (portalUser?.role === 'DOCTOR' ? portalUser.sub : null),
+        invitationId: invitation?.id ?? null,
         validationErrors: Array.isArray(validationErrors) ? validationErrors : [],
         meanErrorPx: typeof meanErrorPx === 'number' ? meanErrorPx : null,
         // Created early (right after demographics, before calibration starts)
@@ -124,18 +164,30 @@ export async function POST(request: NextRequest) {
             : undefined,
         calibrationMeta:
           calibrationMeta != null && typeof calibrationMeta === 'object' ? calibrationMeta : undefined,
-      },
+        },
+      });
+
+      if (invitation) {
+        await tx.testInvitation.update({ where: { id: invitation.id }, data: { usedCount: { increment: 1 } } });
+      }
+      if (testTrajectories && testTrajectories.length > 0) {
+        await tx.testRun.create({ data: { sessionId: created.id, trajectories: testTrajectories } });
+      }
+      return created;
     });
 
-    if (testTrajectories && testTrajectories.length > 0) {
-      await prisma.testRun.create({
-        data: { sessionId: session.id, trajectories: testTrajectories },
-      });
-    }
-
-    return NextResponse.json(session, { status: 201 });
+    const response = NextResponse.json(session, { status: 201 });
+    response.cookies.set(
+      getSessionCookieName(),
+      await signSessionAccessToken({ sessionId: session.id }),
+      getSessionCookieOptions(),
+    );
+    return response;
   } catch (e) {
     console.error('[api/sessions]', e);
+    if (e instanceof Error && e.message === 'INVITATION_UNAVAILABLE') {
+      return NextResponse.json({ error: 'This test invitation is no longer available.' }, { status: 410 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

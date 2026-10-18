@@ -19,6 +19,7 @@ import { isOfflineMetaExportEnabled, withOfflineMetaExportFlag } from '@/lib/off
 import { PATHS } from '@/lib/paths';
 import { VoiceButton } from '@/components/ui/VoiceButton';
 import { overviewVoiceKey, type VoiceKey } from '@/lib/voice/scripts';
+import AssessmentIdentity from '@/components/portal/AssessmentIdentity';
 
 // ─── Steps ───────────────────────────────────────────────────────────────────
 //
@@ -356,6 +357,7 @@ export default function HomePage() {
             </div>
             <span className="text-sm font-semibold tracking-tight">Eye Assessment</span>
           </Link>
+          <AssessmentIdentity compact />
         </div>
       </header>
 

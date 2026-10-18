@@ -12,9 +12,10 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { sessionAccessFromRequest, userFromRequest } from '@/lib/request-auth';
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ runId: string }> }
 ) {
   try {
@@ -34,6 +35,8 @@ export async function GET(
             calibrationGazeSamples: true,
             demographics: true,
             createdAt: true,
+            doctorId: true,
+            patientId: true,
           },
         },
       },
@@ -41,6 +44,12 @@ export async function GET(
 
     if (!run) {
       return NextResponse.json({ error: 'Run not found' }, { status: 404 });
+    }
+    const user = await userFromRequest(request);
+    const assessmentSession = await sessionAccessFromRequest(request);
+    if ((!user || (run.session?.doctorId !== user.sub && run.session?.patientId !== user.sub)) &&
+      assessmentSession?.sessionId !== run.session?.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     if (run.status !== 'completed') {

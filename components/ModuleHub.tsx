@@ -43,6 +43,7 @@ export default function ModuleHub() {
             <Link href={MODULE_PATHS.HUB} className={styles.brand} aria-label="neurotree home"><EyeMark /><span>neurotree<span className={styles.brandDot}>.</span></span></Link>
             <nav className={styles.navigation} aria-label="Main navigation">
               <a href="#assessments">Assessments <Arrow /></a>
+              <Link href="/invite">Use a test code</Link>
               <button className={styles.motionButton} aria-label={paused ? 'Play animation' : 'Pause animation'} title={paused ? 'Play animation' : 'Pause animation'} aria-pressed={paused} onClick={() => setPaused(!paused)}>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">{paused ? <path d="m9 5 10 7-10 7V5Z" /> : <path d="M9 5v14M15 5v14" />}</svg>
               </button>

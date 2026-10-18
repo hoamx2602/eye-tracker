@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import puppeteerCore from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
+import { prisma } from '@/lib/prisma';
+import { sessionAccessFromRequest, userFromRequest } from '@/lib/request-auth';
+import { getSessionCookieName, getUserCookieName } from '@/lib/user-auth';
 
 export const maxDuration = 30; // Increase to 30s to allow for cold start and chart rendering on Vercel (capped for Hobby at 10s, but beneficial for Pro)
 
@@ -11,6 +14,18 @@ export async function GET(
   let browser;
   try {
     const { runId } = await params;
+    const user = await userFromRequest(req);
+    const assessmentSession = await sessionAccessFromRequest(req);
+    const runOwner = user || assessmentSession ? await prisma.neurologicalRun.findUnique({
+      where: { id: runId },
+      select: { session: { select: { id: true, doctorId: true, patientId: true } } },
+    }) : null;
+    if (!runOwner || (
+      (!user || (runOwner.session.doctorId !== user.sub && runOwner.session.patientId !== user.sub)) &&
+      assessmentSession?.sessionId !== runOwner.session.id
+    )) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     
     // Check if we are in development environment
     const isLocal = process.env.NODE_ENV === 'development';
@@ -53,6 +68,15 @@ export async function GET(
     }
     
     const printUrl = `${origin}/results/${runId}/print`;
+
+    const portalToken = req.cookies.get(getUserCookieName())?.value;
+    if (portalToken) {
+      await page.setCookie({ name: getUserCookieName(), value: portalToken, url: origin });
+    }
+    const sessionToken = req.cookies.get(getSessionCookieName())?.value;
+    if (sessionToken) {
+      await page.setCookie({ name: getSessionCookieName(), value: sessionToken, url: origin });
+    }
 
     console.log(`[PDF] Using origin: ${origin}, navigating to: ${printUrl}`);
 

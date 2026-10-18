@@ -11,6 +11,7 @@ import { prisma } from '@/lib/prisma';
 import ResultsPageClient from './ResultsPageClient';
 import { PATHS } from '@/lib/paths';
 import { DEFAULT_CONFIG, ChartSmoothingMethod } from '@/types';
+import { currentAssessmentSession, currentPortalUser } from '@/lib/current-user';
 
 // Always render fresh — config (smoothing, faceDistance) must reflect latest admin settings
 export const dynamic = 'force-dynamic';
@@ -21,6 +22,8 @@ interface Props {
 
 export default async function ResultsPage({ params }: Props) {
   const { runId } = await params;
+  const portalUser = await currentPortalUser();
+  const assessmentSession = await currentAssessmentSession();
 
   if (!runId || runId.length < 5) {
     redirect(PATHS.HOME);
@@ -42,6 +45,8 @@ export default async function ResultsPage({ params }: Props) {
             },
             demographics: true,
             createdAt: true,
+            doctorId: true,
+            patientId: true,
           },
         },
       },
@@ -64,6 +69,10 @@ export default async function ResultsPage({ params }: Props) {
         <a href={PATHS.HOME} className="text-blue-400 hover:text-blue-300 text-sm transition">← Back to homepage</a>
       </div>
     );
+  }
+  if ((!portalUser || (run.session?.doctorId !== portalUser.sub && run.session?.patientId !== portalUser.sub)) &&
+    assessmentSession?.sessionId !== run.session?.id) {
+    redirect(portalUser?.role === 'DOCTOR' ? '/doctor' : '/account');
   }
 
   // Strip heavy per-trial gaze samples to keep payload lean

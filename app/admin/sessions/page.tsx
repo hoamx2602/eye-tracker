@@ -15,6 +15,8 @@ type SessionRow = {
   videoUrl: string | null;
   calibrationImageUrls: unknown;
   calibrationGazeSamples?: Array<{ imageUrl?: string | null }> | null;
+  assessmentType?: string | null;
+  doctor?: { name: string; email: string } | null;
 };
 
 type ListResponse = { sessions: SessionRow[]; nextCursor: string | null };
@@ -105,6 +107,7 @@ export default function AdminSessionsPage() {
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">ID</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Created</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Participant</th>
+                    <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Doctor</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Mean error (px)</th>
                     <th className="px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Video</th>
@@ -121,6 +124,9 @@ export default function AdminSessionsPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-300 max-w-[16rem] truncate" title={s.participantEmail ?? undefined}>
                         {s.participantEmail ?? <span className="text-slate-500">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-300 max-w-[14rem] truncate" title={s.doctor?.email}>
+                        {s.doctor?.name ?? <span className="text-slate-500">—</span>}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-300">{s.status ?? '—'}</td>
                       <td className="px-4 py-3 text-sm tabular-nums text-slate-300">
