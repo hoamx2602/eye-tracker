@@ -39,6 +39,14 @@ export const DEFAULT_AMPLITUDE_FRAC = 0.3;
 export const DEFAULT_START_FIXATION_MS = 1000;
 /** The first half-cycle is left out of the analysis while the eye catches the dot up. */
 export const ANALYSIS_SKIP_CYCLES = 0.5;
+/**
+ * The swing grows from nothing over this many cycles, so the dot leaves the
+ * centre from rest. Must stay within ANALYSIS_SKIP_CYCLES: the analysis fits a
+ * sinusoid of the full amplitude.
+ */
+export const RAMP_IN_CYCLES = 0.5;
+/** After the analysed cycles, the swing dies away over this many cycles so the dot comes to rest at the centre. */
+export const RAMP_OUT_CYCLES = 0.5;
 export const DEFAULT_DOT_SIZE_PX = 20;
 export const DEFAULT_DOT_COLOR = '#f59e0b';
 /** Gaze sample interval (ms) for the result preview. Metrics use every frame. */

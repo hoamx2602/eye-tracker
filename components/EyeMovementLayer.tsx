@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { EyeMovementKind } from '../types';
 import { useVoiceRepeat } from '@/lib/voice/VoiceProvider';
 import { exerciseVoiceKey } from '@/lib/voice/scripts';
+import { rampedProgress, smootherstep } from '@/lib/motion';
 
 /**
  * How often the short spoken reminder repeats while a dot is moving.
@@ -32,6 +33,16 @@ const TARGET_SPEED = 25;
 
 const H_PAUSE_MS = 1000;
 const ENDPOINT_PAUSE_MS = 1000;
+/**
+ * The wiggle is one continuous loop with no pauses, so it speeds up from rest
+ * and slows back to rest over this long at each end instead.
+ */
+const WIGGLE_RAMP_MS = 800;
+/**
+ * End of the countdown: the dim dot glides from the centre to where the
+ * exercise begins, so it never jumps there when the countdown ends.
+ */
+const COUNTDOWN_GLIDE_MS = 800;
 
 function dist(a: { x: number; y: number }, b: { x: number; y: number }) {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
@@ -82,7 +93,7 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         let acc = 0;
         for (const seg of segs) {
           if (lt <= acc + seg.durFrac) {
-            const local = seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0;
+            const local = smootherstep(seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0);
             if (seg.type === 'pause') return { ...seg.pos, scale: 1 };
             return { x: lerp(seg.from.x, seg.to.x, local), y: lerp(seg.from.y, seg.to.y, local), scale: 1 };
           }
@@ -117,7 +128,7 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         let acc = 0;
         for (const seg of segs) {
           if (lt <= acc + seg.durFrac) {
-            const local = seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0;
+            const local = smootherstep(seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0);
             if (seg.type === 'pause') return { ...seg.pos, scale: 1 };
             return { x: lerp(seg.from.x, seg.to.x, local), y: lerp(seg.from.y, seg.to.y, local), scale: 1 };
           }
@@ -160,11 +171,11 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         sTable[i] = sTable[i - 1]! + (dt / 6) * (speedFn(a0) + 4 * speedFn(aMid) + speedFn(a1));
       }
       const totalLen = sTable[n]!;
-      const dur = (totalLen / TARGET_SPEED) * 1000;
+      const cruiseMs = (totalLen / TARGET_SPEED) * 1000;
+      const dur = cruiseMs + WIGGLE_RAMP_MS;
 
       const fn = (t: number) => {
-        const linearT = Math.max(0, Math.min(1, t));
-        const s = linearT * totalLen;
+        const s = rampedProgress(Math.max(0, Math.min(1, t)) * dur, cruiseMs, WIGGLE_RAMP_MS) * totalLen;
         let lo = 0, hi = n;
         while (lo < hi) {
           const mid = (lo + hi) >>> 1;
@@ -204,7 +215,7 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         let acc = 0;
         for (const seg of timeline) {
           if (lt <= acc + seg.durFrac) {
-            const local = seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0;
+            const local = smootherstep(seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0);
             if (seg.type === 'pause') return { ...seg.pos, scale: 1 };
             return { x: lerp(seg.from.x, seg.to.x, local), y: lerp(seg.from.y, seg.to.y, local), scale: 1 };
           }
@@ -246,7 +257,7 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
         let acc = 0;
         for (const seg of timeline) {
           if (lt <= acc + seg.durFrac) {
-            const local = seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0;
+            const local = smootherstep(seg.durFrac > 0 ? (lt - acc) / seg.durFrac : 0);
             if (seg.type === 'pause') {
               return { x: seg.pos.x, y: seg.pos.y, scale: 1 };
             }
@@ -292,9 +303,13 @@ const EyeMovementLayer: React.FC<EyeMovementLayerProps> = ({ kind, targetRef, on
           setCountdown(remaining);
         }
         if (dot) {
-          const cx = viewportRef.current.width * 0.5;
-          const cy = viewportRef.current.height * 0.5;
-          dot.style.transform = `translate3d(${cx}px, ${cy}px, 0) translate(-50%, -50%) scale(1)`;
+          const w = viewportRef.current.width || window.innerWidth;
+          const h = viewportRef.current.height || window.innerHeight;
+          const start = path(0);
+          const g = smootherstep((totalElapsed - (COUNTDOWN_MS - COUNTDOWN_GLIDE_MS)) / COUNTDOWN_GLIDE_MS);
+          const gx = (lerp(CENTER, start.x, g) / 100) * w;
+          const gy = (lerp(CENTER, start.y, g) / 100) * h;
+          dot.style.transform = `translate3d(${gx}px, ${gy}px, 0) translate(-50%, -50%) scale(${lerp(1, start.scale, g)})`;
           dot.style.opacity = '0.3';
         }
         targetRef.current = null;

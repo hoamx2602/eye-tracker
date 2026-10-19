@@ -186,7 +186,7 @@ export default function AntiSaccadeTest() {
   const stepFixationMaxMs = Math.max(stepFixationMinMs, Number(config.stepFixationMaxMs) || DEFAULT_STEP_FIXATION_MAX_MS);
   const stepDurationMs = Math.max(600, Number(config.stepDurationMs) || DEFAULT_STEP_DURATION_MS);
 
-  const directions = useMemo(() => generateTrialDirections(trialCount, isStep), [trialCount, isStep]);
+  const directions = useMemo(() => generateTrialDirections(trialCount), [trialCount]);
   const fixationDurations = useMemo(
     () => directions.map(() => (isStep ? randomDurationMs(stepFixationMinMs, stepFixationMaxMs) : fixationPauseMs)),
     [directions, isStep, stepFixationMinMs, stepFixationMaxMs, fixationPauseMs]
