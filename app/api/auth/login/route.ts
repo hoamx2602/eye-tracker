@@ -6,15 +6,23 @@ import { getUserCookieName, getUserCookieOptions, signUserToken } from '@/lib/us
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const identifierRaw = typeof body.identifier === 'string' ? body.identifier : typeof body.email === 'string' ? body.email : '';
+    const identifier = identifierRaw.trim();
     const password = typeof body.password === 'string' ? body.password : '';
-    if (!email || !password) {
-      return NextResponse.json({ error: 'Email and password are required.' }, { status: 400 });
+    if (!identifier || !password) {
+      return NextResponse.json({ error: 'Username/email and password are required.' }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: identifier.toLowerCase() },
+          { username: identifier },
+        ],
+      },
+    });
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-      return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 });
+      return NextResponse.json({ error: 'Invalid username/email or password.' }, { status: 401 });
     }
     if (user.role !== 'DOCTOR' && user.role !== 'PATIENT') {
       return NextResponse.json({ error: 'This account cannot access the portal.' }, { status: 403 });

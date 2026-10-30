@@ -5,7 +5,7 @@ import PortalLogoutButton from '@/components/portal/PortalLogoutButton';
 export default async function DoctorShell({ children }: { children: React.ReactNode }) {
   const user = await currentPortalUser();
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="bg-slate-950 text-slate-100 overflow-y-auto" style={{ height: '100vh' }}>
       <header className="border-b border-slate-800 bg-slate-900/95">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5">
           <div className="flex items-center gap-8">

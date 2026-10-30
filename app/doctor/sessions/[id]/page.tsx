@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { currentPortalUser } from '@/lib/current-user';
 import { assessmentLabel } from '@/lib/user-auth';
 import SessionAnalytics, { type TestTrajectorySegment } from '@/components/SessionAnalytics';
+import NeurologicalResultsPanel from '@/components/doctor/NeurologicalResultsPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,9 +52,9 @@ export default async function DoctorSessionDetailPage({ params }: { params: Prom
     ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-800 bg-slate-900 p-5"><p className="text-xs uppercase tracking-wide text-slate-500">{label}</p><p className="mt-2 text-slate-200">{value}</p></div>)}</div>
     {session.participantEmail && <Link href={`/doctor/patients/${encodeURIComponent(session.participantEmail)}`} className="inline-flex text-sm text-blue-400">Open complete patient history →</Link>}
     {fields.length > 0 && <section className="rounded-xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-semibold">Patient information at time of test</h2><dl className="mt-4 grid gap-4 sm:grid-cols-3">{fields.map(([key, value]) => <div key={key}><dt className="text-xs capitalize text-slate-500">{key.replace(/([A-Z])/g, ' $1')}</dt><dd className="mt-1 text-sm text-slate-200">{display(value)}</dd></div>)}</dl></section>}
-    {samples.length > 0 && <section className="space-y-3"><h2 className="font-semibold">Calibration and gaze analysis</h2><SessionAnalytics samples={samples} validationErrors={session.validationErrors} meanErrorPx={session.meanErrorPx} faceDistanceCm={typeof config?.faceDistance === 'number' ? config.faceDistance : undefined} testTrajectories={trajectories} /></section>}
+    {samples.length > 0 && <section className="space-y-3"><h2 className="font-semibold">Part 1 · Calibration and gaze analysis</h2><SessionAnalytics samples={samples} validationErrors={session.validationErrors} meanErrorPx={session.meanErrorPx} faceDistanceCm={typeof config?.faceDistance === 'number' ? config.faceDistance : undefined} testTrajectories={trajectories} /></section>}
     {session.assessmentType === 'IOP' && config?.results != null && <section className="rounded-xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-semibold">IOP research measurements</h2><pre className="mt-4 overflow-auto rounded-lg bg-slate-950 p-4 text-xs text-slate-300">{JSON.stringify(config.results, null, 2)}</pre></section>}
     {session.assessmentType === 'FACIAL_DROOP' && config?.report != null && <section className="rounded-xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-semibold">Facial movement and speech report</h2><pre className="mt-4 max-h-[36rem] overflow-auto rounded-lg bg-slate-950 p-4 text-xs text-slate-300">{JSON.stringify(config.report, null, 2)}</pre></section>}
-    {session.neurologicalRun && <section className="rounded-xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-semibold">Neurological run</h2><p className="mt-2 text-sm text-slate-400">{neuroTestCount} individual test result{neuroTestCount === 1 ? '' : 's'} recorded.</p><Link href={`/results/${session.neurologicalRun.id}`} className="mt-4 inline-flex rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold hover:bg-blue-500">Open full results</Link></section>}
+    {session.neurologicalRun && <section className="space-y-3"><h2 className="font-semibold">Part 2 · Neurological Test result</h2><p className="text-sm text-slate-400">{neuroTestCount} individual test result{neuroTestCount === 1 ? '' : 's'} recorded.</p><NeurologicalResultsPanel runId={session.neurologicalRun.id} /></section>}
   </div>;
 }
