@@ -2,7 +2,8 @@
 
 import React, { useEffect, useRef } from 'react';
 import { usePracticeGate } from '../../PracticeGate';
-import { DEFAULT_AMPLITUDE_FRAC, DEFAULT_FREQUENCY_HZ, PRACTICE_CYCLES } from './constants';
+import { DEFAULT_AMPLITUDE_FRAC, DEFAULT_FREQUENCY_HZ, PRACTICE_CYCLES, RAMP_IN_CYCLES } from './constants';
+import { rampIn } from '@/lib/motion';
 
 /**
  * Practice: the same side-to-side motion inside the practice frame, no
@@ -22,7 +23,7 @@ export default function SmoothPursuitPractice() {
     const frame = (ts: number) => {
       const t = ts - start;
       // Percent of the practice area, mirroring the real test's fraction of the viewport.
-      const leftPct = 50 + DEFAULT_AMPLITUDE_FRAC * 100 * Math.sin((2 * Math.PI * t) / periodMs);
+      const leftPct = 50 + DEFAULT_AMPLITUDE_FRAC * 100 * rampIn(t, RAMP_IN_CYCLES * periodMs) * Math.sin((2 * Math.PI * t) / periodMs);
       if (dotRef.current) dotRef.current.style.left = `${leftPct}%`;
       if (!marked && t >= PRACTICE_CYCLES * periodMs) {
         marked = true;

@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Modal from './ui/Modal';
 import { VoiceControls } from './ui/VoiceButton';
 
 export type DemographicsData = {
+  /** Participant name, collected after consent. */
+  name: string;
   age: number | '';
   gender: string;
   /** Participant email. Required — links the parts of one person's session together. */
@@ -53,6 +55,7 @@ type DemographicsFormProps = {
 };
 
 export default function DemographicsForm({ onSubmit, onBack, isPage = false }: DemographicsFormProps) {
+  const [name, setName] = useState('');
   const [age, setAge] = useState<number | ''>('');
   const [gender, setGender] = useState('');
   const [email, setEmail] = useState('');
@@ -61,6 +64,22 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
   const [wearsGlasses, setWearsGlasses] = useState(false);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [emailLocked, setEmailLocked] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        const linkedEmail = data?.user?.role === 'PATIENT' ? data.user.email : undefined;
+        if (!cancelled && typeof linkedEmail === 'string' && linkedEmail) {
+          setEmail(linkedEmail);
+          setEmailLocked(true);
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
 
   const toggleEyeCondition = (id: string) => {
@@ -79,6 +98,11 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
     e.preventDefault();
     setError(null);
     const ageNum = age === '' ? NaN : Number(age);
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError('Please enter your name.');
+      return;
+    }
     if (Number.isNaN(ageNum) || ageNum < 1 || ageNum > 120) {
       setError('Please enter a valid age (1–120).');
       return;
@@ -97,6 +121,7 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
       return;
     }
     onSubmit({
+      name: trimmedName,
       age: ageNum,
       gender: gender.trim(),
       email: trimmedEmail,
@@ -121,6 +146,21 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
         {error && (
           <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/30 rounded-lg px-3 py-2">{error}</p>
         )}
+        <div>
+          <label htmlFor="demographics-name" className="block text-sm font-medium text-gray-300 mb-1">
+            Patient name *
+          </label>
+          <input
+            id="demographics-name"
+            type="text"
+            autoComplete="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="h-11 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Full name"
+            required
+          />
+        </div>
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label htmlFor="demographics-age" className="block text-sm font-medium text-gray-300 mb-1">Age *</label>
@@ -188,12 +228,13 @@ export default function DemographicsForm({ onSubmit, onBack, isPage = false }: D
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            readOnly={emailLocked}
             className="h-11 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="you@example.com"
             required
           />
           <p className="text-xs text-gray-500 mt-1.5">
-            Used only to link the parts of your session and to contact you about your data.
+            {emailLocked ? 'Linked to your signed-in patient account.' : 'Used only to link the parts of your session and to contact you about your data.'}
           </p>
         </div>
 

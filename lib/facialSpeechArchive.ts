@@ -60,6 +60,7 @@ export async function archiveFacialSpeechCapture(
 
   onProgress?.('Recording the capture in the system…');
   const session = await sessionsApi.create({
+    assessmentType: 'FACIAL_DROOP',
     status: FACIAL_SPEECH_PENDING_STATUS,
     ...(subject && typeof subject === 'object' ? { demographics: subject as CreateSessionPayload['demographics'] } : {}),
     config: baseConfig,

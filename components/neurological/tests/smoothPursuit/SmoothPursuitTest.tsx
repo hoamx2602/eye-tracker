@@ -12,8 +12,11 @@ import {
   DEFAULT_FREQUENCY_HZ,
   DEFAULT_START_FIXATION_MS,
   GAZE_SAMPLE_INTERVAL_MS,
+  RAMP_IN_CYCLES,
+  RAMP_OUT_CYCLES,
 } from './constants';
 import { neuroLiveGazeRef } from '@/lib/neuroLiveGaze';
+import { rampIn, smootherstep } from '@/lib/motion';
 import { analysePursuit, type PursuitAnalysis } from '@/lib/oculomotorMetrics';
 
 export interface SmoothPursuitResult {
@@ -73,14 +76,22 @@ export default function SmoothPursuitTest() {
     let raf = 0;
     const samples: SmoothPursuitResult['gazeSamples'] = [];
     const w = (2 * Math.PI) / periodMs;
-    const targetAt = (t: number) => cx + amplitudePx * Math.sin(w * (t - (motionStart ?? t)));
+    const rampInMs = RAMP_IN_CYCLES * periodMs;
+    const rampOutMs = RAMP_OUT_CYCLES * periodMs;
+    // Full amplitude across the analysed window; grows in before it and dies
+    // away after it, so the dot starts and stops at rest.
+    const envelope = (e: number) => rampIn(e, rampInMs) * (1 - smootherstep((e - motionMs) / rampOutMs));
+    const targetAt = (t: number) => {
+      const e = t - (motionStart ?? t);
+      return cx + amplitudePx * envelope(e) * Math.sin(w * e);
+    };
 
     // Position is set on the element directly each frame — no React render per frame.
     const frame = (ts: number) => {
       if (motionStart === null && ts - startTime >= startFixationMs) motionStart = ts;
       const x = motionStart === null ? cx : targetAt(ts);
       if (dotRef.current) dotRef.current.style.transform = `translate(${x - dotSizePx / 2}px, ${cy - dotSizePx / 2}px)`;
-      if (motionStart !== null && ts - motionStart >= motionMs) {
+      if (motionStart !== null && ts - motionStart >= motionMs + rampOutMs) {
         finish(ts, motionStart);
         return;
       }

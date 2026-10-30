@@ -29,6 +29,9 @@ type SessionDetail = {
   validationErrors?: number[];
   config?: unknown;
   participantEmail?: string | null;
+  assessmentType?: string | null;
+  doctor?: { id: string; name: string; email: string } | null;
+  patient?: { id: string; name: string; email: string } | null;
   demographics?: { age?: number; gender?: string; email?: string; country?: string; eyeConditions?: string[]; notes?: string } | null;
   /** From TestRun table (or legacy: config.testTrajectories) */
   testTrajectories?: TestTrajectorySegment[] | null;
@@ -317,6 +320,14 @@ export default function AdminSessionDetailPage() {
             <dd className="text-sm text-slate-200 mt-0.5">
               {isNewFormat ? samples.filter((s) => s.imageUrl).length : imageUrls.length}
             </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500 uppercase">Assessment</dt>
+            <dd className="text-sm text-slate-200 mt-0.5">{session.assessmentType ?? 'EYE_TRACKING'}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500 uppercase">Referring doctor</dt>
+            <dd className="text-sm text-slate-200 mt-0.5" title={session.doctor?.email}>{session.doctor?.name ?? '—'}</dd>
           </div>
         </dl>
       </div>

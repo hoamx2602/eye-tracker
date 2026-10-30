@@ -2125,6 +2125,7 @@ function App() {
         }
         const d = prior.demographics;
         demographicsRef.current = {
+          name: typeof d.name === 'string' ? d.name : '',
           age: typeof d.age === 'number' ? d.age : '',
           gender: d.gender ?? '',
           email: d.email || prior.participantEmail || '',
@@ -2280,10 +2281,11 @@ function App() {
 
     // Zooming a dot on a flat screen changes neither vergence nor accommodation —
     // the screen stays where it is — so forward/backward only adds copies of the
-    // center dot. It is still shown, but not trained on.
+    // center dot. It is still shown, but not trained on. The break's Continue
+    // advances, as for every other exercise — advancing here as well skipped
+    // the exercise after it (Diagonal).
     if (kindName === 'forward_backward') {
       console.log('[Exercise:forward_backward] not used for training (no new gaze positions)');
-      advanceExercise();
       return;
     }
 

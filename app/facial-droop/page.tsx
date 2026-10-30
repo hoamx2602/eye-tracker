@@ -14,6 +14,7 @@ import { useFacialCapture } from '@/components/facial-droop/useFacialCapture';
 import FullscreenGuard, { enterFullscreen, exitFullscreen } from '@/components/ui/FullscreenGuard';
 import { MODULE_PATHS } from '@/lib/paths';
 import { useVoice } from '@/lib/voice/VoiceProvider';
+import AssessmentIdentity from '@/components/portal/AssessmentIdentity';
 
 type Stage = 'consent' | 'check' | 'capture' | 'result';
 
@@ -76,7 +77,7 @@ export default function FacialDroopPage() {
   ) : null;
 
   return (
-    <FacialShell leading={leading}>
+    <FacialShell leading={leading} trailing={<AssessmentIdentity compact />}>
       {stage === 'consent' && <ConsentScreen onAgree={() => void agree()} busy={devices.state === 'requesting'} />}
       {stage === 'check' && (
         <CameraCheckScreen stream={devices.stream} deviceState={devices.state} deviceError={devices.error}

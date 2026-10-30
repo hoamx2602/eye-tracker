@@ -1,10 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import IopEyeResultCard from './IopEyeResultCard';
 import IopManualPicker from './IopManualPicker';
 import IopUploadPanel from './IopUploadPanel';
 import { useIopAnalysis, type IopStatus } from './useIopAnalysis';
+import { sessionsApi } from '@/services/api';
 
 const STATUS_TEXT: Partial<Record<IopStatus, string>> = {
   'loading-image': 'Reading image…',
@@ -19,6 +20,34 @@ const STATUS_TEXT: Partial<Record<IopStatus, string>> = {
 export default function IopAnalyzer() {
   const { status, error, image, eyes, model, autoFailure, loadFile, analyzeManual, startManual } = useIopAnalysis();
   const busy = status in STATUS_TEXT;
+  const savedImageRef = useRef<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (status !== 'done' || !image || eyes.length === 0 || savedImageRef.current === image.url) return;
+    savedImageRef.current = image.url;
+    setSaveMessage('Saving result…');
+    void sessionsApi.create({
+      assessmentType: 'IOP',
+      status: 'completed',
+      config: {
+        protocol: 'iop-risk',
+        imageName: image.name,
+        results: eyes.map((eye) => ({
+          side: eye.side,
+          source: eye.source,
+          features: eye.features,
+          flags: eye.flags,
+          pupilContrast: eye.pupilContrast,
+          scleraPixelCount: eye.scleraPixelCount,
+        })),
+      },
+    }).then(() => setSaveMessage('Result saved to your account.'))
+      .catch(() => {
+        savedImageRef.current = null;
+        setSaveMessage('Result is visible here but could not be saved.');
+      });
+  }, [eyes, image, status]);
 
   return (
     <div className="space-y-6">
@@ -34,6 +63,7 @@ export default function IopAnalyzer() {
 
       {busy && <p className="text-sm text-blue-400" role="status">{STATUS_TEXT[status]}</p>}
       {error && <p className="text-sm text-red-400" role="alert">{error}</p>}
+      {saveMessage && <p className="text-sm text-slate-400" role="status">{saveMessage}</p>}
 
       {(status === 'needs-manual' || (status === 'error' && eyes.length === 0)) && image && (
         <IopManualPicker key={image.url} imageUrl={image.url} imageWidth={image.width} imageHeight={image.height} onSubmit={analyzeManual} autoFailure={autoFailure} />

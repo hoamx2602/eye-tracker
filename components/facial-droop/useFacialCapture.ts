@@ -1,10 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { archiveFacialSpeechCapture, facialSpeechDeferAnalysisEnabled, type ArchivedCapture } from '@/lib/facialSpeechArchive';
+import { archiveFacialSpeechCapture, FACIAL_SPEECH_ANALYSED_STATUS, FACIAL_SPEECH_PROTOCOL_ID, facialSpeechDeferAnalysisEnabled, type ArchivedCapture } from '@/lib/facialSpeechArchive';
 import { facialSpeechHandlingEnabled, getFacialSpeechJob, startFacialSpeechProcessing, type FacialSpeechJob } from '@/lib/facialSpeechBackend';
 import { buildCaptureManifest, downloadBlob, type CompletedTask } from '@/lib/facialSpeechManifest';
 import { FACIAL_SPEECH_TASKS } from '@/lib/facialSpeechProtocol';
+import { sessionsApi } from '@/services/api';
 
 export type CaptureState = 'idle' | 'recording' | 'processing' | 'saving' | 'complete';
 export type TaskPhase = 'instruction' | 'countdown' | 'active';
@@ -84,6 +85,37 @@ export function useFacialCapture(stream: MediaStream | null, consentAt: string |
       }
       if (cancelledRef.current) return;
       if (current.status === 'failed') throw new Error(current.error || current.message);
+      const report = current.report;
+      try {
+        await sessionsApi.create({
+          assessmentType: 'FACIAL_DROOP',
+          status: FACIAL_SPEECH_ANALYSED_STATUS,
+          config: {
+            protocol: FACIAL_SPEECH_PROTOCOL_ID,
+            captureId: manifest.sessionId,
+            analysis: 'completed',
+            manifest,
+            report: report ? {
+              version: report.version,
+              status: report.status,
+              interpretation: report.interpretation,
+              quality: report.quality,
+              face: {
+                available: report.face.available,
+                metrics: report.face.metrics,
+                task_frame_counts: report.face.task_frame_counts,
+              },
+              speech: report.speech,
+            } : null,
+          },
+        });
+      } catch (caught) {
+        const detail = caught instanceof Error ? caught.message : 'Unknown save error.';
+        setArchiveError(detail);
+        setMessage(`Analysis complete, but the result could not be saved: ${detail}`);
+        setState('complete');
+        return;
+      }
       setMessage('Analysis complete.');
     } catch (caught) {
       const detail = caught instanceof Error ? caught.message : 'Unknown analysis error.';

@@ -49,7 +49,7 @@ export const CALIBRATION_STEPS: AssessmentStep[] = [
   {
     id: 'wiggling',
     label: 'Wiggling',
-    // Lissajous path, arc-length parameterised: 14.3s + 2s countdown.
+    // Lissajous path, arc-length parameterised: 14.3s + 0.8s speed ramps + 2s countdown.
     duration: '15-20 sec',
     durationSec: 17,
     section: 'calibration',
@@ -186,7 +186,7 @@ export const NEURO_STEPS: AssessmentStep[] = [
   {
     id: 'smooth_pursuit',
     label: 'Smooth Pursuit',
-    // 1 s centre + 5 cycles at 0.4 Hz.
+    // 1 s centre + 5 cycles at 0.4 Hz + half a cycle slowing to rest.
     duration: '~15 sec',
     durationSec: 15,
     section: 'neuro',

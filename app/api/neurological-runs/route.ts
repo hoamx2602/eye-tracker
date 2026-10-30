@@ -6,9 +6,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getDefaultConfigSnapshot } from '@/lib/neurologicalConfig';
+import { sessionAccessFromRequest, userFromRequest } from '@/lib/request-auth';
 
 export async function POST(request: NextRequest) {
   try {
+    const portalUser = await userFromRequest(request);
+    const assessmentSession = await sessionAccessFromRequest(request);
+    if (!portalUser && !assessmentSession) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     const body = await request.json().catch(() => ({}));
     const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
     if (!sessionId) {
@@ -18,6 +22,9 @@ export async function POST(request: NextRequest) {
     const session = await prisma.session.findUnique({ where: { id: sessionId } });
     if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+    if (session.patientId !== portalUser?.sub && session.doctorId !== portalUser?.sub && assessmentSession?.sessionId !== session.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const existing = await prisma.neurologicalRun.findUnique({

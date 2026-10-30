@@ -5,6 +5,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { sessionAccessFromRequest, userFromRequest } from '@/lib/request-auth';
+
+async function ownsRun(request: NextRequest, id: string) {
+  const user = await userFromRequest(request);
+  const assessmentSession = await sessionAccessFromRequest(request);
+  if (!user && !assessmentSession) return false;
+  const run = await prisma.neurologicalRun.findUnique({
+    where: { id }, select: { session: { select: { id: true, patientId: true, doctorId: true } } },
+  });
+  return Boolean(run && (
+    run.session.patientId === user?.sub || run.session.doctorId === user?.sub || run.session.id === assessmentSession?.sessionId
+  ));
+}
 
 function deepMergeTestResults(
   existing: Record<string, unknown> | null,
@@ -20,11 +33,12 @@ function deepMergeTestResults(
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
+    if (!await ownsRun(request, id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     const run = await prisma.neurologicalRun.findUnique({ where: { id } });
     if (!run) {
       return NextResponse.json({ error: 'Run not found' }, { status: 404 });
@@ -42,6 +56,7 @@ export async function PATCH(
 ) {
   const { id } = await params;
   try {
+    if (!await ownsRun(request, id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     const body = await request.json().catch(() => ({}));
 
     // Prisma's interactive-transaction default is 5s — was silently blown

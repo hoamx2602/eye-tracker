@@ -13,12 +13,15 @@ function shuffle<T>(arr: T[]): T[] {
 
 /**
  * Generate trial order: each trial has primary direction (random), dim is opposite.
+ *
+ * All four directions in both paradigms, shuffled in blocks of four, so any
+ * four consecutive trials hold each direction once — horizontal and vertical
+ * trials stay balanced. Up/down trials are scored less reliably than
+ * left/right (the tracker's vertical axis is the weaker one); results keep the
+ * direction per trial, so the two can be analysed apart.
  */
-export function generateTrialDirections(count: number, horizontalOnly = false): AntiSaccadeDirection[] {
-  // Horizontal only for the step paradigm: the tracker's vertical axis carries
-  // a fraction of the horizontal signal, so up/down trials are decided far
-  // less reliably, and the clinical anti-saccade task is horizontal anyway.
-  const set: AntiSaccadeDirection[] = horizontalOnly ? ['left', 'right'] : [...DIRECTIONS];
+export function generateTrialDirections(count: number): AntiSaccadeDirection[] {
+  const set: AntiSaccadeDirection[] = [...DIRECTIONS];
   const pool: AntiSaccadeDirection[] = [];
   while (pool.length < count) {
     pool.push(...shuffle(set));

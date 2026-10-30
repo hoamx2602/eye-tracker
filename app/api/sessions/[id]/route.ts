@@ -17,9 +17,18 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { isAdminRequest, sessionAccessFromRequest, userFromRequest } from '@/lib/request-auth';
+
+async function canAccessSession(request: NextRequest, session: { id?: string; doctorId: string | null; patientId: string | null }) {
+  if (await isAdminRequest(request)) return true;
+  const user = await userFromRequest(request);
+  if (user && (session.patientId === user.sub || session.doctorId === user.sub)) return true;
+  const assessmentSession = await sessionAccessFromRequest(request);
+  return assessmentSession?.sessionId === session.id;
+}
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
@@ -28,9 +37,10 @@ export async function GET(
   try {
     const session = await prisma.session.findUnique({
       where: { id },
-      include: { testRun: true },
+      include: { testRun: true, doctor: { select: { id: true, name: true, email: true } }, patient: { select: { id: true, name: true, email: true } } },
     });
     if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (!await canAccessSession(request, session)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     const { testRun, ...rest } = session;
     const payload = { ...rest, testTrajectories: testRun?.trajectories ?? undefined };
     return NextResponse.json(payload);
@@ -48,6 +58,10 @@ export async function PATCH(
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
   try {
+    const accessSession = await prisma.session.findUnique({ where: { id }, select: { id: true, doctorId: true, patientId: true } });
+    if (!accessSession) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    if (!await canAccessSession(request, accessSession)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    const portalUser = await userFromRequest(request);
     const body = await request.json().catch(() => ({}));
 
     // Prisma's interactive-transaction default is 5s. calibrationGazeSamples
@@ -92,7 +106,9 @@ export async function PATCH(
         data.demographics = body.demographics;
       }
       if (typeof body.participantEmail === 'string') {
-        data.participantEmail = body.participantEmail.trim()
+        data.participantEmail = portalUser?.role === 'PATIENT'
+          ? portalUser.email
+          : body.participantEmail.trim()
           ? body.participantEmail.trim().toLowerCase()
           : null;
       }
@@ -144,13 +160,14 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
   try {
+    if (!await isAdminRequest(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const session = await prisma.session.findUnique({ where: { id } });
     if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     await prisma.session.delete({ where: { id } });

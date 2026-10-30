@@ -142,7 +142,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
   const configuredFixationMs = getFixationPauseMs(config);
   const stepFixMin = Math.max(300, Number(config?.stepFixationMinMs) || DEFAULT_STEP_FIXATION_MIN_MS);
   const stepFixMax = Math.max(stepFixMin, Number(config?.stepFixationMaxMs) || DEFAULT_STEP_FIXATION_MAX_MS);
-  const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS, isStep));
+  const directionsRef = useRef(generateTrialDirections(PRACTICE_TRIALS));
   const [trialIndex, setTrialIndex] = useState(0);
   const [visualStarted, setVisualStarted] = useState(false);
   const [restartIn, setRestartIn] = useState<number | null>(null);
@@ -189,7 +189,7 @@ export default function AntiSaccadePractice({ config }: { config?: Record<string
         if (prev === null || prev <= 0) return null;
         const next = prev - 1;
         if (next === 0) {
-          directionsRef.current = generateTrialDirections(PRACTICE_TRIALS, isStep);
+          directionsRef.current = generateTrialDirections(PRACTICE_TRIALS);
           setTrialIndex(0);
           setVisualStarted(false);
           return null;
